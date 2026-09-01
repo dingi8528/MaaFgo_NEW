@@ -1123,6 +1123,36 @@
                     "icon": "resource/base/image/servant_face/f_1063000.png"
                 },
                 {
+                    "name": "444. Ｕ－奥尔加玛丽（5星·兽）",
+                    "label": "444. Ｕ－奥尔加玛丽（5星·兽）",
+                    "option": [
+                        "强化从者-目标-4000100"
+                    ],
+                    "pipeline_override": {
+                        "执行强化从者": {
+                            "attach": {
+                                "servant_id": "4000100"
+                            }
+                        },
+                        "强化从者-筛选职介": {
+                            "recognition": {
+                                "param": {
+                                    "template": "强化从者/职介-兽.png"
+                                }
+                            }
+                        },
+                        "强化从者-筛选星级": {
+                            "recognition": {
+                                "param": {
+                                    "template": "整理礼物盒/5星未选中.png"
+                                }
+                            }
+                        }
+                    },
+                    "description": "已选从者：Ｕ－奥尔加玛丽\n\n<img src=\"resource/base/image/servant_face/f_40001000.png\" width=\"79\" height=\"79\" alt=\"Ｕ－奥尔加玛丽头像\" />",
+                    "icon": "resource/base/image/servant_face/f_40001000.png"
+                },
+                {
                     "name": "442. 因陀罗（5星·枪）",
                     "label": "442. 因陀罗（5星·枪）",
                     "option": [
@@ -14554,6 +14584,13 @@
                     "label": "兽(beast)",
                     "option": [
                         "强化从者-从者-5-beast"
+                    ]
+                },
+                {
+                    "name": "unBeast",
+                    "label": "兽(unBeast)",
+                    "option": [
+                        "强化从者-从者-5-unBeast"
                     ]
                 }
             ]
@@ -28965,6 +29002,43 @@
                 }
             ]
         },
+        "强化从者-从者-5-unBeast": {
+            "type": "select",
+            "label": "从者",
+            "default": "444. Ｕ－奥尔加玛丽",
+            "cases": [
+                {
+                    "name": "444. Ｕ－奥尔加玛丽",
+                    "label": "444. Ｕ－奥尔加玛丽",
+                    "option": [
+                        "强化从者-目标-4000100"
+                    ],
+                    "pipeline_override": {
+                        "执行强化从者": {
+                            "attach": {
+                                "servant_id": "4000100"
+                            }
+                        },
+                        "强化从者-筛选职介": {
+                            "recognition": {
+                                "param": {
+                                    "template": "强化从者/职介-兽.png"
+                                }
+                            }
+                        },
+                        "强化从者-筛选星级": {
+                            "recognition": {
+                                "param": {
+                                    "template": "整理礼物盒/5星未选中.png"
+                                }
+                            }
+                        }
+                    },
+                    "description": "已选从者：Ｕ－奥尔加玛丽\n\n<img src=\"resource/base/image/servant_face/f_40001000.png\" width=\"79\" height=\"79\" alt=\"Ｕ－奥尔加玛丽头像\" />",
+                    "icon": "resource/base/image/servant_face/f_40001000.png"
+                }
+            ]
+        },
         "强化从者-目标-1100100": {
             "type": "input",
             "label": "目标等级",
@@ -39264,6 +39338,28 @@
             },
             "description": "已选从者：ＢＢ迪拜\n\n<img src=\"resource/base/image/servant_face/f_23006000.png\" width=\"79\" height=\"79\" alt=\"ＢＢ迪拜头像\" />",
             "icon": "resource/base/image/servant_face/f_23006000.png"
+        },
+        "强化从者-目标-4000100": {
+            "type": "input",
+            "label": "目标等级",
+            "inputs": [
+                {
+                    "name": "target_level_4000100",
+                    "label": "目标等级（1-120，默认满破 90）",
+                    "default": "90",
+                    "pipeline_type": "int",
+                    "verify": "^(1[0-2][0-9]|[1-9][0-9]?)$"
+                }
+            ],
+            "pipeline_override": {
+                "执行强化从者": {
+                    "attach": {
+                        "target_level": "{target_level_4000100}"
+                    }
+                }
+            },
+            "description": "已选从者：Ｕ－奥尔加玛丽\n\n<img src=\"resource/base/image/servant_face/f_40001000.png\" width=\"79\" height=\"79\" alt=\"Ｕ－奥尔加玛丽头像\" />",
+            "icon": "resource/base/image/servant_face/f_40001000.png"
         }
     }
 }

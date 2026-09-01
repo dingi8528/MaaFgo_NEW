@@ -79,6 +79,7 @@ CLASS_TEMPLATE = {
     "pretender": "伪装者",
     "shielder": "盾兵",
     "beast": "兽",
+    "unBeast": "兽",
 }
 
 
