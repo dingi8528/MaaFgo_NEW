@@ -44,6 +44,50 @@
                     }
                 }
             }
+        },
+        "自动编队礼装开关": {
+            "type": "select",
+            "label": "自动编成礼装",
+            "description": "关闭后仅调整从者和助战位置，完成从者复核后直接确认编队。",
+            "default": "是",
+            "cases": [
+                {
+                    "name": "是",
+                    "label": "是",
+                    "pipeline_override": {
+                        "执行自动编队": {"attach": {"auto_equip": true}}
+                    }
+                },
+                {
+                    "name": "否",
+                    "label": "否",
+                    "pipeline_override": {
+                        "执行自动编队": {"attach": {"auto_equip": false}}
+                    }
+                }
+            ]
+        },
+        "自动编队礼装缺失处理": {
+            "type": "select",
+            "label": "满破礼装缺失时",
+            "description": "仅当 Chaldea 要求满破、数据库和图片资源均存在但仓库未找到时生效。",
+            "default": "跳过礼装",
+            "cases": [
+                {
+                    "name": "跳过礼装",
+                    "label": "跳过该礼装",
+                    "pipeline_override": {
+                        "执行自动编队": {"attach": {"equip_missing_policy": "skip"}}
+                    }
+                },
+                {
+                    "name": "查找非满破礼装",
+                    "label": "改查非满破版本",
+                    "pipeline_override": {
+                        "执行自动编队": {"attach": {"equip_missing_policy": "allow_non_limit_break"}}
+                    }
+                }
+            ]
         }
     }
 }

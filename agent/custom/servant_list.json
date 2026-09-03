@@ -14,7 +14,8 @@
     "foreigner": "降(foreigner)",
     "pretender": "伪(pretender)",
     "shielder": "盾(shielder)",
-    "beast": "兽(beast)"
+    "beast": "兽(beast)",
+    "unBeast": "兽(unBeast)"
   },
   "servants": [
     {
@@ -7154,9 +7155,10 @@
     },
     {
       "id": "4000100",
+      "collection_no": 444,
       "name": "Ｕ－奥尔加玛丽",
-      "class": "unBeastOlgaMarie",
-      "rarity": 0,
+      "class": "unBeast",
+      "rarity": 5,
       "images": [
         "f_40001000.png",
         "f_40001001.png",
