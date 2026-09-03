@@ -66,6 +66,36 @@
                     }
                 },
                 {
+                    "name": "vivo服",
+                    "label": "vivo服",
+                    "pipeline_override": {
+                        "打开游戏": {
+                            "action": {
+                                "type": "StartApp",
+                                "param": {
+                                    "package": "com.bilibili.fgo.vivo"
+                                }
+                            }
+                        },
+                        "关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.fgo.vivo"
+                                }
+                            }
+                        },
+                        "登录-关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.fgo.vivo"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "享游服",
                     "label": "享游服",
                     "pipeline_override": {

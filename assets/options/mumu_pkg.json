@@ -28,6 +28,17 @@
           }
         },
         {
+          "name": "vivo服",
+          "label": "vivo服",
+          "pipeline_override": {
+            "启动bbc": {
+              "attach": {
+                "mumu_pkg": "com.bilibili.fgo.vivo"
+              }
+            }
+          }
+        },
+        {
           "name": "享游服",
           "label": "享游服",
           "pipeline_override": {
