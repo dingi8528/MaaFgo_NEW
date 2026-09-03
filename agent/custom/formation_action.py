@@ -42,25 +42,58 @@ SLOT_ROIS = (
     (854, 160, 187, 276),
     (1055, 160, 188, 276),
 )
+# 编队卡片下方的概念礼装图区域。它不包含在从者槽位 ROI 内：从者卡片正好在
+# y=436 结束，礼装从 y=436 开始，因此必须使用独立 ROI 才不会把从者立绘误判为
+# 礼装。
+EQUIP_TEAM_ROIS = (
+    (41, 436, 187, 120),
+    (241, 436, 187, 120),
+    (440, 436, 187, 120),
+    (654, 436, 187, 120),
+    (854, 436, 187, 120),
+    (1055, 436, 188, 120),
+)
 
 # 真机编队验证的最低有效命中约为 0.649；取 0.62 以降低误匹配，同时保留
 # 资源加载、抗锯齿和不同灵基图带来的合理余量。
 FACE_THRESHOLD = 0.62
+# 编队礼装资源与编队头像区域一一对应，直接用原始模板复核。阈值保留少量
+# 抗锯齿/加载余量，实际命中分数会输出到日志中供继续调优。
+EQUIP_TEAM_THRESHOLD = 0.85
+EQUIP_LIST_THRESHOLD = 0.90
 SUPPORT_THRESHOLD = 0.75
 SWAP_DRAG_DURATION = 1200  # ms；长按并拖至目标槽中心
 SWAP_SETTLE_SECONDS = 1.0
 SERVANT_REPLACE_VERIFY_TIMEOUT_SECONDS = 10.0
 SERVANT_REPLACE_VERIFY_INTERVAL_SECONDS = 0.5
+SELECT_PAGE_ENTER_TIMEOUT_SECONDS = 8.0
 EMPTY_SLOT_STD_THRESHOLD = 25.0
 EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD = 6.0
 FORMATION_CONFIRM_ROI = (724, 583, 232, 101)
 FORMATION_CONFIRM_DELAY_SECONDS = 1.0
 SERVANT_FILTER_BUTTON_ROI = (900, 90, 140, 80)
 SERVANT_FILTER_BLUE_RATIO = 0.55
+EQUIP_FILTER_ORANGE_RATIO = 0.30
+EQUIP_FILTER_TAG_THRESHOLD = 0.92
+EQUIP_CARD_SELECT_SETTLE_SECONDS = 0.3
+EQUIP_CONFIRM_SETTLE_SECONDS = 1.0
+EQUIP_SELECT_RETURN_TIMEOUT_SECONDS = 5.0
+EQUIP_SWIPE_SETTLE_SECONDS = 0.5
+EQUIP_MATCH_STABILITY_INTERVAL_SECONDS = 0.5
+EQUIP_MATCH_STABILITY_MAX_CHECKS = 3
+EQUIP_MATCH_CENTER_DELTA_PX = 6
+SCREENSHOT_SETTLE_SECONDS = 0.2
 MAX_REORDER_OPS = 12
 MAX_FIND_SERVANT_ROUNDS = 80
+MAX_SERVANT_SELECT_ATTEMPTS = 3
+MAX_FIND_EQUIP_ROUNDS = 30
 SWIPE_LIST_BEGIN = (600, 560)
 SWIPE_LIST_END = (600, 200)
+# 从者与礼装仓库的“复位到顶部 / 单次下滑 / 等待”均维护在自动编队 pipeline
+# 中；此处保留的坐标仅供礼装筛选弹层中的满破选项查找使用。
+# 概念礼装显示在编队卡片下部。该纵坐标由 1280 x 720 编队截图标定，横向
+# 则始终取对应从者槽中心，避免点到从者头像而进入错误的选择页。
+EQUIP_SLOT_CLICK_Y = 477
 
 SUPPORT_TYPES = {"friend", "fixed", "npc"}
 CLASS_TEMPLATE = {
@@ -123,6 +156,19 @@ class AutoFormationFromChaldea(CustomAction):
                 or attach.get("chaldea_import_source_file")
                 or ""
             ).strip()
+            # 兼容未配置新选项的旧任务：未传值时仍默认编入礼装。
+            auto_equip_value = attach.get("auto_equip", True)
+            self.auto_equip = str(auto_equip_value).strip().lower() not in {
+                "0", "false", "no", "off", "否",
+            }
+            self.equip_missing_policy = str(
+                attach.get("equip_missing_policy") or "skip"
+            ).strip()
+            if self.equip_missing_policy not in {"skip", "allow_non_limit_break"}:
+                mfaalog.warning(
+                    f"[自动编队] 未知礼装缺失策略 {self.equip_missing_policy!r}，使用 skip"
+                )
+                self.equip_missing_policy = "skip"
             if not source:
                 self._fail("invalid_chaldea_team: 未提供 Chaldea 分享链接/ID")
                 return CustomAction.RunResult(success=False)
@@ -140,14 +186,24 @@ class AutoFormationFromChaldea(CustomAction):
                 self._fail("invalid_chaldea_team: 当前编队仅支持一个助战槽")
                 return CustomAction.RunResult(success=False)
 
+            if self.auto_equip:
+                self._load_equip_database()
+            else:
+                self.equip_database = {}
             self._prepare_target_templates()
             self.list_view_prepared = False
-            if not self._run_pipeline("自动编队-打开配置"):
-                self._fail("not_on_formation_page: 未找到配置变更按钮")
-                return CustomAction.RunResult(success=False)
-            if not self._wait_for(self._in_formation_edit, 5.0):
-                self._fail("not_on_formation_page: 点击配置变更后未进入编辑状态")
-                return CustomAction.RunResult(success=False)
+            self.equip_list_view_prepared = False
+            # 正常入口有“配置变更”按钮；测试中断或用户手动点击后也可能已经处于
+            # 编辑页，此时无需再找按钮，直接从当前状态继续。
+            if not self._in_formation_edit():
+                if not self._run_pipeline("自动编队-打开配置"):
+                    self._fail("not_on_formation_page: 未找到配置变更按钮")
+                    return CustomAction.RunResult(success=False)
+                if not self._wait_for(self._in_formation_edit, 5.0):
+                    self._fail("not_on_formation_page: 点击配置变更后未进入编辑状态")
+                    return CustomAction.RunResult(success=False)
+            else:
+                mfaalog.info("[自动编队] 已处于编队编辑页，跳过配置变更点击")
 
             current = self._detect_slots()
             if current is None:
@@ -176,6 +232,20 @@ class AutoFormationFromChaldea(CustomAction):
                 return CustomAction.RunResult(success=False)
 
             self._log_support_identity_if_possible(current)
+            if self.auto_equip:
+                if not self._replace_equips():
+                    return CustomAction.RunResult(success=False)
+                # 礼装选择不应改变从者布局；决定前再做一次从者/助战复核，防止界面
+                # 加载或误触导致带着错误队伍提交。
+                current = self._detect_slots()
+                if current is None:
+                    return CustomAction.RunResult(success=False)
+                mismatch = self._first_mismatch(current)
+                if mismatch is not None:
+                    self._fail(f"final_formation_mismatch: 礼装编队后槽位{mismatch + 1}未匹配")
+                    return CustomAction.RunResult(success=False)
+            else:
+                mfaalog.info("[自动编队] 已关闭自动编成礼装，跳过礼装阶段")
             if not self._run_pipeline("自动编队-编队决定"):
                 self._fail("formation_confirm_failed: 未能点击编队决定")
                 return CustomAction.RunResult(success=False)
@@ -198,21 +268,47 @@ class AutoFormationFromChaldea(CustomAction):
         expected = []
         for index, item in enumerate(raw_slots[:6]):
             if item is None:
-                expected.append({"kind": "EMPTY", "svt_id": None, "slot": index})
+                expected.append({
+                    "kind": "EMPTY", "svt_id": None, "equip_id": None,
+                    "equip_limit_break": False, "slot": index,
+                })
                 continue
             if not isinstance(item, dict):
                 self._fail(f"invalid_chaldea_team: 槽位{index + 1}数据类型错误")
                 return None
             support_type = str(item.get("supportType") or "").lower()
             svt_id = item.get("svtId")
+            equip_id, equip_limit_break = self._extract_equip(item)
             if support_type in SUPPORT_TYPES:
-                expected.append({"kind": "SUPPORT", "svt_id": svt_id, "slot": index})
+                expected.append({
+                    "kind": "SUPPORT", "svt_id": svt_id, "equip_id": equip_id,
+                    "equip_limit_break": equip_limit_break, "slot": index,
+                })
                 continue
             if not isinstance(svt_id, int) or svt_id <= 0:
                 self._fail(f"invalid_chaldea_team: 槽位{index + 1}没有有效 svtId")
                 return None
-            expected.append({"kind": "LOCAL", "svt_id": svt_id, "slot": index})
+            expected.append({
+                "kind": "LOCAL", "svt_id": svt_id, "equip_id": equip_id,
+                "equip_limit_break": equip_limit_break, "slot": index,
+            })
         return expected
+
+    @staticmethod
+    def _extract_equip(item):
+        """兼容 Chaldea 当前的 equip1 与旧版 ceId/ceLimitBreak 字段。"""
+        equip1 = item.get("equip1")
+        if isinstance(equip1, dict) and equip1.get("id") is not None:
+            equip_id = equip1.get("id")
+            limit_break = equip1.get("limitBreak", item.get("ceLimitBreak", False))
+        else:
+            equip_id = item.get("ceId")
+            limit_break = item.get("ceLimitBreak", False)
+        try:
+            equip_id = int(equip_id) if equip_id is not None else None
+        except (TypeError, ValueError):
+            equip_id = None
+        return equip_id, bool(limit_break)
 
     # ---------- 路径、截图与模板 ----------
 
@@ -232,6 +328,8 @@ class AutoFormationFromChaldea(CustomAction):
         self.image_roots = roots
         self.narrow_dirs = [os.path.join(root, "NarrowFigures") for root in roots]
         self.face_dirs = [os.path.join(root, "servant_face") for root in roots]
+        self.equip_list_dirs = [os.path.join(root, "EquipFaces", "list") for root in roots]
+        self.equip_team_dirs = [os.path.join(root, "EquipFaces", "team") for root in roots]
 
     def _init_scale(self):
         self.sx = self.sy = 1.0
@@ -245,7 +343,26 @@ class AutoFormationFromChaldea(CustomAction):
             )
 
     def _shot(self):
-        return _norm_img(self.controller.post_screencap().wait().get())
+        """触发截图并读取控制器缓存，避开底层作业状态异常挂起。
+
+        Maa 的 Agent 控制器在部分页面会出现“图像帧已经送达、但截图 job 的
+        status 查询不返回”的问题。不要在这里调用 job.wait()/job.done；先发起
+        截图请求，稍作等待后直接取得最新缓存帧。
+        """
+        try:
+            self.controller.post_screencap()
+            time.sleep(SCREENSHOT_SETTLE_SECONDS)
+        except Exception as exc:
+            mfaalog.warning(f"[自动编队] 请求截图失败: {exc}")
+        try:
+            cached = _norm_img(self.controller.cached_image)
+        except Exception as exc:
+            mfaalog.warning(f"[自动编队] 读取截图缓存失败: {exc}")
+            cached = None
+        if cached is not None:
+            return cached
+        mfaalog.warning("[自动编队] 截图缓存不可用")
+        return None
 
     def _scale_roi(self, roi):
         x, y, width, height = roi
@@ -257,6 +374,13 @@ class AutoFormationFromChaldea(CustomAction):
     def _slot_center(self, index):
         x, y, width, height = SLOT_ROIS[index]
         return int(round((x + width / 2) * self.sx)), int(round((y + height / 2) * self.sy))
+
+    def _equip_slot_center(self, index):
+        x, _y, width, _height = SLOT_ROIS[index]
+        return (
+            int(round((x + width / 2) * self.sx)),
+            int(round(EQUIP_SLOT_CLICK_Y * self.sy)),
+        )
 
     def _template_path(self, relative):
         for root in self.image_roots:
@@ -286,9 +410,34 @@ class AutoFormationFromChaldea(CustomAction):
                     seen.add(name)
         return result
 
+    def _load_equip_template(self, equip_id, directories):
+        filename = f"f_{equip_id}0.png"
+        for directory in directories:
+            path = os.path.join(directory, filename)
+            template = _read_image(path)
+            if template is not None:
+                return filename, template
+        return None
+
+    def _load_equip_database(self):
+        path = os.path.join(_CUSTOM_DIR, "equip_list.json")
+        try:
+            with open(path, encoding="utf-8-sig") as file:
+                equips = json.load(file).get("equips", [])
+        except Exception as exc:
+            raise RuntimeError(f"equip_database_unavailable: {exc}") from exc
+        self.equip_database = {
+            str(item.get("id")): item for item in equips if str(item.get("id") or "")
+        }
+
+    def _get_equip_info(self, equip_id):
+        return self.equip_database.get(str(equip_id))
+
     def _prepare_target_templates(self):
         self.local_templates = {}
         self.support_templates = {}
+        self.equip_team_templates = {}
+        self.equip_list_templates = {}
         for item in self.expected:
             svt_id = item["svt_id"]
             if item["kind"] == "LOCAL" and svt_id not in self.local_templates:
@@ -303,6 +452,30 @@ class AutoFormationFromChaldea(CustomAction):
                 templates = self._load_servant_templates(svt_id, self.narrow_dirs)
                 if templates:
                     self.support_templates[svt_id] = templates
+            if not self.auto_equip:
+                continue
+            equip_id = item.get("equip_id")
+            if item["kind"] != "LOCAL" or not equip_id:
+                continue
+            equip = self._get_equip_info(equip_id)
+            if equip is None:
+                item["equip_status"] = "database_missing"
+                mfaalog.warning(
+                    f"[自动编队] 槽位{item['slot'] + 1}礼装 ceId={equip_id} 不在礼装数据库，跳过"
+                )
+                continue
+            team_template = self._load_equip_template(equip_id, self.equip_team_dirs)
+            list_template = self._load_equip_template(equip_id, self.equip_list_dirs)
+            if team_template is None or list_template is None:
+                item["equip_status"] = "resource_missing"
+                mfaalog.warning(
+                    f"[自动编队] 槽位{item['slot'] + 1}礼装 {equip['name']}({equip_id})"
+                    "缺少 EquipFaces 资源，跳过"
+                )
+                continue
+            item["equip_status"] = "ready"
+            self.equip_team_templates[equip_id] = team_template
+            self.equip_list_templates[equip_id] = list_template
         self.support_marker = self._load_named_template("battle/助战标记.png")
         if self.support_marker is None:
             raise RuntimeError("resource_missing: battle/助战标记.png")
@@ -310,15 +483,22 @@ class AutoFormationFromChaldea(CustomAction):
         if self.edit_marker is None:
             raise RuntimeError("resource_missing: battle/编队决定.png")
         self.formation_confirm_marker = self._load_named_template("决定.png")
+        self.equip_confirm_marker = self._load_named_template("EquipFaces/礼装决定.png")
+        if self.equip_confirm_marker is None:
+            raise RuntimeError("resource_missing: EquipFaces/礼装决定.png")
         if self.formation_confirm_marker is None:
             raise RuntimeError("resource_missing: 决定.png")
 
-    def _match_template(self, image, template, roi=None):
+    def _match_template(self, image, template, roi=None, display_size=None):
         if image is None or template is None:
             return None
         scaled = template
-        width = max(1, int(round(template.shape[1] * self.sx)))
-        height = max(1, int(round(template.shape[0] * self.sy)))
+        if display_size is None:
+            width = max(1, int(round(template.shape[1] * self.sx)))
+            height = max(1, int(round(template.shape[0] * self.sy)))
+        else:
+            width = max(1, int(round(display_size[0] * self.sx)))
+            height = max(1, int(round(display_size[1] * self.sy)))
         if width != template.shape[1] or height != template.shape[0]:
             scaled = cv2.resize(template, (width, height))
         region, offset_x, offset_y = image, 0, 0
@@ -509,24 +689,30 @@ class AutoFormationFromChaldea(CustomAction):
             servant = self._get_servant_info(expected["svt_id"])
             if servant is None:
                 return self._fail(f"servant_not_found: servant_list 中没有 {expected['svt_id']}")
-            mfaalog.info(f"[自动编队] 替换槽位{index + 1}为 {servant['name']}({servant['id']})")
-            if not self._enter_servant_select(index):
-                return self._fail(f"servant_select_failed: 槽位{index + 1}未进入从者选择界面")
-            if not self._filter_servant_list(servant):
-                return self._fail(f"servant_filter_failed: {servant['name']}")
-            if not self._find_and_select_servant(servant):
-                return self._fail(f"servant_not_found: {servant['name']}({servant['id']})")
-            if not self._wait_for(self._in_formation_edit, 5.0):
-                return self._fail("servant_select_failed: 选择从者后未返回编队编辑页")
-            verified, current = self._wait_for_servant_replace_verify(index, expected)
-            if not verified:
+            for select_attempt in range(MAX_SERVANT_SELECT_ATTEMPTS):
+                mfaalog.info(
+                    f"[自动编队] 替换槽位{index + 1}为 {servant['name']}({servant['id']})，"
+                    f"第{select_attempt + 1}/{MAX_SERVANT_SELECT_ATTEMPTS}次选择"
+                )
+                if not self._enter_servant_select(index):
+                    return self._fail(f"servant_select_failed: 槽位{index + 1}未进入从者选择界面")
+                if not self._filter_servant_list(servant):
+                    return self._fail(f"servant_filter_failed: {servant['name']}")
+                if not self._find_and_select_servant(servant):
+                    return self._fail(f"servant_not_found: {servant['name']}({servant['id']})")
+                if not self._wait_for(self._in_formation_edit, 5.0):
+                    return self._fail("servant_select_failed: 选择从者后未返回编队编辑页")
+                verified, current = self._wait_for_servant_replace_verify(index, expected)
+                if verified:
+                    break
                 actual = current[index] if current is not None else {}
-                mfaalog.error(
-                    f"[自动编队] 槽位{index + 1}换人复核失败："
+                mfaalog.warning(
+                    f"[自动编队] 槽位{index + 1}第{select_attempt + 1}次换人复核未通过："
                     f"识别={actual.get('kind')} id={actual.get('svt_id')} "
                     f"score={actual.get('score', 0.0):.3f} "
-                    f"template={actual.get('template', '-') }"
+                    f"template={actual.get('template', '-') }；重新选择"
                 )
+            else:
                 return self._fail(f"servant_replace_verify_failed: 槽位{index + 1}")
         return True
 
@@ -553,13 +739,13 @@ class AutoFormationFromChaldea(CustomAction):
         return False, latest
 
     def _enter_servant_select(self, slot_index):
-        for _ in range(3):
-            if self._in_servant_select():
-                return self._run_pipeline("自动编队-确认从者选择界面")
-            x, y = self._slot_center(slot_index)
-            self.controller.post_click(x, y).wait()
-            time.sleep(1.0)
-        if not self._in_servant_select():
+        if self._in_servant_select():
+            return self._run_pipeline("自动编队-确认从者选择界面")
+        # 槽位坐标只允许点击一次：游戏切页尚未完成时再次点击同一坐标，会在
+        # 从者列表中命中第一张卡片，等同于误选第一个从者。
+        x, y = self._slot_center(slot_index)
+        self.controller.post_click(x, y).wait()
+        if not self._wait_for(self._in_servant_select, SELECT_PAGE_ENTER_TIMEOUT_SECONDS):
             return False
         return self._run_pipeline("自动编队-确认从者选择界面")
 
@@ -606,6 +792,8 @@ class AutoFormationFromChaldea(CustomAction):
         if not self._run_pipeline("自动编队-筛选准备"):
             return False
         if not self.list_view_prepared:
+            # 缩放与活动筛选均是静态界面操作，交由 Maa pipeline 维护，脚本不再
+            # 重复固定坐标点击。
             if not self._run_pipeline("自动编队-准备从者列表"):
                 return False
             self.list_view_prepared = True
@@ -617,6 +805,10 @@ class AutoFormationFromChaldea(CustomAction):
             templates = self._load_servant_templates(servant["id"], self.narrow_dirs)
         if not templates:
             return self._fail(f"resource_missing: 从者选择图 {servant['id']}")
+        # 每次开始查找前都先通过右侧滚动条复位到列表顶端。筛选后的默认位置
+        # 不能作为前提，否则上一名从者的滚动位置会漏掉前面的匹配项。
+        if not self._run_pipeline("自动编队-从者列表复位顶部"):
+            return self._fail("servant_list_reset_failed: 未能复位从者列表")
         for round_index in range(MAX_FIND_SERVANT_ROUNDS):
             if self.context.tasker.stopping:
                 return False
@@ -631,11 +823,9 @@ class AutoFormationFromChaldea(CustomAction):
                 self.controller.post_click(*match[1]).wait()
                 if self._wait_for(self._in_formation_edit, 5.0):
                     return True
-            self.controller.post_swipe(
-                int(round(SWIPE_LIST_BEGIN[0] * self.sx)), int(round(SWIPE_LIST_BEGIN[1] * self.sy)),
-                int(round(SWIPE_LIST_END[0] * self.sx)), int(round(SWIPE_LIST_END[1] * self.sy)), 400,
-            ).wait()
-            time.sleep(0.8)
+            # 单轮顺序固定为：查找未命中 → 下滑一次 → pipeline 等待 0.5 秒。
+            if not self._run_pipeline("自动编队-从者列表下滑查找"):
+                return self._fail("servant_list_swipe_failed: 从者列表下滑失败")
         return False
 
     def _get_servant_info(self, svt_id):
@@ -647,6 +837,342 @@ class AutoFormationFromChaldea(CustomAction):
             mfaalog.error(f"[自动编队] 读取 servant_list.json 失败: {exc}")
             return None
         return next((item for item in servants if str(item.get("id")) == str(svt_id)), None)
+
+    # ---------- 概念礼装选择、筛选、替换 ----------
+
+    def _match_equip(self, image, equip_id, roi):
+        template_data = self.equip_team_templates.get(equip_id)
+        if template_data is None:
+            return None
+        name, template = template_data
+        # 更新后的 team 资源就是编队界面使用的原始头像图；除 MaaFramework
+        # 按设备分辨率进行的坐标缩放外，不做裁剪、缩放或其他格式变换。
+        result = self._match_template(image, template, roi)
+        if result is None:
+            return None
+        return result[0], result[1], name
+
+    def _equip_matches_slot(self, slot_index, equip_id):
+        image = self._shot()
+        match = self._match_equip(image, equip_id, EQUIP_TEAM_ROIS[slot_index])
+        return match is not None and match[0] >= EQUIP_TEAM_THRESHOLD, match
+
+    def _replace_equips(self):
+        """在从者全部完成后逐槽补齐概念礼装。
+
+        助战的礼装由助战提供，不能在本地队伍中替换；Chaldea 的空槽和未携带
+        礼装的本地从者也没有任何操作目标。数据库或图片资源不覆盖的礼装按用户
+        要求只输出日志并继续执行。
+        """
+        # 先在编队页对所有可匹配的礼装做同一帧校验。若全部已正确，绝不能为了
+        # "确认"而进入任一礼装选择页：后者会重置筛选状态，也增加误选风险。
+        image = self._shot()
+        if image is None:
+            return self._fail("equip_initial_verify_failed: 无法获取编队截图")
+        pending = []
+        for index, expected in enumerate(self.expected):
+            equip_id = expected.get("equip_id")
+            if expected["kind"] == "SUPPORT":
+                if equip_id:
+                    mfaalog.info(
+                        f"[自动编队] 槽位{index + 1}为助战，跳过助战礼装 ceId={equip_id}"
+                    )
+                continue
+            if expected["kind"] != "LOCAL" or not equip_id:
+                continue
+            if expected.get("equip_status") != "ready":
+                continue
+            equip = self._get_equip_info(equip_id)
+            match = self._match_equip(image, equip_id, EQUIP_TEAM_ROIS[index])
+            matched = match is not None and match[0] >= EQUIP_TEAM_THRESHOLD
+            if matched:
+                mfaalog.info(
+                    f"[自动编队] 礼装起始校验：槽位{index + 1}已匹配 "
+                    f"{equip['name']}({equip_id})，"
+                    f"{match[0]:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+                )
+                continue
+            score = match[0] if match is not None else 0.0
+            mfaalog.info(
+                f"[自动编队] 礼装起始校验：槽位{index + 1}待替换 "
+                f"{equip['name']}({equip_id})，{score:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+            )
+            pending.append((index, expected, equip_id, equip))
+
+        if not pending:
+            mfaalog.info("[自动编队] 礼装起始校验全部匹配，跳过礼装选择")
+            return True
+
+        mfaalog.info(
+            "[自动编队] 礼装起始校验完成：仅处理槽位"
+            + "、".join(str(index + 1) for index, _expected, _equip_id, _equip in pending)
+        )
+
+        for index, expected, equip_id, equip in pending:
+            # 前一槽的返回动画或网络刷新可能影响后续槽位；在实际编辑前再次确认，
+            # 防止已经正确的礼装被重复编辑。
+            matched, match = self._equip_matches_slot(index, equip_id)
+            if matched:
+                mfaalog.info(
+                    f"[自动编队] 槽位{index + 1}礼装复查已匹配："
+                    f"{equip['name']}({equip_id})，{match[0]:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+                )
+                continue
+
+            state = "满破" if expected.get("equip_limit_break") else "不限满破"
+            mfaalog.info(
+                f"[自动编队] 替换槽位{index + 1}礼装为 {equip['name']}({equip_id})，筛选={state}"
+            )
+            result = self._select_equip_for_slot(index, equip, bool(expected.get("equip_limit_break")))
+            if result == "selected":
+                verified, score = self._wait_for_equip_replace_verify(index, equip_id)
+                if verified:
+                    mfaalog.info(
+                        f"[自动编队] 槽位{index + 1}礼装复核通过："
+                        f"{score:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+                    )
+                    continue
+                return self._fail(f"equip_replace_verify_failed: 槽位{index + 1}")
+
+            # 筛选后找不到指定礼装是可恢复状态：回到编队页，记录原因，并依照
+            # 用户选项尝试不限制满破的兜底搜索。
+            if result != "not_found":
+                return False
+            if expected.get("equip_limit_break") and self.equip_missing_policy == "allow_non_limit_break":
+                mfaalog.warning(
+                    f"[自动编队] 槽位{index + 1}未找到满破 {equip['name']}({equip_id})，"
+                    "按选项改为查找非满破版本"
+                )
+                result = self._select_equip_for_slot(index, equip, False)
+                if result == "selected":
+                    verified, score = self._wait_for_equip_replace_verify(index, equip_id)
+                    if verified:
+                        mfaalog.info(
+                            f"[自动编队] 槽位{index + 1}礼装非满破兜底复核通过："
+                            f"{score:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+                        )
+                        continue
+                    return self._fail(f"equip_replace_verify_failed: 槽位{index + 1}")
+                if result != "not_found":
+                    return False
+            mfaalog.warning(
+                f"[自动编队] 槽位{index + 1}仓库未找到礼装 {equip['name']}({equip_id})，已跳过"
+            )
+        return True
+
+    def _select_equip_for_slot(self, slot_index, equip, require_limit_break):
+        if not self._enter_equip_select(slot_index):
+            self._fail(f"equip_select_failed: 槽位{slot_index + 1}未进入礼装选择界面")
+            return "failed"
+        if not self._filter_equip_list(equip, require_limit_break):
+            self._fail(f"equip_filter_failed: {equip['name']}")
+            return "failed"
+        result = self._find_and_select_equip(equip)
+        if result == "selected":
+            return "selected"
+        if result == "failed":
+            self._fail(f"equip_select_failed: 选择 {equip['name']} 后未返回编队编辑页")
+            return "failed"
+        if not self._leave_equip_select():
+            self._fail("equip_select_failed: 未找到礼装后无法返回编队编辑页")
+            return "failed"
+        return "not_found"
+
+    def _enter_equip_select(self, slot_index):
+        if self._in_equip_select():
+            return self._run_pipeline("自动编队-确认礼装选择界面")
+        # 同从者选择页：礼装列表加载期间不能对同一屏幕坐标重复点击，否则会
+        # 直接选中列表中的首个礼装。
+        self.controller.post_click(*self._equip_slot_center(slot_index)).wait()
+        if not self._wait_for(self._in_equip_select, SELECT_PAGE_ENTER_TIMEOUT_SECONDS):
+            return False
+        return self._run_pipeline("自动编队-确认礼装选择界面")
+
+    def _in_equip_select(self):
+        """判断是否已进入“概念礼装选择”页。
+
+        该页右上角的“フィルター”是橙色，而从者选择页使用蓝色按钮。
+        不可复用 ``_in_servant_select``，否则会在已进入礼装页后错误地继续点击。
+        """
+        image = self._shot()
+        if image is None:
+            return False
+        edit = self._match_template(image, self.edit_marker)
+        if edit is not None and edit[0] >= 0.75:
+            return False
+        x, y, width, height = self._scale_roi(SERVANT_FILTER_BUTTON_ROI)
+        region = image[y:y + height, x:x + width]
+        if region.size == 0:
+            return False
+        hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+        orange = cv2.inRange(hsv, (5, 80, 80), (30, 255, 255))
+        ratio = float(np.count_nonzero(orange)) / orange.size
+        return ratio >= EQUIP_FILTER_ORANGE_RATIO
+
+    def _leave_equip_select(self):
+        if self._in_formation_edit():
+            return True
+        if not self._run_pipeline("自动编队-礼装选择返回"):
+            return False
+        return self._wait_for(self._in_formation_edit, 5.0)
+
+    def _filter_equip_list(self, equip, require_limit_break):
+        rarity = int(equip.get("rarity", 0))
+        filter_tag = str(equip.get("filter_tag") or "").strip()
+        if not filter_tag:
+            self._fail(
+                f"equip_filter_tag_missing: {equip.get('name', '?')}({equip.get('id', '?')})"
+            )
+            return False
+        override = {}
+        if 1 <= rarity <= 5:
+            override["自动编队-礼装筛选星级"] = {
+                "recognition": {"param": {"template": f"整理礼物盒/{rarity}星未选中.png"}}
+            }
+        else:
+            override["自动编队-礼装筛选星级"] = {"recognition": "DirectHit"}
+        override["自动编队-礼装筛选星级"]["next"] = ["自动编队-礼装筛选标签"]
+        tag_next = ["自动编队-礼装筛找满破"] if require_limit_break else ["自动编队-礼装筛点决定"]
+        override["自动编队-礼装筛选标签"] = {
+            "recognition": {
+                "param": {
+                    "template": f"EquipFaces/礼装类别筛选项/{filter_tag}.png",
+                    "threshold": EQUIP_FILTER_TAG_THRESHOLD,
+                }
+            },
+            "next": tag_next,
+        }
+        self.context.override_pipeline(override)
+        if not self._run_pipeline("自动编队-礼装筛选非满破"):
+            return False
+        if not self.equip_list_view_prepared:
+            # 使用用户维护的礼装列表准备 pipeline：依次处理活动筛选与图标大小。
+            if not self._run_pipeline("自动编队-准备礼装列表"):
+                return False
+            self.equip_list_view_prepared = True
+        return True
+
+    def _find_and_select_equip(self, equip):
+        """按“滑动→等待→查找→点击→决定→复核”严格串行查找礼装。
+
+        本函数的任一轮一旦命中目标，就会完成该目标的点击与唯一一次决定；只有
+        决定未生效、仍在礼装列表页时才继续向下滑动，绝不会在命中后直接滑动。
+        """
+        template_data = self.equip_list_templates.get(int(equip["id"]))
+        if template_data is None:
+            return "not_found"
+        name, template = template_data
+        # 与从者列表一致，每件礼装都从筛选结果的顶部开始扫描，避免沿用上一件
+        # 礼装的滚动位置。
+        if not self._run_pipeline("自动编队-礼装列表复位顶部"):
+            return "failed"
+        for round_index in range(MAX_FIND_EQUIP_ROUNDS):
+            if self.context.tasker.stopping:
+                return "failed"
+            result = self._find_equip_in_still_list(template, equip["name"], round_index)
+            # 高分目标仍随列表移动时，保持当前列表位置并继续取静止截图；绝不在
+            # 此时执行下一次滑动，否则刚出现的目标会在点击前离开原坐标。
+            if result == "moving":
+                continue
+            if result is not None:
+                mfaalog.info(
+                    f"[自动编队] 查找礼装 {equip['name']} 第{round_index + 1}轮，"
+                    f"最高分={result[0]:.3f} 模板={name}"
+                )
+            if result is not None and result[0] >= EQUIP_LIST_THRESHOLD:
+                # 命中后立即停止该轮滑动；先选中当前卡片，再尝试一次且仅一次
+                # “礼装决定”。
+                mfaalog.info(
+                    f"[自动编队] 礼装 {equip['name']} 静止命中，点击卡片中心="
+                    f"{result[1]}，{result[0]:.4f}/{EQUIP_LIST_THRESHOLD:.2f}"
+                )
+                self.controller.post_click(*result[1]).wait()
+                time.sleep(EQUIP_CARD_SELECT_SETTLE_SECONDS)
+                confirm = self._match_template(self._shot(), self.equip_confirm_marker)
+                if confirm is None or confirm[0] < 0.80:
+                    mfaalog.warning(
+                        f"[自动编队] 礼装 {equip['name']} 命中后未找到礼装决定；"
+                        "本轮不重复点击，继续查找"
+                    )
+                else:
+                    mfaalog.info(
+                        f"[自动编队] 礼装 {equip['name']} 命中后点击礼装决定："
+                        f"{confirm[0]:.4f}/0.80"
+                    )
+                    self.controller.post_click(*confirm[1]).wait()
+                    # 决定只点击一次。先按约定等待完整一秒，再持续复核返回编队
+                    # 编辑页；礼装资源加载偶尔会让切页晚于首个一秒检查。
+                    time.sleep(EQUIP_CONFIRM_SETTLE_SECONDS)
+                    if self._wait_for(
+                        self._in_formation_edit,
+                        EQUIP_SELECT_RETURN_TIMEOUT_SECONDS,
+                    ):
+                        return "selected"
+                    if not self._in_equip_select():
+                        return "failed"
+                    mfaalog.warning(
+                        f"[自动编队] 礼装 {equip['name']} 点击决定后未匹配，"
+                        "仍在列表页，继续向下查找"
+                    )
+            # 未命中，或已点击一次决定但没有生效：现在才进入下一轮单次下滑；
+            # 0.5 秒停顿由 pipeline 统一维护。
+            if not self._run_pipeline("自动编队-礼装列表下滑查找"):
+                return "failed"
+        return "not_found"
+
+    def _find_equip_in_still_list(self, template, equip_name, round_index):
+        """仅在礼装列表停止滚动后返回可点击的匹配结果。
+
+        连续两张截图都必须命中同一位置；若卡片位置仍变化，说明滑动惯性尚未
+        结束，只等待而不执行点击或下一次滑动。
+        """
+        moving = False
+        for check_index in range(EQUIP_MATCH_STABILITY_MAX_CHECKS):
+            first = self._match_template(self._shot(), template)
+            time.sleep(EQUIP_MATCH_STABILITY_INTERVAL_SECONDS)
+            second = self._match_template(self._shot(), template)
+            first_hit = first is not None and first[0] >= EQUIP_LIST_THRESHOLD
+            second_hit = second is not None and second[0] >= EQUIP_LIST_THRESHOLD
+            if not first_hit and not second_hit:
+                return second
+            if not first_hit or not second_hit:
+                moving = True
+                mfaalog.info(
+                    f"[自动编队] 礼装 {equip_name} 第{round_index + 1}轮匹配画面未稳定，"
+                    f"第{check_index + 1}/{EQUIP_MATCH_STABILITY_MAX_CHECKS}次等待"
+                )
+                time.sleep(EQUIP_SWIPE_SETTLE_SECONDS)
+                continue
+            delta = max(abs(first[1][0] - second[1][0]), abs(first[1][1] - second[1][1]))
+            if delta <= EQUIP_MATCH_CENTER_DELTA_PX:
+                return second
+            mfaalog.info(
+                f"[自动编队] 礼装 {equip_name} 第{round_index + 1}轮仍在滚动，"
+                f"中心位移={delta}px，停止滑动并继续等待"
+            )
+            time.sleep(EQUIP_SWIPE_SETTLE_SECONDS)
+        # 高分卡片在三次确认中仍在移动，宁可不点也不继续滑；外层会保持当前
+        # 位置重新截图，直到列表真正停住后才允许点击。
+        return "moving" if moving else None
+
+    def _wait_for_equip_replace_verify(self, slot_index, equip_id):
+        deadline = time.monotonic() + SERVANT_REPLACE_VERIFY_TIMEOUT_SECONDS
+        latest_score = 0.0
+        while time.monotonic() < deadline:
+            if self.context.tasker.stopping:
+                return False, latest_score
+            matched, match = self._equip_matches_slot(slot_index, equip_id)
+            if match is not None:
+                latest_score = float(match[0])
+            if matched:
+                return True, latest_score
+            time.sleep(SERVANT_REPLACE_VERIFY_INTERVAL_SECONDS)
+        mfaalog.warning(
+            f"[自动编队] 槽位{slot_index + 1}礼装复核等待"
+            f"{SERVANT_REPLACE_VERIFY_TIMEOUT_SECONDS:.0f}秒后仍未匹配，"
+            f"最后分数={latest_score:.4f}/{EQUIP_TEAM_THRESHOLD:.2f}"
+        )
+        return False, latest_score
 
     # ---------- 结束校验、日志 ----------
 
