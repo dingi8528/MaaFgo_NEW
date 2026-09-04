@@ -13,6 +13,7 @@ import re
 import sys
 import time
 import traceback
+from collections import Counter
 
 import cv2
 import numpy as np
@@ -63,7 +64,8 @@ EQUIP_TEAM_THRESHOLD = 0.85
 EQUIP_LIST_THRESHOLD = 0.90
 SUPPORT_THRESHOLD = 0.75
 SWAP_DRAG_DURATION = 1200  # ms；长按并拖至目标槽中心
-SWAP_SETTLE_SECONDS = 1.0
+SWAP_VERIFY_TIMEOUT_SECONDS = 6.0
+SWAP_VERIFY_INTERVAL_SECONDS = 0.5
 SERVANT_REPLACE_VERIFY_TIMEOUT_SECONDS = 10.0
 SERVANT_REPLACE_VERIFY_INTERVAL_SECONDS = 0.5
 SELECT_PAGE_ENTER_TIMEOUT_SECONDS = 8.0
@@ -193,18 +195,6 @@ class AutoFormationFromChaldea(CustomAction):
             self._prepare_target_templates()
             self.list_view_prepared = False
             self.equip_list_view_prepared = False
-            # 正常入口有“配置变更”按钮；测试中断或用户手动点击后也可能已经处于
-            # 编辑页，此时无需再找按钮，直接从当前状态继续。
-            if not self._in_formation_edit():
-                if not self._run_pipeline("自动编队-打开配置"):
-                    self._fail("not_on_formation_page: 未找到配置变更按钮")
-                    return CustomAction.RunResult(success=False)
-                if not self._wait_for(self._in_formation_edit, 5.0):
-                    self._fail("not_on_formation_page: 点击配置变更后未进入编辑状态")
-                    return CustomAction.RunResult(success=False)
-            else:
-                mfaalog.info("[自动编队] 已处于编队编辑页，跳过配置变更点击")
-
             current = self._detect_slots()
             if current is None:
                 return CustomAction.RunResult(success=False)
@@ -214,6 +204,40 @@ class AutoFormationFromChaldea(CustomAction):
                 self._fail("support_count_invalid: 当前助战数量与 Chaldea 目标不一致")
                 return CustomAction.RunResult(success=False)
             self._log_layout("初始", current)
+
+            # 在点击“配置变更”前判断当前队伍的复用价值。助战不参与统计；当至少
+            # 一半的目标本地从者不匹配时，整队清空比逐个拖动、替换更直接。清空
+            # 流程结束后游戏已处于编辑状态，不应再次点击“配置变更”。
+            should_clear = self._should_clear_formation(current)
+            already_editing = self._in_formation_edit()
+            if should_clear:
+                if already_editing:
+                    # “编队编辑”入口只存在于编队确认页。该分支仅用于测试中断或
+                    # 用户已手动进入编辑页后的恢复，继续使用原有增量编队流程。
+                    mfaalog.info(
+                        "[自动编队] 不匹配从者达到清空阈值，但已处于编队编辑页；"
+                        "跳过清空和配置变更，继续增量编队"
+                    )
+                else:
+                    if not self._run_pipeline("自动编队-执行清空编队"):
+                        self._fail("formation_clear_failed: 未能清空当前编队")
+                        return CustomAction.RunResult(success=False)
+                    if not self._wait_for(self._in_formation_edit, 5.0):
+                        self._fail("formation_clear_failed: 清空编队后未进入编辑状态")
+                        return CustomAction.RunResult(success=False)
+                    current = self._detect_slots()
+                    if current is None:
+                        return CustomAction.RunResult(success=False)
+                    self._log_layout("清空后", current)
+            elif not already_editing:
+                if not self._run_pipeline("自动编队-打开配置"):
+                    self._fail("not_on_formation_page: 未找到配置变更按钮")
+                    return CustomAction.RunResult(success=False)
+                if not self._wait_for(self._in_formation_edit, 5.0):
+                    self._fail("not_on_formation_page: 点击配置变更后未进入编辑状态")
+                    return CustomAction.RunResult(success=False)
+            else:
+                mfaalog.info("[自动编队] 已处于编队编辑页，跳过配置变更点击")
 
             if not self._relocate_unexpected_support(current, expected_support_count):
                 return CustomAction.RunResult(success=False)
@@ -591,6 +615,28 @@ class AutoFormationFromChaldea(CustomAction):
                 return index
         return None
 
+    def _should_clear_formation(self, current):
+        """目标本地从者中至少一半不在当前队伍时，选择先清空整队。
+
+        此处只比较从者集合而不比较槽位；位置不同的同一从者可由后续拖动复用，
+        不应算作需要重新选择的从者。Counter 同时兼容目标中出现重复 ID 的情况。
+        """
+        expected_counts = Counter(
+            item["svt_id"] for item in self.expected if item["kind"] == "LOCAL"
+        )
+        current_counts = Counter(
+            item["svt_id"] for item in current if item["kind"] == "LOCAL"
+        )
+        local_count = sum(expected_counts.values())
+        matched_count = sum((expected_counts & current_counts).values())
+        mismatch_count = local_count - matched_count
+        should_clear = local_count > 0 and mismatch_count * 2 >= local_count
+        mfaalog.info(
+            f"[自动编队] 本地从者匹配检查：{mismatch_count}/{local_count}不匹配，"
+            f"处理方式={'清空编队' if should_clear else '配置变更'}"
+        )
+        return should_clear
+
     def _can_move_from(self, index, current):
         """判断当前位置的从者能否被移去满足其他目标位置。"""
         expected = self.expected[index]
@@ -628,9 +674,16 @@ class AutoFormationFromChaldea(CustomAction):
             f"移动至未指定槽位{empty_target + 1}"
         )
         self._drag_slot(support_index, empty_target)
-        time.sleep(SWAP_SETTLE_SECONDS)
-        verified = self._detect_slots()
-        if verified is None or verified[empty_target]["kind"] != "SUPPORT":
+        verified, current = self._wait_for_slot_match(
+            empty_target,
+            {"kind": "SUPPORT", "svt_id": None},
+        )
+        if not verified:
+            actual = current[empty_target] if current is not None else {}
+            mfaalog.warning(
+                f"[自动编队] 助战移动复核超时：目标槽位{empty_target + 1}，"
+                f"识别={actual.get('kind')} score={actual.get('score', 0.0):.3f}"
+            )
             return self._fail("support_relocation_failed: 助战未移动到未指定槽位")
         return True
 
@@ -664,11 +717,26 @@ class AutoFormationFromChaldea(CustomAction):
                 f"[自动编队] 重排：槽位{source_index + 1} -> 槽位{target_index + 1}"
             )
             self._drag_slot(source_index, target_index)
-            time.sleep(SWAP_SETTLE_SECONDS)
-            verified = self._detect_slots()
-            if verified is None or not self._matches(self.expected[target_index], verified[target_index]):
+            verified, _current = self._wait_for_slot_match(
+                target_index,
+                self.expected[target_index],
+            )
+            if not verified:
                 return self._fail("swap_verify_failed: 拖动后目标槽位未匹配")
         return self._fail("swap_verify_failed: 重排次数达到上限")
+
+    def _wait_for_slot_match(self, target_index, expected):
+        """轮询等待拖动动画和卡片资源刷新完成，再复核目标槽位。"""
+        deadline = time.monotonic() + SWAP_VERIFY_TIMEOUT_SECONDS
+        latest = None
+        while time.monotonic() < deadline:
+            if self.context.tasker.stopping:
+                return False, latest
+            latest = self._detect_slots()
+            if latest is not None and self._matches(expected, latest[target_index]):
+                return True, latest
+            time.sleep(SWAP_VERIFY_INTERVAL_SECONDS)
+        return False, latest
 
     def _drag_slot(self, source_index, target_index):
         source_x, source_y = self._slot_center(source_index)
