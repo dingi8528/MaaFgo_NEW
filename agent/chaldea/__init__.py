@@ -34,6 +34,8 @@ def _build_cache_name(share_data: dict, quest_id, team_id) -> str:
     """
     chars = []
     for svt in (share_data.get("team") or {}).get("onFieldSvts") or []:
+        if not isinstance(svt, dict):
+            continue
         svt_id = svt.get("svtId")
         if svt_id is None:
             continue

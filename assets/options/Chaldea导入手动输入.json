@@ -42,6 +42,11 @@
                     "attach": {
                         "chaldea_import_source": "{chaldea_import_source}"
                     }
+                },
+                "执行羁绊补齐自动编队": {
+                    "attach": {
+                        "chaldea_import_source": "{chaldea_import_source}"
+                    }
                 }
             }
         },
