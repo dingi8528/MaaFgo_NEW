@@ -13,12 +13,71 @@
             "自动编队完成"
         ]
     },
+    "清空二次确认": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    699,
+                    562,
+                    300,
+                    82
+                ],
+                "template": [
+                    "决定.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "post_delay": 1000
+    },
     "自动编队": {
         "next": [
             "执行自动编队"
         ]
     },
+    "自动编队-从者列表下滑查找": {
+        "action": {
+            "type": "Swipe",
+            "param": {
+                "begin": [
+                    600,
+                    560,
+                    1,
+                    1
+                ],
+                "end": [
+                    [
+                        600,
+                        200,
+                        1,
+                        1
+                    ]
+                ],
+                "duration": [
+                    400
+                ]
+            }
+        },
+        "post_delay": 500
+    },
     "自动编队-从者列表准备完成": {},
+    "自动编队-从者列表复位顶部": {
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    1231,
+                    186,
+                    21,
+                    6
+                ]
+            }
+        },
+        "post_delay": 500
+    },
     "自动编队-准备从者列表": {
         "next": [
             "自动编队-图标大小检测",
@@ -102,6 +161,45 @@
         },
         "post_delay": 1000
     },
+    "自动编队-执行清空编队": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "battle/编队编辑.png"
+                ],
+                "threshold": [
+                    0.8
+                ]
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "自动编队-点击清空"
+        ]
+    },
+    "自动编队-点击清空": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "battle/编队解散.png"
+                ],
+                "threshold": [
+                    0.85
+                ]
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "post_delay": 500,
+        "next": [
+            "清空二次确认"
+        ]
+    },
     "自动编队-点击缩放按钮": {
         "action": {
             "type": "Click",
@@ -118,7 +216,46 @@
     },
     "自动编队-确认从者选择界面": {},
     "自动编队-确认礼装选择界面": {},
+    "自动编队-礼装列表下滑查找": {
+        "action": {
+            "type": "Swipe",
+            "param": {
+                "begin": [
+                    600,
+                    560,
+                    1,
+                    1
+                ],
+                "end": [
+                    [
+                        600,
+                        404,
+                        1,
+                        1
+                    ]
+                ],
+                "duration": [
+                    400
+                ]
+            }
+        },
+        "post_delay": 500
+    },
     "自动编队-礼装列表准备完成": {},
+    "自动编队-礼装列表复位顶部": {
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    1231,
+                    360,
+                    19,
+                    7
+                ]
+            }
+        },
+        "post_delay": 500
+    },
     "自动编队-礼装列表就绪": {
         "recognition": {
             "type": "TemplateMatch",
@@ -494,84 +631,6 @@
             "type": "Click"
         },
         "post_delay": 1000
-    },
-    "自动编队-从者列表复位顶部": {
-        "action": {
-            "type": "Click",
-            "param": {
-                "target": [
-                    1231,
-                    186,
-                    21,
-                    6
-                ]
-            }
-        },
-        "post_delay": 500
-    },
-    "自动编队-礼装列表复位顶部": {
-        "action": {
-            "type": "Click",
-            "param": {
-                "target": [
-                    1231,
-                    360,
-                    19,
-                    7
-                ]
-            }
-        },
-        "post_delay": 500
-    },
-    "自动编队-从者列表下滑查找": {
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    600,
-                    560,
-                    1,
-                    1
-                ],
-                "end": [
-                    [
-                        600,
-                        200,
-                        1,
-                        1
-                    ]
-                ],
-                "duration": [
-                    400
-                ]
-            }
-        },
-        "post_delay": 500
-    },
-    "自动编队-礼装列表下滑查找": {
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    600,
-                    560,
-                    1,
-                    1
-                ],
-                "end": [
-                    [
-                        600,
-                        404,
-                        1,
-                        1
-                    ]
-                ],
-                "duration": [
-                    400
-                ]
-            }
-        },
-        "post_delay": 500
     },
     "自动编队完成": {}
 }
