@@ -15,7 +15,25 @@ import mfaalog
 
 logger = logging.getLogger(__name__)
 
-CHALDEA_API = "https://worker.chaldea.center/api/v4"
+CHALDEA_API = "https://api.chaldea.center/api/v1"
+
+
+def _normalize_team(team: dict) -> dict:
+    """把新版 Chaldea API 字段归一成工程原先使用的格式。"""
+    if not isinstance(team, dict):
+        return {}
+
+    normalized = dict(team)
+    if not normalized.get("content") and isinstance(normalized.get("data"), str):
+        normalized["content"] = normalized["data"]
+    if "questId" not in normalized and normalized.get("quest_id") is not None:
+        normalized["questId"] = normalized["quest_id"]
+    if "votes" not in normalized:
+        normalized["votes"] = {
+            "up": normalized.get("up", 0) or 0,
+            "down": normalized.get("down", 0) or 0,
+        }
+    return normalized
 
 
 def fetch_teams_by_quest(quest_id: int, phase: int = 3, limit: int = 5) -> List[dict]:
@@ -29,7 +47,10 @@ def fetch_teams_by_quest(quest_id: int, phase: int = 3, limit: int = 5) -> List[
         logger.error(f"[Chaldea] 无效的 quest_id: {quest_id}")
         return []
 
-    url = f"{CHALDEA_API}/quest/{quest_id}/team?phase={phase}&page=1&limit={limit}&free=true"
+    url = (
+        f"{CHALDEA_API}/teams/?questId={quest_id}&phase={phase}"
+        f"&sort=upvotes&limit={limit}&offset=0"
+    )
     logger.info(f"[Chaldea] 请求关卡队伍排行榜: {url}")
 
     try:
@@ -39,7 +60,7 @@ def fetch_teams_by_quest(quest_id: int, phase: int = 3, limit: int = 5) -> List[
         req = urllib.request.Request(url, headers={"User-Agent": "MaaFgo/1.0"})
         resp = urllib.request.urlopen(req, timeout=15, context=ctx)
         data = json.loads(resp.read().decode("utf-8"))
-        teams = data.get("data", [])
+        teams = [_normalize_team(team) for team in data.get("data", [])]
         logger.info(f"[Chaldea] 获取到 {len(teams)} 个队伍")
         return teams
     except Exception as e:
@@ -53,7 +74,7 @@ def fetch_team_by_id(team_id: int) -> Optional[dict]:
         logger.error(f"[Chaldea] 无效的 team_id: {team_id}")
         return None
 
-    url = f"{CHALDEA_API}/team/{team_id}"
+    url = f"{CHALDEA_API}/teams/{team_id}"
     logger.info(f"[Chaldea] 请求单独队伍配置: {url}")
 
     try:
@@ -62,7 +83,7 @@ def fetch_team_by_id(team_id: int) -> Optional[dict]:
         ctx.verify_mode = ssl.CERT_NONE
         req = urllib.request.Request(url, headers={"User-Agent": "MaaFgo/1.0"})
         resp = urllib.request.urlopen(req, timeout=15, context=ctx)
-        return json.loads(resp.read().decode("utf-8"))
+        return _normalize_team(json.loads(resp.read().decode("utf-8")))
     except Exception as e:
         logger.error(f"[Chaldea] 队伍API请求失败: {e}")
         return None
@@ -75,7 +96,10 @@ def select_best_team(teams: List[dict]) -> Optional[dict]:
 
     def vote_score(t: dict) -> int:
         votes = t.get("votes", {})
-        return votes.get("up", 0) - votes.get("down", 0)
+        return (
+            votes.get("up", t.get("up", 0))
+            - votes.get("down", t.get("down", 0))
+        )
 
     return max(teams, key=vote_score)
 

@@ -1,0 +1,58 @@
+{
+  "option": {
+    "自动补齐从者和羁绊礼装": {
+      "type": "select",
+      "label": "自动补齐从者和羁绊礼装",
+      "description": "原 Chaldea 编队确认后，重新进入配置页，只填真实空位；助战及 Chaldea 已指定内容不会被替换。",
+      "default": "否",
+      "cases": [
+        {
+          "name": "否",
+          "label": "否",
+          "pipeline_override": {
+            "执行羁绊补齐自动编队": {"attach": {"bond_completion_enabled": false}}
+          }
+        },
+        {
+          "name": "是",
+          "label": "是",
+          "option": ["补齐从者优先X星", "羁绊基础值"],
+          "pipeline_override": {
+            "执行羁绊补齐自动编队": {"attach": {"bond_completion_enabled": true}}
+          }
+        }
+      ]
+    },
+    "补齐从者优先X星": {
+      "type": "select",
+      "label": "补齐从者优先星级",
+      "description": "先完整扫描该星级；没有可用对象时，再按 5→0 星回退。",
+      "default": "5星",
+      "cases": [
+        {"name": "5星", "label": "5星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 5}}}},
+        {"name": "4星", "label": "4星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 4}}}},
+        {"name": "3星", "label": "3星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 3}}}},
+        {"name": "2星", "label": "2星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 2}}}},
+        {"name": "1星", "label": "1星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 1}}}},
+        {"name": "0星", "label": "0星", "pipeline_override": {"执行羁绊补齐自动编队": {"attach": {"preferred_rarity": 0}}}}
+      ]
+    },
+    "羁绊基础值": {
+      "type": "input",
+      "label": "羁绊基础值",
+      "description": "用于比较百分比礼装和固定值礼装，必须为正整数。",
+      "inputs": [
+        {
+          "name": "bond_base",
+          "label": "羁绊基础值",
+          "default": "1200",
+          "verify": "^[1-9][0-9]*$",
+          "pipeline_type": "int"
+        }
+      ],
+      "pipeline_override": {
+        "执行羁绊补齐自动编队": {"attach": {"bond_base": "{bond_base}"}}
+      }
+    }
+  }
+}
