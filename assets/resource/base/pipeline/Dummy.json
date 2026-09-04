@@ -1,19 +1,32 @@
 {
-    "全局-体力不足": {
+    "风暴罐不足2": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "风暴罐不足",
+                    "风暴罐 不足",
+                    "风暴罐"
+                ]
+            }
+        },
         "action": {
-            "type": "StopTask"
+            "type": "Click",
+            "param": {
+                "target": [
+                    578,
+                    550,
+                    114,
+                    25
+                ]
+            }
         },
         "focus": {
-            "Node.Action.Succeeded": "体力不足，任务结束"
-        }
-    },
-    "全局-苹果数量不足": {
-        "action": {
-            "type": "StopTask"
+            "Node.Recognition.Succeeded": "<span style=\"color: #FF0000;\">风暴罐不足，任务无法继续进行！！</span>"
         },
-        "focus": {
-            "Node.Action.Succeeded": "苹果数量，任务结束"
-        }
+        "next": [
+            "回主界面"
+        ]
     },
     "Global_Null": {
         "doc": "【全局默认空on_error覆盖】Jumpback链路崩毁默认节点",
@@ -22,6 +35,7 @@
         "next": [
             "全局-战前吃体力",
             "风暴罐不足",
+            "风暴罐不足2",
             "其他异常"
         ]
     },
@@ -95,11 +109,7 @@
         },
         "next": [
             "全局-吃体力点击确定"
-        ],
-        "on_error": [
-            "全局-苹果数量不足"
-        ],
-        "timeout": 200
+        ]
     },
     "全局-吃体力选择金": {
         "recognition": {
@@ -115,11 +125,7 @@
         },
         "next": [
             "全局-吃体力点击确定"
-        ],
-        "on_error": [
-            "全局-苹果数量不足"
-        ],
-        "timeout": 200
+        ]
     },
     "全局-吃体力选择银": {
         "recognition": {
@@ -135,11 +141,7 @@
         },
         "next": [
             "全局-吃体力点击确定"
-        ],
-        "on_error": [
-            "全局-苹果数量不足"
-        ],
-        "timeout": 200
+        ]
     },
     "全局-吃体力选择蓝2": {
         "recognition": {
@@ -155,11 +157,7 @@
         },
         "next": [
             "全局-吃体力点击确定"
-        ],
-        "on_error": [
-            "全局-苹果数量不足"
-        ],
-        "timeout": 200
+        ]
     },
     "全局-吃体力选择铜2": {
         "recognition": {
@@ -175,11 +173,7 @@
         },
         "next": [
             "全局-吃体力点击确定"
-        ],
-        "on_error": [
-            "全局-苹果数量不足"
-        ],
-        "timeout": 200
+        ]
     },
     "全局-吃体力选择蓝": {
         "action": {
@@ -242,26 +236,14 @@
         },
         "action": {
             "type": "Click"
-        },
-        "next": [
-            "全局-吃体力-等待弹窗关闭"
-        ]
+        }
     },
-    "全局-吃体力-等待弹窗关闭": {
-        "doc": "点确定后等AP弹窗真正关闭再结束链, 防止JumpBack回父节点时弹窗残留导致全局-战前吃体力二次命中",
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": [
-                    "AP_replenishment‌_UI.png",
-                    "apple_stone.png",
-                    "apple_gold.png",
-                    "apple_silver.png",
-                    "AP_replenishment‌_UI2.png"
-                ]
-            }
+    "全局-体力不足": {
+        "action": {
+            "type": "StopTask"
         },
-        "inverse": true,
-        "timeout": 5000
+        "focus": {
+            "Node.Action.Succeeded": "体力不足，任务结束"
+        }
     }
 }
