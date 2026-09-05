@@ -3,7 +3,7 @@
     "自动补齐从者和羁绊礼装": {
       "type": "select",
       "label": "自动补齐从者和羁绊礼装",
-      "description": "原 Chaldea 编队确认后，重新进入配置页补齐空位，并可按子选项优化 Chaldea 未指定位置的已有从者或礼装；助战及 Chaldea 已指定内容不会被替换。",
+      "description": "原编队完成后，在 COST 上限内补齐从者和羁绊礼装。会扫描玩家仓库；助战及 Chaldea 已指定位置不改，未指定位置按子选项处理。",
       "default": "否",
       "cases": [
         {

@@ -15,6 +15,11 @@
     },
     "next": ["自动编队完成"]
   },
+  "羁绊补齐-用户提示": {
+    "focus": {
+      "Node.Recognition.Starting": "正在处理羁绊最大化编队"
+    }
+  },
   "羁绊补齐-打开配置": {
     "recognition": {
       "type": "TemplateMatch",

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import glob
+import html
 import json
 import os
 import re
@@ -144,6 +145,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             if self.config_marker is None:
                 return self._result_fail("bond_completion_resource_missing: battle/配置变更.png")
 
+            self._focus_user(
+                f"开始羁绊优化：优先{self.preferred_rarity}星，"
+                f"其他从者{'可调整' if self.modify_unspecified_servants else '保留'}，"
+                f"其他礼装{'可调整' if self.modify_unspecified_equips else '保留'}"
+            )
             mfaalog.info(
                 f"[羁绊补齐] 开始：bond_base={self.bond_base}，"
                 f"优先星级={self.preferred_rarity}，顺序={self.rarity_order}，"
@@ -248,6 +254,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 if equip_is_permanent_bond(equip or {})
             ]
             self.empty_equip_slots = empty_equip_slots
+            self._focus_user(
+                f"队伍分析完成：COST {self.used_cost}/{self.max_cost}，"
+                f"可处理从者{len(fillable)}位、礼装{len(empty_equip_slots)}位"
+            )
             mfaalog.info(
                 f"[羁绊补齐] 初始 COST={self.initial_used_cost}/{self.max_cost}；"
                 f"规划起始 COST={self.used_cost}/{self.max_cost}；"
@@ -295,6 +305,18 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             self.opened_edit = False
             self._confirm_formation_change_if_present()
             status = "bond_completion_no_change" if not (self.added_servants or self.added_equips) else "bond_completion_complete"
+            if status == "bond_completion_no_change":
+                self._focus_user(
+                    f"羁绊优化完成：当前没有可提升项，COST {self.used_cost}/{self.max_cost}",
+                    "green",
+                )
+            else:
+                self._focus_user(
+                    f"羁绊优化完成：{self.initial_score}→{final_score}，"
+                    f"调整从者{len(self.added_servants)}位、礼装{len(self.added_equips)}张，"
+                    f"COST {self.used_cost}/{self.max_cost}",
+                    "green",
+                )
             mfaalog.info(
                 f"[羁绊补齐] {status}: 新增从者={len(self.added_servants)}，"
                 f"新增礼装={len(self.added_equips)}"
@@ -840,6 +862,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         return hits, second_image
 
     def _scan_owned_servants(self, rarity, candidates):
+        self._focus_user(f"正在扫描{rarity}星从者，请稍候")
         if not self._run_pipeline("羁绊补齐-从者列表复位顶部"):
             return None
         mfaalog.info(f"[羁绊补齐] {rarity}星列表已回顶，先扫描首屏（未下滑）")
@@ -1079,6 +1102,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 f"[羁绊补齐] 槽位{slot + 1}已补 {chosen['name']}({chosen['id']})，"
                 f"COST={self.used_cost}/{self.max_cost}"
             )
+            self._focus_user(
+                f"已选择从者：{chosen['name']}，COST {self.used_cost}/{self.max_cost}"
+            )
         return current_servants
 
     # ---------- 礼装规划与选择 ----------
@@ -1203,6 +1229,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             return "available"
         if equip_id in self.unavailable_equips:
             return "not_found"
+        self._focus_user(f"正在确认礼装库存：{equip['name']}")
         if not self.equip_probe_slots:
             mfaalog.error(
                 f"[羁绊补齐] bond_completion_equip_preflight_failed: "
@@ -1245,6 +1272,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             if result == "failed":
                 return "failed"
             if result == "not_found":
+                self._focus_user(
+                    f"未找到礼装“{equip['name']}”，正在重新规划",
+                    "orange",
+                )
                 mfaalog.warning(
                     f"[羁绊补齐] 礼装不可用，触发联合重规划："
                     f"{equip['name']}({equip_id})"
@@ -1384,6 +1415,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 f"[羁绊补齐] 槽位{slot + 1}已补礼装 {equip['name']}({equip['id']})，"
                 f"COST={self.used_cost}/{self.max_cost}"
             )
+            self._focus_user(
+                f"已装备礼装：{equip['name']}，COST {self.used_cost}/{self.max_cost}"
+            )
         return True
 
     # ---------- 最终复核与安全退出 ----------
@@ -1444,12 +1478,33 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         match = self._match_template(self._shot(), self.config_marker)
         return match is not None and match[0] >= 0.80
 
+    def _focus_user(self, message, color=None):
+        """通过专用 DirectHit 节点输出少量用户可见的阶段信息。"""
+        context = getattr(self, "context", None)
+        if context is None:
+            return
+        safe_message = html.escape(str(message), quote=True)
+        if color:
+            safe_message = f'<span style="color: {color};">{safe_message}</span>'
+        try:
+            context.override_pipeline({
+                "羁绊补齐-用户提示": {
+                    "focus": {"Node.Recognition.Starting": safe_message}
+                }
+            })
+            context.run_task("羁绊补齐-用户提示")
+        except Exception as exc:
+            # 用户提示不得影响编队流程本身；异常仍保留在普通日志中供排查。
+            mfaalog.warning(f"[羁绊补齐] 用户提示输出失败: {exc}")
+
     def _abort_safe(self, reason):
         if getattr(self, "debug_preserve_failure", False):
+            self._focus_user("羁绊优化遇到错误，已保留现场", "red")
             mfaalog.error(
                 f"[羁绊补齐] {reason}；测试模式保留故障现场，不执行返回或取消操作"
             )
             return CustomAction.RunResult(success=False)
+        self._focus_user("羁绊优化未完成，正在恢复原编队", "orange")
         mfaalog.warning(f"[羁绊补齐] {reason}；尝试取消本阶段并保留第一阶段编队")
         if self._in_equip_select():
             self._leave_equip_select_new()
@@ -1461,12 +1516,14 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             self._run_pipeline("羁绊补齐-取消变更确认")
             self.opened_edit = False
             if self._wait_for(self._on_confirm_page, 6.0):
+                self._focus_user("羁绊优化已取消，原编队已恢复", "orange")
                 mfaalog.warning("[羁绊补齐] bond_completion_aborted_safe: 已恢复第一阶段编队")
                 return CustomAction.RunResult(success=True)
+        self._focus_user("羁绊优化失败，且无法确认原编队已恢复", "red")
         mfaalog.error("[羁绊补齐] bond_completion_restore_failed: 无法确认已恢复第一阶段编队")
         return CustomAction.RunResult(success=False)
 
-    @staticmethod
-    def _result_fail(message):
+    def _result_fail(self, message):
+        self._focus_user("无法开始羁绊优化，请查看错误日志", "red")
         mfaalog.error(f"[羁绊补齐] {message}")
         return CustomAction.RunResult(success=False)
