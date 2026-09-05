@@ -2,8 +2,8 @@
 """Chaldea 自动编队后的羁绊最大化补齐 Action。
 
 原自动编队 Action 仍负责严格还原 Chaldea 队伍；本模块只在其确认成功后重新进入
-配置页，向真实空位追加本地从者和常驻羁绊礼装。所有固定界面操作均调用专用的
-``羁绊补齐-*`` pipeline。
+配置页，向真实空位追加本地从者和常驻羁绊礼装，并按选项优化 Chaldea 未指定位置
+已有的对象。所有固定界面操作均调用专用的 ``羁绊补齐-*`` pipeline。
 """
 
 from __future__ import annotations
@@ -46,10 +46,12 @@ LIST_ROI = (70, 165, 1160, 445)
 # 真机 1280x720 编队页对 NarrowFigures 的稳定分数为 0.8111/0.8730，次高误匹配
 # 仅 0.3752/0.3491；因此编队卡复核使用 0.78。库存列表与礼装仍坚持 0.90。
 SERVANT_VERIFY_THRESHOLD = 0.78
+OTHER_SERVANT_VERIFY_MARGIN = 0.10
 # 真机装入“秘密任务”后的 team 模板稳定命中为 0.8970；列表命中仍为
 # 0.9623。另一次真机回填复核为 0.8365；编队礼装复核据此使用 0.82，
 # 仓库列表继续使用 0.90，避免扩大列表选卡的误匹配范围。
 EQUIP_VERIFY_THRESHOLD = 0.82
+LOCKED_EQUIP_VERIFY_THRESHOLD = 0.90
 LIST_MATCH_THRESHOLD = 0.90
 MAX_SCAN_SWIPES = 15
 MAX_EQUIP_SWIPES = 30
@@ -70,7 +72,9 @@ SERVANT_FEATURE_THRESHOLD = 0.88
 SERVANT_FEATURE_MARGIN = 0.12
 SLOT_STABILITY_SECONDS = 0.60
 EMPTY_EQUIP_STD_MAX = 35.0
-EMPTY_EQUIP_SATURATED_RATIO_MAX = 0.20
+# 真机空礼装槽受从者卡边缘、选中框与背景渐变影响，饱和像素比例可到 0.270；
+# 仍同时要求灰度标准差不超过 35，避免把正常礼装仅凭颜色偏淡判为空槽。
+EMPTY_EQUIP_SATURATED_RATIO_MAX = 0.30
 SUPPORT_TYPES = {"friend", "fixed", "npc"}
 SHORT_PARTY_CONFIRM_ROI = (650, 540, 350, 120)
 SHORT_PARTY_POLL_SECONDS = 5.0
@@ -90,6 +94,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         self.opened_edit = False
         self.added_servants = {}
         self.added_equips = {}
+        self.available_equips = set()
         self.unavailable_equips = set()
         self.owned_servants_by_rarity = {}
         try:
@@ -110,6 +115,15 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 self.preferred_rarity = int(attach.get("preferred_rarity", 5))
                 self.rarity_order = rarity_order(self.preferred_rarity)
                 self.bond_base = int(str(attach.get("bond_base", "1200")).strip())
+                self.modify_unspecified_servants = _truthy(
+                    attach.get("modify_unspecified_servants", True)
+                )
+                self.modify_unspecified_equips = _truthy(
+                    attach.get("modify_unspecified_equips", True)
+                )
+                self.debug_preserve_failure = _truthy(
+                    attach.get("debug_preserve_failure", False)
+                )
             except (TypeError, ValueError) as exc:
                 return self._result_fail(f"bond_completion_option_invalid: {exc}")
             if self.bond_base <= 0:
@@ -132,7 +146,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
 
             mfaalog.info(
                 f"[羁绊补齐] 开始：bond_base={self.bond_base}，"
-                f"优先星级={self.preferred_rarity}，顺序={self.rarity_order}"
+                f"优先星级={self.preferred_rarity}，顺序={self.rarity_order}，"
+                f"修改其他从者={self.modify_unspecified_servants}，"
+                f"修改其他礼装={self.modify_unspecified_equips}"
             )
             if not self._resolve_short_party_prompt():
                 return self._result_fail("bond_completion_slot_invalid: 人数不足弹窗确认后未回到编队页")
@@ -161,37 +177,82 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             support_slots = [i for i, item in enumerate(detected) if item["kind"] == "SUPPORT"]
             if len(support_slots) > 1:
                 return self._abort_safe("bond_completion_slot_invalid: 识别到多个助战槽")
-
-            # Chaldea 的空目标位才是补齐范围。原自动编队为兼容旧行为会保留这些
-            # 位置原有的从者（检测为 OTHER）；对本增量功能而言它们仍应被候选
-            # 替换，否则“配置少于 5 人”会被旧队伍残留误判为已经满员。
-            fillable = [
+            self.equip_probe_slots = [
                 i for i, item in enumerate(detected)
-                if self.expected[i]["kind"] == "EMPTY" and item["kind"] in {"EMPTY", "OTHER"}
+                if item["kind"] not in {"EMPTY", "SUPPORT"}
             ]
-            self.replaceable_slots = {
-                i for i in fillable if detected[i]["kind"] == "OTHER"
-            }
-            own_count = sum(item["kind"] == "LOCAL" for item in self.expected)
-            fillable = fillable[: max(0, 5 - own_count)]
+
+            # Chaldea 未指定位置上的残留从者不能简单丢出评分模型。先识别其身份：
+            # 允许修改时把对应槽位列为替换候选；禁止修改时把它锁定为固定成员。
+            image = self._shot()
+            other_slots = [
+                i for i, item in enumerate(detected)
+                if self.expected[i]["kind"] == "EMPTY" and item["kind"] == "OTHER"
+            ]
+            self.unspecified_servants_by_slot = self._identify_unspecified_servants(
+                image, other_slots
+            )
+            if self.unspecified_servants_by_slot is None:
+                return self._abort_safe(
+                    "bond_completion_slot_invalid: 无法识别 Chaldea 未指定位置的现有从者"
+                )
+            truly_empty_slots = [
+                i for i, item in enumerate(detected)
+                if self.expected[i]["kind"] == "EMPTY" and item["kind"] == "EMPTY"
+            ]
+            actual_own_count = (
+                sum(item["kind"] == "LOCAL" for item in self.expected)
+                + len(self.unspecified_servants_by_slot)
+            )
+            self.replaceable_slots = (
+                set(other_slots) if self.modify_unspecified_servants else set()
+            )
+            available_empty_count = max(0, 5 - actual_own_count)
+            fillable = sorted([
+                *self.replaceable_slots,
+                *truly_empty_slots[:available_empty_count],
+            ])
+            self.truly_empty_servant_slots = set(truly_empty_slots)
             cost = self._read_cost_consistent()
             if cost is None:
                 return self._abort_safe("bond_completion_cost_ocr_failed: 初始 COST 无法稳定识别")
             self.used_cost, self.max_cost = cost
+            self.initial_used_cost = self.used_cost
 
             current_servants = self._current_known_servants()
             image = self._shot()
-            fixed_equips, empty_equip_slots, occupied_unknown = self._classify_current_equips(
+            initial_fixed_equips, empty_equip_slots, occupied_unknown, equip_by_slot = self._classify_current_equips(
                 image, detected
             )
-            if fixed_equips is None:
+            if initial_fixed_equips is None:
                 return self._abort_safe("bond_completion_final_mismatch: Chaldea 保护礼装不匹配")
-            self.fixed_equips = fixed_equips
+            self.locked_unspecified_equips = {}
+            if not self.modify_unspecified_equips:
+                self._remember_locked_unspecified_equips(
+                    image, detected, empty_equip_slots, equip_by_slot
+                )
+            self.initial_score = team_bond_score(
+                current_servants, initial_fixed_equips, self.bond_base
+            )
+            if self.modify_unspecified_equips:
+                cleared = self._clear_unspecified_equips(
+                    detected, empty_equip_slots, occupied_unknown, equip_by_slot
+                )
+                if cleared is None:
+                    return self._abort_safe(
+                        "bond_completion_select_verify_failed: 未能清理可修改的其他位置礼装"
+                    )
+                empty_equip_slots, occupied_unknown, equip_by_slot = cleared
+            self.fixed_equips = [
+                equip for equip in equip_by_slot.values()
+                if equip_is_permanent_bond(equip or {})
+            ]
             self.empty_equip_slots = empty_equip_slots
-            self.initial_score = team_bond_score(current_servants, fixed_equips, self.bond_base)
             mfaalog.info(
-                f"[羁绊补齐] 初始 COST={self.used_cost}/{self.max_cost}；"
-                f"本地从者={own_count}，可补从者槽={','.join(str(i + 1) for i in fillable) or '无'}；"
+                f"[羁绊补齐] 初始 COST={self.initial_used_cost}/{self.max_cost}；"
+                f"规划起始 COST={self.used_cost}/{self.max_cost}；"
+                f"本地从者={actual_own_count}，可补/替换从者槽={','.join(str(i + 1) for i in fillable) or '无'}；"
+                f"锁定其他从者槽={','.join(str(i + 1) for i in other_slots if i not in self.replaceable_slots) or '无'}；"
                 f"空礼装槽={','.join(str(i + 1) for i in empty_equip_slots) or '无'}；"
                 f"未知占用礼装槽={','.join(str(i + 1) for i in occupied_unknown) or '无'}；"
                 f"基线羁绊={self.initial_score}"
@@ -315,6 +376,8 @@ class CompleteBondFormation(AutoFormationFromChaldea):
     def _servant_candidates(self, rarity):
         selected = {
             str(item["svt_id"]) for item in self.expected if item["kind"] == "LOCAL"
+        } | {
+            str(item["id"]) for item in self.unspecified_servants_by_slot.values()
         } | {str(item["id"]) for item in self.added_servants.values()}
         result = []
         for item in self.servant_database.values():
@@ -436,16 +499,78 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             servant = dict(servant)
             servant["slot"] = item["slot"]
             result.append(servant)
+        result.extend(
+            dict(item) for item in self.unspecified_servants_by_slot.values()
+        )
         result.extend(dict(item) for item in self.added_servants.values())
         return result
+
+    def _identify_unspecified_servants(self, image, slots):
+        """识别 Chaldea 未指定、但当前队伍仍占用的本地从者槽。"""
+        if not slots:
+            return {}
+        if image is None:
+            return None
+        excluded = {
+            str(item["svt_id"])
+            for item in self.expected
+            if item["kind"] == "LOCAL"
+        }
+        identified = {}
+        for slot in slots:
+            ranked = []
+            for servant in self.servant_database.values():
+                servant_id = str(servant.get("id") or "")
+                if not servant_id or servant_id in excluded:
+                    continue
+                templates = self._servant_templates(servant_id, for_list=False)
+                if not templates:
+                    continue
+                match = self._match_servant(image, templates, self._slot_roi(slot))
+                if match is not None:
+                    ranked.append((float(match[0]), servant_id, match[2], servant))
+            ranked.sort(key=lambda item: (-item[0], item[1]))
+            if not ranked:
+                mfaalog.error(f"[羁绊补齐] 槽位{slot + 1}没有可用的从者模板候选")
+                return None
+            best = ranked[0]
+            second_score = ranked[1][0] if len(ranked) > 1 else -1.0
+            mfaalog.info(
+                f"[羁绊补齐] 其他位置从者识别：槽位{slot + 1} "
+                f"{best[3]['name']}({best[1]}) score={best[0]:.4f}，"
+                f"second={second_score:.4f}，template={best[2]}"
+            )
+            if (
+                best[0] < SERVANT_VERIFY_THRESHOLD
+                or best[0] - second_score < OTHER_SERVANT_VERIFY_MARGIN
+            ):
+                mfaalog.error(
+                    f"[羁绊补齐] 槽位{slot + 1}其他位置从者识别不唯一："
+                    f"{best[0]:.4f}/{SERVANT_VERIFY_THRESHOLD:.2f}，"
+                    f"margin={best[0] - second_score:.4f}/"
+                    f"{OTHER_SERVANT_VERIFY_MARGIN:.2f}"
+                )
+                return None
+            servant = dict(best[3])
+            if not (servant.get("bond") or {}).get("tags"):
+                mfaalog.error(
+                    f"[羁绊补齐] 槽位{slot + 1}从者 {best[1]} 缺少羁绊特性"
+                )
+                return None
+            if self.modify_unspecified_servants and "cost" not in servant:
+                mfaalog.error(
+                    f"[羁绊补齐] 槽位{slot + 1}从者 {best[1]} 缺少替换所需 COST"
+                )
+                return None
+            servant["slot"] = slot
+            identified[slot] = servant
+            excluded.add(best[1])
+        return identified
 
     def _is_empty_equip_slot(self, image, slot):
         if image is None:
             return False
-        x, y, width, height = self._scale_roi(EQUIP_TEAM_ROIS[slot])
-        # 只取礼装卡片上部，避免 COST/HP 文本影响灰度统计。
-        height = max(1, int(height * 0.67))
-        region = image[y:y + height, x:x + width]
+        region = self._equip_slot_snapshot(image, slot)
         if region.size == 0:
             return False
         gray_std = float(cv2.cvtColor(region, cv2.COLOR_BGR2GRAY).std())
@@ -458,6 +583,35 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         )
         return empty
 
+    def _equip_slot_snapshot(self, image, slot):
+        if image is None:
+            return np.empty((0, 0, 3), dtype=np.uint8)
+        x, y, width, height = self._scale_roi(EQUIP_TEAM_ROIS[slot])
+        # 只取礼装卡片上部，避免 COST/HP 文本和从者替换后的队伍数值变化。
+        height = max(1, int(height * 0.67))
+        return image[y:y + height, x:x + width].copy()
+
+    def _remember_locked_unspecified_equips(
+        self, image, detected, empty_slots, equip_by_slot
+    ):
+        empty = set(empty_slots)
+        for slot, state in enumerate(detected):
+            if (
+                state["kind"] in {"EMPTY", "SUPPORT"}
+                or self.expected[slot].get("equip_id")
+                or slot in empty
+            ):
+                continue
+            self.locked_unspecified_equips[slot] = {
+                "equip": equip_by_slot.get(slot),
+                "snapshot": self._equip_slot_snapshot(image, slot),
+            }
+        if self.locked_unspecified_equips:
+            mfaalog.info(
+                "[羁绊补齐] 按选项锁定其他位置礼装槽="
+                + ",".join(str(slot + 1) for slot in self.locked_unspecified_equips)
+            )
+
     def _match_equip_id(self, image, equip_id, slot):
         data = self.equip_team_templates.get(int(equip_id))
         if data is None:
@@ -466,7 +620,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         return self._match_template(image, template, EQUIP_TEAM_ROIS[slot])
 
     def _classify_current_equips(self, image, detected):
-        fixed, empty, unknown = [], [], []
+        fixed, empty, unknown, equip_by_slot = [], [], [], {}
         for slot, state in enumerate(detected):
             if state["kind"] in {"EMPTY", "SUPPORT"}:
                 continue
@@ -479,8 +633,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                         f"[羁绊补齐] 保护礼装复核失败：槽位{slot + 1} ceId={protected_id} "
                         f"score={score:.4f}/{EQUIP_VERIFY_THRESHOLD:.2f}"
                     )
-                    return None, [], []
+                    return None, [], [], {}
                 equip = self.equip_database.get(str(protected_id))
+                if equip is not None:
+                    equip_by_slot[slot] = equip
                 if equip_is_permanent_bond(equip or {}):
                     fixed.append(equip)
                 continue
@@ -491,6 +647,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                     best = (match[0], equip)
             if best is not None and best[0] >= EQUIP_VERIFY_THRESHOLD:
                 fixed.append(best[1])
+                equip_by_slot[slot] = best[1]
                 mfaalog.info(
                     f"[羁绊补齐] 槽位{slot + 1}识别已有羁绊礼装 "
                     f"{best[1]['name']}({best[1]['id']}) score={best[0]:.4f}"
@@ -499,7 +656,38 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 empty.append(slot)
             else:
                 unknown.append(slot)
-        return fixed, empty, unknown
+        return fixed, empty, unknown, equip_by_slot
+
+    def _clear_unspecified_equips(
+        self, detected, empty_slots, unknown_slots, equip_by_slot
+    ):
+        """在首次规划前卸下 Chaldea 未指定且当前已占用的礼装。"""
+        empty = set(empty_slots)
+        unknown = set(unknown_slots)
+        by_slot = dict(equip_by_slot)
+        modifiable = [
+            slot for slot, state in enumerate(detected)
+            if state["kind"] not in {"EMPTY", "SUPPORT"}
+            and not self.expected[slot].get("equip_id")
+            and slot not in empty
+        ]
+        for slot in modifiable:
+            old = by_slot.get(slot)
+            label = (
+                f"{old['name']}({old['id']})" if old is not None
+                else "未识别的现有礼装"
+            )
+            previous_cost = self.used_cost
+            if not self._unequip_slot(slot):
+                return None
+            by_slot.pop(slot, None)
+            unknown.discard(slot)
+            empty.add(slot)
+            mfaalog.info(
+                f"[羁绊补齐] 已按选项卸下其他位置礼装：槽位{slot + 1} {label}，"
+                f"COST {previous_cost}->{self.used_cost}"
+            )
+        return sorted(empty), sorted(unknown), by_slot
 
     # ---------- 从者库存扫描与选择 ----------
 
@@ -731,9 +919,32 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         from formation_action import SLOT_ROIS
         return SLOT_ROIS[slot]
 
+    def _preflight_servant_plan_equips(self, equips, slot, rarity):
+        """从者落地前验证其礼装依赖，并恢复到同星级从者列表。"""
+        if any(str(equip["id"]) in self.unavailable_equips for equip in equips):
+            return "replan"
+        pending = [
+            equip for equip in equips
+            if str(equip["id"]) not in self.available_equips
+        ]
+        if not pending:
+            return "available"
+        if not self._leave_servant_select():
+            return "failed"
+        result = self._ensure_plan_equips_available(pending)
+        if result == "failed":
+            return "failed"
+        if not self._enter_servant_select_new(slot):
+            return "failed"
+        if not self._filter_servant_rarity(rarity):
+            return "failed"
+        return result
+
     def _fill_servants(self, fillable, current_servants):
         self.servant_list_prepared = False
         for slot in fillable:
+            replacing_existing = slot in self.replaceable_slots
+            old_servant = self.unspecified_servants_by_slot.get(slot)
             if not self._enter_servant_select_new(slot):
                 return None
             chosen = None
@@ -761,35 +972,81 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                     continue
                 for item in owned:
                     item["slot"] = slot
-                replacing_existing = slot in self.replaceable_slots
-                rank_budget = self.max_cost if replacing_existing else self.max_cost - self.used_cost
-                ranked = rank_servants(
-                    owned,
-                    current_servants,
-                    self.fixed_equips,
-                    [item for item in self.bond_equips if str(item["id"]) not in self.unavailable_equips],
-                    len(self.empty_equip_slots) + 1,
-                    rank_budget,
-                    self.bond_base,
+                ranking_servants = [
+                    item for item in current_servants
+                    if int(item.get("slot", -1)) != slot
+                ]
+                released_cost = (
+                    int(old_servant.get("cost", 0))
+                    if replacing_existing and old_servant is not None else 0
                 )
-                for row in ranked:
-                    candidate = row["servant"]
-                    if not replacing_existing and int(candidate["cost"]) + self.used_cost > self.max_cost:
-                        continue
-                    mfaalog.info(
-                        f"[羁绊补齐] 候选 {candidate['name']}({candidate['id']})："
-                        f"COST={candidate['cost']}，预估羁绊增量={row['gain']}，"
-                        f"匹配计划礼装={row['matched_equips']}"
+                rank_budget = self.max_cost - self.used_cost + released_cost
+                future_equip_slots = len(self.empty_equip_slots)
+                if (
+                    slot in self.truly_empty_servant_slots
+                    and slot not in self.empty_equip_slots
+                ):
+                    future_equip_slots += 1
+                while True:
+                    ranked = rank_servants(
+                        owned,
+                        ranking_servants,
+                        self.fixed_equips,
+                        [
+                            item for item in self.bond_equips
+                            if str(item["id"]) not in self.unavailable_equips
+                        ],
+                        future_equip_slots,
+                        rank_budget,
+                        self.bond_base,
                     )
-                    if self._select_scanned_servant(candidate, candidates):
-                        chosen = dict(candidate)
-                        break
+                    current_score = team_bond_score(
+                        current_servants, self.fixed_equips, self.bond_base
+                    )
+                    should_replan = False
+                    for row in ranked:
+                        candidate = row["servant"]
+                        if (
+                            self.used_cost - released_cost + int(candidate["cost"])
+                            > self.max_cost
+                        ):
+                            continue
+                        net_gain = row["plan"].score - current_score
+                        if replacing_existing and net_gain <= 0:
+                            mfaalog.info(
+                                f"[羁绊补齐] 保留槽位{slot + 1}原从者："
+                                f"候选 {candidate['name']}({candidate['id']}) "
+                                f"预估净羁绊增量={net_gain}"
+                            )
+                            continue
+                        mfaalog.info(
+                            f"[羁绊补齐] 候选 {candidate['name']}({candidate['id']})："
+                            f"COST={candidate['cost']}，释放旧COST={released_cost}，"
+                            f"预估净羁绊增量={net_gain}，"
+                            f"匹配计划礼装={row['matched_equips']}"
+                        )
+                        availability = self._preflight_servant_plan_equips(
+                            row["plan"].equips, slot, rarity
+                        )
+                        if availability == "failed":
+                            return None
+                        if availability == "replan":
+                            should_replan = True
+                            break
+                        if self._select_scanned_servant(candidate, candidates):
+                            chosen = dict(candidate)
+                            break
+                    if should_replan:
+                        continue
+                    break
                 if chosen is not None:
                     break
             if chosen is None:
                 if not self._leave_servant_select():
                     return None
                 mfaalog.warning(f"[羁绊补齐] bond_completion_partial: 槽位{slot + 1}无可用从者")
+                if replacing_existing:
+                    continue
                 break
             if not self._verify_servant_slot(slot, chosen):
                 return None
@@ -797,7 +1054,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             cost = self._read_cost_consistent()
             if cost is None or cost[0] > cost[1]:
                 return None
-            expected_delta = int(chosen["cost"])
+            expected_delta = int(chosen["cost"]) - (
+                int(old_servant.get("cost", 0)) if old_servant is not None else 0
+            )
             actual_delta = cost[0] - previous_used_cost
             if actual_delta != expected_delta:
                 mfaalog.warning(
@@ -811,6 +1070,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             # 这样连续补多个从者时，第二个从者的排序也能看到第一个新增空位。
             if self._is_empty_equip_slot(self._shot(), slot):
                 self.empty_equip_slots = sorted({*self.empty_equip_slots, slot})
+            current_servants = [
+                item for item in current_servants
+                if int(item.get("slot", -1)) != slot
+            ]
             current_servants.append(chosen)
             mfaalog.info(
                 f"[羁绊补齐] 槽位{slot + 1}已补 {chosen['name']}({chosen['id']})，"
@@ -895,6 +1158,100 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         delta = max(abs(first[1][0] - second[1][0]), abs(first[1][1] - second[1][1]))
         return second if delta <= MATCH_CENTER_DELTA else None
 
+    def _scan_equip_owned(self, equip):
+        """完整扫描筛选后的礼装列表，只判断库存，不点击礼装。"""
+        if not self._run_pipeline("羁绊补齐-礼装列表复位顶部"):
+            mfaalog.error(
+                f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                f"列表回顶失败 {equip['name']}({equip['id']})"
+            )
+            return "failed"
+        best_score = 0.0
+        best_round = 0
+        for round_index in range(MAX_EQUIP_SWIPES + 1):
+            match = self._stable_equip_match(equip)
+            if match is not None and match[0] > best_score:
+                best_score = float(match[0])
+                best_round = round_index + 1
+            if match is not None and match[0] >= LIST_MATCH_THRESHOLD:
+                mfaalog.info(
+                    f"[羁绊补齐] 礼装库存预检存在：{equip['name']}({equip['id']}) "
+                    f"score={match[0]:.4f}，轮次={round_index + 1}"
+                )
+                return "available"
+            if (
+                round_index < MAX_EQUIP_SWIPES
+                and not self._run_pipeline("羁绊补齐-礼装列表下滑查找")
+            ):
+                mfaalog.error(
+                    f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                    f"下滑扫描失败 {equip['name']}({equip['id']})，"
+                    f"轮次={round_index + 1}"
+                )
+                return "failed"
+        mfaalog.info(
+            f"[羁绊补齐] 礼装库存预检不存在：{equip['name']}({equip['id']})，"
+            f"完整轮次={MAX_EQUIP_SWIPES + 1}，最高分={best_score:.4f}，"
+            f"最高分轮次={best_round or '无'}"
+        )
+        return "not_found"
+
+    def _preflight_equip(self, equip):
+        """使用任一本地从者礼装位预检一张礼装，返回后不改变编队。"""
+        equip_id = str(equip["id"])
+        if equip_id in self.available_equips:
+            return "available"
+        if equip_id in self.unavailable_equips:
+            return "not_found"
+        if not self.equip_probe_slots:
+            mfaalog.error(
+                f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                f"无本地从者礼装位可预检 {equip['name']}({equip_id})"
+            )
+            return "failed"
+        probe_slot = self.equip_probe_slots[0]
+        if not self._enter_equip_select_new(probe_slot):
+            mfaalog.error(
+                f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                f"未进入礼装列表 {equip['name']}({equip_id})"
+            )
+            return "failed"
+        if not self._filter_equip(equip):
+            mfaalog.error(
+                f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                f"筛选失败 {equip['name']}({equip_id})"
+            )
+            return "failed"
+        result = self._scan_equip_owned(equip)
+        if not self._leave_equip_select_new():
+            mfaalog.error(
+                f"[羁绊补齐] bond_completion_equip_preflight_failed: "
+                f"预检后未返回编队页 {equip['name']}({equip_id})"
+            )
+            return "failed"
+        if result == "available":
+            self.available_equips.add(equip_id)
+        elif result == "not_found":
+            self.unavailable_equips.add(equip_id)
+        return result
+
+    def _ensure_plan_equips_available(self, equips):
+        """确认方案依赖礼装；新缺失项要求调用者重新计算整个当前方案。"""
+        for equip in equips:
+            equip_id = str(equip["id"])
+            if equip_id in self.available_equips:
+                continue
+            result = self._preflight_equip(equip)
+            if result == "failed":
+                return "failed"
+            if result == "not_found":
+                mfaalog.warning(
+                    f"[羁绊补齐] 礼装不可用，触发联合重规划："
+                    f"{equip['name']}({equip_id})"
+                )
+                return "replan"
+        return "available"
+
     def _find_select_equip(self, equip):
         if not self._run_pipeline("羁绊补齐-礼装列表复位顶部"):
             return "failed"
@@ -926,10 +1283,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             return "failed"
         return result
 
-    def _unequip_added_equip(self, slot):
-        """只卸下本 Action 新增的礼装，并以 UI COST/空槽复核结果。"""
-        equip = self.added_equips.get(slot)
-        if equip is None or not self._enter_equip_select_new(slot):
+    def _unequip_slot(self, slot):
+        """卸下指定本地槽位礼装，并以 UI COST 与空槽状态复核。"""
+        if not self._enter_equip_select_new(slot):
             return False
         if not self._run_pipeline("羁绊补齐-卸下当前礼装"):
             return False
@@ -941,6 +1297,13 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         if cost is None:
             return False
         self.used_cost, self.max_cost = cost
+        return True
+
+    def _unequip_added_equip(self, slot):
+        """只回退本 Action 新增的礼装。"""
+        equip = self.added_equips.get(slot)
+        if equip is None or not self._unequip_slot(slot):
+            return False
         self.added_equips.pop(slot, None)
         self.empty_equip_slots = sorted({*self.empty_equip_slots, slot})
         mfaalog.warning(
@@ -969,6 +1332,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             )
             if not plan.equips:
                 break
+            availability = self._ensure_plan_equips_available(plan.equips)
+            if availability == "failed":
+                return False
+            if availability == "replan":
+                continue
             equip = dict(plan.equips[0])
             slot = slots[0]
             if self.used_cost + int(equip["cost"]) > self.max_cost:
@@ -976,11 +1344,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 continue
             result = self._select_equip(slot, equip)
             if result == "not_found":
-                self.unavailable_equips.add(str(equip["id"]))
-                mfaalog.warning(
-                    f"[羁绊补齐] bond_completion_partial: 仓库没有 {equip['name']}({equip['id']})，重新规划"
+                mfaalog.error(
+                    f"[羁绊补齐] bond_completion_select_verify_failed: "
+                    f"预检存在但装备阶段未找到 {equip['name']}({equip['id']})"
                 )
-                continue
+                return False
             if result != "selected":
                 return False
             match = self._match_equip_id(self._shot(), equip["id"], slot)
@@ -1038,6 +1406,29 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             match = self._match_servant(image, templates, self._slot_roi(slot))
             if match is None or match[0] < SERVANT_VERIFY_THRESHOLD:
                 return False
+        for slot, servant in self.unspecified_servants_by_slot.items():
+            if slot in self.added_servants:
+                continue
+            templates = self._servant_templates(servant["id"], for_list=False)
+            match = self._match_servant(image, templates, self._slot_roi(slot))
+            if match is None or match[0] < SERVANT_VERIFY_THRESHOLD:
+                return False
+        for slot, locked in self.locked_unspecified_equips.items():
+            before = locked["snapshot"]
+            current = self._equip_slot_snapshot(image, slot)
+            if before.size == 0 or current.shape != before.shape:
+                return False
+            before_gray = cv2.cvtColor(before, cv2.COLOR_BGR2GRAY)
+            current_gray = cv2.cvtColor(current, cv2.COLOR_BGR2GRAY)
+            score = float(cv2.matchTemplate(
+                current_gray, before_gray, cv2.TM_CCOEFF_NORMED
+            )[0, 0])
+            mfaalog.info(
+                f"[羁绊补齐] 锁定其他位置礼装复核：槽位{slot + 1} "
+                f"score={score:.4f}/{LOCKED_EQUIP_VERIFY_THRESHOLD:.2f}"
+            )
+            if not np.isfinite(score) or score < LOCKED_EQUIP_VERIFY_THRESHOLD:
+                return False
         for item in self.expected:
             if item["kind"] == "LOCAL" and item.get("equip_id"):
                 match = self._match_equip_id(image, item["equip_id"], item["slot"])
@@ -1054,6 +1445,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         return match is not None and match[0] >= 0.80
 
     def _abort_safe(self, reason):
+        if getattr(self, "debug_preserve_failure", False):
+            mfaalog.error(
+                f"[羁绊补齐] {reason}；测试模式保留故障现场，不执行返回或取消操作"
+            )
+            return CustomAction.RunResult(success=False)
         mfaalog.warning(f"[羁绊补齐] {reason}；尝试取消本阶段并保留第一阶段编队")
         if self._in_equip_select():
             self._leave_equip_select_new()

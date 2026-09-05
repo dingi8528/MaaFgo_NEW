@@ -8,6 +8,9 @@
       "bond_completion_enabled": false,
       "preferred_rarity": 5,
       "bond_base": "1200",
+      "modify_unspecified_servants": true,
+      "modify_unspecified_equips": true,
+      "debug_preserve_failure": false,
       "chaldea_import_source": ""
     },
     "next": ["自动编队完成"]
@@ -17,7 +20,7 @@
       "type": "TemplateMatch",
       "param": {"template": "battle/配置变更.png", "threshold": 0.8}
     },
-    "action": {"type": "Click"},
+    "action": {"type": "Click", "param": {"target": [222, 678, 1, 1]}},
     "post_delay": 1000
   },
   "羁绊补齐-取消配置": {
@@ -178,11 +181,11 @@
     "next": ["羁绊补齐-礼装筛点决定"]
   },
   "羁绊补齐-礼装筛找满破": {
-    "max_hit": 8,
+    "max_hit": 128,
     "next": ["羁绊补齐-礼装筛点满破", "[JumpBack]羁绊补齐-礼装筛上滑找满破"]
   },
   "羁绊补齐-礼装筛上滑找满破": {
-    "max_hit": 8,
+    "max_hit": 128,
     "action": {
       "type": "Swipe",
       "param": {"begin": [600, 560, 1, 1], "end": [[600, 200, 1, 1]], "duration": [400]}
@@ -261,6 +264,7 @@
     },
     "action": {"type": "Click"},
     "post_delay": 500,
+    "timeout": 6000,
     "next": ["羁绊补齐-确认卸下礼装"]
   },
   "羁绊补齐-确认卸下礼装": {
@@ -273,6 +277,7 @@
       }
     },
     "action": {"type": "Click"},
-    "post_delay": 1000
+    "post_delay": 1000,
+    "timeout": 6000
   }
 }

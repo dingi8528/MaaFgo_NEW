@@ -58,9 +58,10 @@ EQUIP_TEAM_ROIS = (
 # 真机编队验证的最低有效命中约为 0.649；取 0.62 以降低误匹配，同时保留
 # 资源加载、抗锯齿和不同灵基图带来的合理余量。
 FACE_THRESHOLD = 0.62
-# 编队礼装资源与编队头像区域一一对应，直接用原始模板复核。阈值保留少量
-# 抗锯齿/加载余量，实际命中分数会输出到日志中供继续调优。
-EQUIP_TEAM_THRESHOLD = 0.85
+# 编队礼装资源与编队头像区域一一对应，直接用原始模板复核。真机装入
+# “来自NFF的爱”后仓库列表稳定命中 0.9430，编队页连续复核为 0.8297；
+# team 阈值使用 0.82，仓库列表仍保持 0.90，避免扩大选卡误匹配范围。
+EQUIP_TEAM_THRESHOLD = 0.82
 EQUIP_LIST_THRESHOLD = 0.90
 SUPPORT_THRESHOLD = 0.75
 SWAP_DRAG_DURATION = 1200  # ms；长按并拖至目标槽中心
@@ -506,6 +507,12 @@ class AutoFormationFromChaldea(CustomAction):
         self.edit_marker = self._load_named_template("battle/编队决定.png")
         if self.edit_marker is None:
             raise RuntimeError("resource_missing: battle/编队决定.png")
+        # 确认页的“开始任务”和编辑页的“编队决定”外观非常接近，单靠
+        # edit_marker 会把确认页误判为编辑页，最终在人数不足时直接开始任务。
+        # 用确认页专有的“配置变更”按钮先行定界。
+        self.config_marker = self._load_named_template("battle/配置变更.png")
+        if self.config_marker is None:
+            raise RuntimeError("resource_missing: battle/配置变更.png")
         self.formation_confirm_marker = self._load_named_template("决定.png")
         self.equip_confirm_marker = self._load_named_template("EquipFaces/礼装决定.png")
         if self.equip_confirm_marker is None:
@@ -556,6 +563,9 @@ class AutoFormationFromChaldea(CustomAction):
 
     def _in_formation_edit(self):
         image = self._shot()
+        confirm_page = self._match_template(image, self.config_marker)
+        if confirm_page is not None and confirm_page[0] >= 0.80:
+            return False
         result = self._match_template(image, self.edit_marker)
         return result is not None and result[0] >= 0.75
 

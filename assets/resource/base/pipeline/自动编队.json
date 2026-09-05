@@ -29,7 +29,8 @@
             }
         },
         "action": {
-            "type": "Click"
+            "type": "Click",
+            "param": {"target": [839, 601, 1, 1]}
         },
         "post_delay": 1000
     },
@@ -157,7 +158,8 @@
             }
         },
         "action": {
-            "type": "Click"
+            "type": "Click",
+            "param": {"target": [222, 678, 1, 1]}
         },
         "post_delay": 1000
     },
