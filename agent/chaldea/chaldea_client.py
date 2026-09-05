@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 CHALDEA_API = "https://api.chaldea.center/api/v1"
 
 
+def _vote_count(team: dict, direction: str) -> int:
+    """兼容 votes、up/down 及 upvotes/downvotes 三种投票字段。"""
+    keys = (direction, f"{direction}votes")
+    votes = team.get("votes")
+    if isinstance(votes, dict):
+        for key in keys:
+            if votes.get(key) is not None:
+                return votes[key] or 0
+    for key in keys:
+        if team.get(key) is not None:
+            return team[key] or 0
+    return 0
+
+
 def _normalize_team(team: dict) -> dict:
     """把新版 Chaldea API 字段归一成工程原先使用的格式。"""
     if not isinstance(team, dict):
@@ -30,8 +44,8 @@ def _normalize_team(team: dict) -> dict:
         normalized["questId"] = normalized["quest_id"]
     if "votes" not in normalized:
         normalized["votes"] = {
-            "up": normalized.get("up", 0) or 0,
-            "down": normalized.get("down", 0) or 0,
+            "up": _vote_count(normalized, "up"),
+            "down": _vote_count(normalized, "down"),
         }
     return normalized
 
@@ -95,11 +109,7 @@ def select_best_team(teams: List[dict]) -> Optional[dict]:
         return None
 
     def vote_score(t: dict) -> int:
-        votes = t.get("votes", {})
-        return (
-            votes.get("up", t.get("up", 0))
-            - votes.get("down", t.get("down", 0))
-        )
+        return _vote_count(t, "up") - _vote_count(t, "down")
 
     return max(teams, key=vote_score)
 
