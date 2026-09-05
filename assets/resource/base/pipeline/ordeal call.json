@@ -183,6 +183,19 @@
             "任务开始-空节点"
         ]
     },
+    "任务开始": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "ordealcall/任务开始.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click"
+        }
+    },
     "任务开始-空节点": {
         "next": [
             "任务开始",
@@ -1066,7 +1079,7 @@
         },
         "post_wait_freezes": 2000,
         "next": [
-            "蛇龙的恶作剧-2"
+            "龙蛇-1-5"
         ]
     },
     "蛇龙的恶作剧-2": {
@@ -1074,10 +1087,10 @@
             "type": "Click",
             "param": {
                 "target": [
-                    636,
-                    659,
-                    1,
-                    0
+                    625,
+                    233,
+                    16,
+                    13
                 ]
             }
         },
@@ -1146,6 +1159,22 @@
             "任务开始-空节点"
         ]
     },
+    "风暴罐副本-体力不足": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "grand/grand_ap_insufficient‌.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click"
+        },
+        "next": [
+            "全局-战前吃体力"
+        ]
+    },
     "高贵的海盗": {
         "next": [
             "高贵的海盗-1"
@@ -1201,33 +1230,22 @@
             "任务开始-空节点"
         ]
     },
-    "任务开始": {
-        "recognition": {
-            "type": "TemplateMatch",
+    "龙蛇-1-5": {
+        "action": {
+            "type": "LongPress",
             "param": {
-                "template": [
-                    "ordealcall/任务开始.png"
-                ]
+                "target": [
+                    1178,
+                    455,
+                    17,
+                    19
+                ],
+                "duration": 200
             }
         },
-        "action": {
-            "type": "Click"
-        }
-    },
-    "风暴罐副本-体力不足": {
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": [
-                    "grand/grand_ap_insufficient‌.png"
-                ]
-            }
-        },
-        "action": {
-            "type": "Click"
-        },
+        "post_wait_freezes": 1000,
         "next": [
-            "全局-战前吃体力"
+            "蛇龙的恶作剧-2"
         ]
     }
 }
