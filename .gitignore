@@ -483,3 +483,6 @@ tools/gen_servant_data.py
 tools/gen_servant_up_options.py
 tools/copy_servant_up_templates.py
 
+
+# 本地礼装图标 Skill（不提交）
+skills/fgo-equip-icon-pipeline/
