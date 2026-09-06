@@ -93,6 +93,7 @@
     "tasks/整理礼物盒.json",
     "tasks/强化从者.json",
     "tasks/Chaldea自动编队.json",
+    "tasks/当前编队羁绊补齐.json",
     "tasks/构建个人从者礼装库.json",
     "options/选择队伍配置.json",
     "options/战斗方式.json",
@@ -181,6 +182,7 @@
     "options/原生自动战斗助战方式.json",
     "options/Chaldea导入手动输入.json",
     "options/Chaldea羁绊补齐.json",
+    "options/当前编队羁绊补齐.json",
     "options/构建个人从者礼装库.json"
   ],
   "agent": {
