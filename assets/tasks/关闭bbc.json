@@ -1,0 +1,13 @@
+{
+    "task": [
+        {
+            "name": "关闭bbc",
+            "label": "⏹️ 关闭bbc",
+            "description": "强制停止正在运行的 BBC（BBchannel）进程；BBC 未运行时也可安全执行。",
+            "entry": "关闭bbc",
+            "group": [
+                "基础流程"
+            ]
+        }
+    ]
+}
