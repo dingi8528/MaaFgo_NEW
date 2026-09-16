@@ -1,4 +1,89 @@
 {
+    "编队身份-会话": {
+        "doc": "仅由原生入口在任务 Context 中写入会话令牌，不保存队伍结果。",
+        "attach": {
+            "session_id": ""
+        }
+    },
+    "编队身份-采集": {
+        "doc": "只读最终编队快照。个别身份未知可继续，页面/截图失败使旧结果失效并停止；不继承 Global_Null 错误恢复。标定记录不足时不接受确定身份。",
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "capture_initial_formation"
+            }
+        },
+        "attach": {
+            "calibration": {
+                "calibration_id": "cal-20260916-class",
+                "verified": true,
+                "template_family": "NarrowFigures",
+                "identity_threshold": 0.8,
+                "identity_margin": 0.15,
+                "class_roi": [0, 0, 72, 50],
+                "class_threshold": 0.8,
+                "class_margin": 0.3,
+                "class_templates": {
+                    "saber": ["battle/职阶/Saber_Golden.png", "battle/职阶/Saber_Silver.png", "battle/职阶/Saber_Bronze.png", "battle/职阶/Saber_Grand.png"],
+                    "archer": ["battle/职阶/Archer_Golden.png", "battle/职阶/Archer_Silver.png", "battle/职阶/Archer_Bronze.png"],
+                    "lancer": ["battle/职阶/Lancer_Golden.png", "battle/职阶/Lancer_Silver.png", "battle/职阶/Lancer_Bronze.png", "battle/职阶/Lancer_Grand.png"],
+                    "rider": ["battle/职阶/Rider_Golden.png", "battle/职阶/Rider_Silver.png", "battle/职阶/Rider_Bronze.png", "battle/职阶/Rider_Grand.png"],
+                    "caster": ["battle/职阶/Caster_Golden.png", "battle/职阶/Caster_Silver.png", "battle/职阶/Caster_Bronze.png"],
+                    "assassin": ["battle/职阶/Assassin_Golden.png", "battle/职阶/Assassin_Silver.png", "battle/职阶/Assassin_Bronze.png"],
+                    "berserker": ["battle/职阶/Berserker_Golden.png", "battle/职阶/Berserker_Silver.png", "battle/职阶/Berserker_Bronze.png", "battle/职阶/Berserker_Grand.png"],
+                    "shielder": ["battle/职阶/Shielder_Golden.png"],
+                    "ruler": ["battle/职阶/Ruler_Golden.png"],
+                    "avenger": ["battle/职阶/Avenger_Golden.png", "battle/职阶/Avenger_Silver.png", "battle/职阶/Avenger_Black.png", "battle/职阶/Avenger_Grand.png"],
+                    "alterEgo": ["battle/职阶/AlterEgo_Golden.png", "battle/职阶/AlterEgo_Silver.png"],
+                    "foreigner": ["battle/职阶/Foreigner_Golden.png"],
+                    "pretender": ["battle/职阶/Pretender_Golden.png", "battle/职阶/Pretender_Grand.png"],
+                    "moonCancer": ["battle/职阶/MoonCancer_Golden.png", "battle/职阶/MoonCancer_Grand.png"],
+                    "beast": ["battle/职阶/Beast_Golden.png"],
+                    "unBeast": ["battle/职阶/UnBeast_Golden.png", "battle/职阶/UnBeast_Grand.png"]
+                },
+                "class_groups": {
+                    "saber": ["saber"],
+                    "archer": ["archer"],
+                    "lancer": ["lancer"],
+                    "rider": ["rider"],
+                    "caster": ["caster"],
+                    "assassin": ["assassin"],
+                    "berserker": ["berserker"],
+                    "shielder": ["shielder"],
+                    "ruler": ["ruler"],
+                    "avenger": ["avenger"],
+                    "alterEgo": ["alterEgo"],
+                    "foreigner": ["foreigner"],
+                    "pretender": ["pretender"],
+                    "moonCancer": ["moonCancer"],
+                    "beast": ["beast"],
+                    "unBeast": ["unBeast"]
+                }
+            }
+        },
+        "on_error": [],
+        "next": [
+            "进本-实际点击队伍确认"
+        ]
+    },
+    "编队身份-采样": {
+        "doc": "从 next 获取框架新截图；不把当前节点作为入口直接跳过 recognition。单帧采集：已验证标定时职阶限定匹配为秒级，回退全库约 28s，timeout 放宽到 90s。",
+        "next": [
+            "编队身份-第1帧"
+        ],
+        "timeout": 90000,
+        "on_error": []
+    },
+    "编队身份-第1帧": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "formation_identity_frame"
+            }
+        },
+        "timeout": 60000,
+        "on_error": []
+    },
     "执行自动编队": {
         "doc": "战斗流程的自动编队入口。显式使用空 on_error，确保自动编队失败时任务保持失败并停止，不被全局 Global_Null 恢复链改写为成功。",
         "action": {
