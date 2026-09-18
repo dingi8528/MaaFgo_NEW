@@ -1,0 +1,13 @@
+{
+  "task": [
+    {
+      "name": "BBC 配置转 Chaldea 本地队伍",
+      "label": "🔄 BBC 配置转 Chaldea 本地队伍",
+      "description": "读取 BBchannel/settings 中的队伍配置，生成 config/Battle 中可供原生自动战斗和 Chaldea 自动编队读取的本地 JSON。",
+      "doc": "docs/BBC配置转Chaldea本地队伍.md",
+      "entry": "BBC配置转Chaldea本地队伍",
+      "option": ["BBC转换来源配置"],
+      "group": ["战斗相关"]
+    }
+  ]
+}

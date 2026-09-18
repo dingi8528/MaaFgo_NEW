@@ -156,7 +156,10 @@ class TeamFetchError(RuntimeError):
 def _build_plan_from_share(share: dict) -> BattlePlan:
     """把 BattleShareData actions 转成 BattlePlan。"""
     actions = share.get("actions")
-    mystic_code_id = (share.get("mysticCode") or {}).get("id")
+    team = share.get("team") or {}
+    mystic_code_id = (team.get("mysticCode") or {}).get("mysticCodeId")
+    if mystic_code_id is None:
+        mystic_code_id = (share.get("mysticCode") or {}).get("id")
     delegate = share.get("delegate")
     mfaalog.info(f"[auto_battle] 构建 BattlePlan: actions={len(actions) if actions else 0}条 mysticCode={mystic_code_id} delegate={'有' if delegate else '无'}")
     plan = convert_chaldea_actions_to_battle_plan(

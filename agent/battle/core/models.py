@@ -188,6 +188,7 @@ class TurnPlan:
     order_change: Optional[OrderChangeAction] = None
     np_order: Tuple[int, ...] = ()       # 希望释放的宝具（从者槽位，1..3）
     target_enemy: Optional[int] = None   # 需要选中的敌人目标
+    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ class BattleAction:
     master_skills: Tuple[MasterSkillAction, ...] = ()
     order_change: Optional[OrderChangeAction] = None
     rationale_tag: str = ""
+    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction, ...] = ()
 
 
 @dataclass(frozen=True)

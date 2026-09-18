@@ -88,6 +88,7 @@ class RuleDecider:
             servant_skills=tp.servant_skills,
             master_skills=tp.master_skills,
             order_change=tp.order_change,
+            skill_sequence=tp.skill_sequence,
             rationale_tag=f"v2:turn{turn_index}_skills"
         )
 
@@ -107,7 +108,7 @@ class RuleDecider:
                 if slot not in {pick.slot for pick in np_picks} and len(np_picks) < 3:
                     np_picks.append(CardPick(PrimitiveKind.SELECT_NP, slot))
             mfaalog.info(f"[ChaldeaPlan] 选卡阶段 回合{turn_index}: 计划宝具顺序={tp.np_order} 实际np_picks={[p.slot for p in np_picks]}")
-        elif self.card_policy.np_first:
+        elif tp is None and self.card_policy.np_first:
             # 无计划：有宝具就优先出
             np_picks = [CardPick(PrimitiveKind.SELECT_NP, c.servant_slot)
                         for c in state.np_cards][:3]

@@ -91,15 +91,17 @@ def convert_chaldea_actions_to_battle_plan(
     cur_masters: List[MasterSkillAction] = []
     cur_np: List[int] = []
     cur_order_change: Optional[OrderChangeAction] = None
+    cur_sequence: list[ServantSkillAction | MasterSkillAction | OrderChangeAction] = []
 
     def _flush() -> None:
         """把当前累积的回合内容结算成 TurnPlan。"""
-        nonlocal cur_skills, cur_masters, cur_np, cur_order_change
+        nonlocal cur_skills, cur_masters, cur_np, cur_order_change, cur_sequence
         turn = TurnPlan(
             servant_skills=tuple(cur_skills),
             master_skills=tuple(cur_masters),
             np_order=tuple(cur_np),
             order_change=cur_order_change,
+            skill_sequence=tuple(cur_sequence),
         )
         mfaalog.info(f"[chaldea_converter] 回合{turns.__len__() + 1}: "
                      f"servant_skills={len(cur_skills)} master_skills={len(cur_masters)} "
@@ -109,6 +111,7 @@ def convert_chaldea_actions_to_battle_plan(
         cur_masters = []
         cur_np = []
         cur_order_change = None
+        cur_sequence = []
 
     for action in actions:
         if not isinstance(action, dict):
@@ -132,14 +135,21 @@ def convert_chaldea_actions_to_battle_plan(
                         starting_member_idx=front + 1,
                         sub_member_idx=back + 1,
                     )
+                    master = MasterSkillAction(skill_idx + 1)
+                    cur_masters.append(master)
+                    cur_sequence.extend((master, cur_order_change))
                 else:
-                    cur_masters.append(MasterSkillAction(skill_idx + 1, target_ally=target))
+                    master = MasterSkillAction(skill_idx + 1, target_ally=target)
+                    cur_masters.append(master)
+                    cur_sequence.append(master)
             elif isinstance(svt_idx, int) and 0 <= svt_idx <= 2:
-                cur_skills.append(ServantSkillAction(
+                servant = ServantSkillAction(
                     servant_slot=svt_idx + 1,
                     skill_index=skill_idx + 1,
                     target_ally=target,
-                ))
+                )
+                cur_skills.append(servant)
+                cur_sequence.append(servant)
 
         elif action_type == "attack":
             attacks = action.get("attacks")
