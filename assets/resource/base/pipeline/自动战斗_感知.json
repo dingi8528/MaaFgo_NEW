@@ -80,7 +80,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -108,7 +108,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -136,7 +136,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -164,7 +164,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -192,7 +192,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -220,7 +220,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -248,7 +248,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -276,7 +276,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -304,7 +304,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -452,7 +452,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -480,7 +480,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },
@@ -508,7 +508,7 @@
                     "battle/digits/9.png"
                 ],
                 "green_mask": true,
-                "threshold": 0.8
+                "threshold": 0.82
             }
         }
     },

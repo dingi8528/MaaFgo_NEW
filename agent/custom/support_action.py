@@ -49,6 +49,8 @@ if _custom_dir not in sys.path:
     sys.path.insert(0, _custom_dir)
 
 import mfaalog
+from chaldea import fetch_share_data
+from chaldea.support_criteria import build_support_criteria
 
 # ---------------- 路径常量 ----------------
 _AGENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -100,8 +102,10 @@ CLASS_TABS = {
     "ALL": (91, 130),      # all 阶(职介筛选选项选 ALL 时点击)
 }
 
-# ---------------- OCR 资源(打包后位于 resource/model/ocr, 与 MaaFramework 标准模型目录一致) ----------------
-OCR_EN_DIR = os.path.join(_ROOT_DIR, "resource", "model", "ocr")
+# ---------------- OCR 资源：兼容打包版和开发目录 ----------------
+_PACKAGED_OCR_DIR = os.path.join(_ROOT_DIR, "resource", "model", "ocr")
+OCR_EN_DIR = (_PACKAGED_OCR_DIR if os.path.isdir(_PACKAGED_OCR_DIR)
+              else os.path.join(_ROOT_DIR, "assets", "resource", "base", "model", "ocr"))
 OCR_REC_ONNX = os.path.join(OCR_EN_DIR, "rec.onnx")
 OCR_REC_KEYS = os.path.join(OCR_EN_DIR, "keys.txt")
 
@@ -459,6 +463,8 @@ class SupportAction(CustomAction):
     # ---------- 宝具等级匹配 ----------
     def _match_np(self, img, np_dir, bx, by, expect):
         import cv2
+        if expect <= 0:
+            return True
         if not os.path.isdir(np_dir):
             mfaalog.error(f"[SupportAction] 宝具模板目录不存在: {np_dir}")
             return False
@@ -698,30 +704,60 @@ class SupportAction(CustomAction):
                     param = json.loads(argv.custom_action_param)
                 except json.JSONDecodeError:
                     param = {}
-            support_type = param.get("support_type", "normal")
-
+            source_mode = param.get("source_mode")
             node = context.get_node_data(argv.node_name)
-            attach = node["attach"]
-            class_name = str(attach["class_name"]).strip()   # 玩家点击的职介(英灵选择 各职介 case 固定 attach)
-            class_all = str(attach["class_all"]).strip()     # 职介筛选: "all"=ALL 阶, "def"=按职介
-            servant_id = str(attach["servant"]).strip()
-            # 礼装: support_type 决定槽位, 礼装状态(满破/非满破) 决定文件名键后缀与子目录, 直接读取对应键
-            ce_dir = str(attach["礼装状态"]).strip()
-            if support_type == "grand":
-                ce_bond = str(attach["ce_bond"]).strip()
+            attach = node.get("attach") or {}
+            if source_mode == "chaldea":
+                if attach.get("chaldea_enabled") is not True:
+                    mfaalog.error("[SupportAction] 使用 Chaldea 配置需要先开启‘是否使用 Chaldea 队伍’")
+                    return CustomAction.RunResult(success=False)
+                source = str(attach.get("chaldea_import_source") or "").strip()
+                if not source:
+                    mfaalog.error("[SupportAction] 使用 Chaldea 配置但未填写 Chaldea 队伍导入")
+                    return CustomAction.RunResult(success=False)
+                share_data, _, _ = fetch_share_data(source)
+                try:
+                    criteria = build_support_criteria(share_data, self._get_servant_map())
+                except ValueError as exc:
+                    mfaalog.error(f"[SupportAction] Chaldea 助战配置无效: {exc}")
+                    return CustomAction.RunResult(success=False)
+                support_type = criteria["support_type"]
+                class_name = criteria["class_name"]
+                class_all = "def"
+                servant_id = criteria["servant_id"]
+                ce_bond = criteria["ce_bond"]
                 ce_targets = [
-                    (str(attach[f"冠位助战-1号礼装-{ce_dir}"]).strip(), CE_ANCHOR_GRAND[0], ce_dir),
-                    (str(attach[f"冠位助战-2号礼装-{ce_dir}"]).strip(), CE_ANCHOR_GRAND[1], ce_dir),
+                    (spec["name"], CE_ANCHOR_GRAND[spec["slot"] - 1]
+                     if support_type == "grand" else CE_ANCHOR_NORMAL, spec["status"])
+                    for spec in criteria["ce_specs"]
                 ]
+                active = criteria["active"]
+                passive = criteria["passive"]
+                np_level = criteria["np_level"]
+                level = criteria["level"]
             else:
-                ce_targets = [
-                    (str(attach[f"普通助战-礼装-{ce_dir}"]).strip(), CE_ANCHOR_NORMAL, ce_dir),
-                ]
-            # 技能等级: 独立键(选项各 case 固定 attach, 0-10; 0=不要求)
-            active = [int(attach[f"skill_active_{i}"]) for i in range(1, 4)]
-            passive = [int(attach[f"skill_passive_{i}"]) for i in range(1, 6)]
-            np_level = int(attach["np_level"])   # 宝具等级(选项 select 1-5 固定 attach)
-            level = int(attach["level"])         # 英灵等级(选项 input 固定 attach)
+                support_type = param.get("support_type", "normal")
+                class_name = str(attach["class_name"]).strip()   # 玩家点击的职介
+                class_all = str(attach["class_all"]).strip()     # all=ALL 阶, def=按职介
+                servant_id = str(attach["servant"]).strip()
+                # 既有自定义助战选项共用礼装状态；Chaldea 模式可逐格指定不同状态。
+                ce_status = str(attach["礼装状态"]).strip()
+                if support_type == "grand":
+                    ce_bond = str(attach["ce_bond"]).strip()
+                    ce_targets = [
+                        (str(attach[f"冠位助战-1号礼装-{ce_status}"]).strip(), CE_ANCHOR_GRAND[0], ce_status),
+                        (str(attach[f"冠位助战-2号礼装-{ce_status}"]).strip(), CE_ANCHOR_GRAND[1], ce_status),
+                    ]
+                else:
+                    ce_bond = "any"
+                    ce_targets = [
+                        (str(attach[f"普通助战-礼装-{ce_status}"]).strip(), CE_ANCHOR_NORMAL, ce_status),
+                    ]
+                # 技能等级: 0=不要求。
+                active = [int(attach[f"skill_active_{i}"]) for i in range(1, 4)]
+                passive = [int(attach[f"skill_passive_{i}"]) for i in range(1, 6)]
+                np_level = int(attach["np_level"])
+                level = int(attach["level"])
 
             passive_need = any(v > 0 for v in passive)
 
@@ -737,6 +773,11 @@ class SupportAction(CustomAction):
             # 英灵头像/礼装固定放 base, 不用 pkg 区分
             face_dir = _image_dir("base", "servant_face")
             ce_dir = _image_dir("base", "lizhuang")
+            if source_mode == "chaldea":
+                for ce_name, _, status in ce_targets:
+                    if not os.path.isfile(os.path.join(ce_dir, status, ce_name)):
+                        mfaalog.error(f"[SupportAction] Chaldea 助战礼装模板缺失: {status}/{ce_name}")
+                        return CustomAction.RunResult(success=False)
             np_dir = os.path.join(base_dir, "nplevel")   # 宝具模板按 pkg 动态选择(base/cn)
             skill_dir = os.path.join(base_dir, "skill")   # 视图判断模板(主动/被动), 按 pkg 动态选择
             mfaalog.info(f"[SupportAction] 素材根: {base_dir} 宝具目录: {np_dir}")

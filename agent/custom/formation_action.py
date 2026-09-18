@@ -191,13 +191,13 @@ class AutoFormationFromChaldea(CustomAction):
                 not in {"0", "false", "no", "off", "否", ""}
             )
             self.equip_missing_policy = str(
-                attach.get("equip_missing_policy") or "skip"
+                attach.get("equip_missing_policy") or "allow_non_limit_break"
             ).strip()
             if self.equip_missing_policy not in {"skip", "allow_non_limit_break"}:
                 mfaalog.warning(
-                    f"[自动编队] 未知礼装缺失策略 {self.equip_missing_policy!r}，使用 skip"
+                    f"[自动编队] 未知礼装缺失策略 {self.equip_missing_policy!r}，使用 allow_non_limit_break"
                 )
-                self.equip_missing_policy = "skip"
+                self.equip_missing_policy = "allow_non_limit_break"
             if not source:
                 self._fail("invalid_chaldea_team: 未提供 Chaldea 分享链接/ID")
                 return CustomAction.RunResult(success=False)

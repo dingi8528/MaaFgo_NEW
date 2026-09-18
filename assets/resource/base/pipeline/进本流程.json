@@ -114,6 +114,40 @@
             "[JumpBack]跳过剧情-直接点击跳过"
         ]
     },
+    "Chaldea助战action": {
+        "doc": "助战阶段(Chaldea 配置): 参照助战action的助战页识别与头像/OCR筛选；先读取已启用的 Chaldea 队伍并筛选唯一标记助战。实机验证等级条件依赖 OCR 模型可读取；输入、队伍或匹配失败时立即停止，不进入编队后续或战斗。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [1020, 165, 195, 545],
+                "template": ["support/助战编入确认.png", "support/助战NPC.png"],
+                "green_mask": true,
+                "threshold": 0.8,
+                "order_by": "Vertical"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "support_action",
+                "custom_action_param": {
+                    "source_mode": "chaldea"
+                }
+            }
+        },
+        "timeout": 60000,
+        "attach": {
+            "chaldea_enabled": false,
+            "chaldea_import_source": ""
+        },
+        "next": [
+            "[JumpBack]进本-关闭告知弹窗",
+            "进本-队伍确认",
+            "进本-战斗主界面已出现",
+            "[JumpBack]跳过剧情-直接点击跳过"
+        ],
+        "on_error": []
+    },
     "进本-队伍确认": {
         "doc": "编队阶段入口: 正向识别开始任务/战斗开始按钮后进入编队处理调度。默认直接点击开始；启用 Chaldea 队伍时按编队方式检查或自动编队",
         "recognition": {
