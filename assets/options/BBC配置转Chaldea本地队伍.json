@@ -1,0 +1,20 @@
+{
+  "option": {
+    "BBC转换来源配置": {
+      "type": "scan_select",
+      "label": "BBC 队伍配置",
+      "description": "从 BBchannel/settings 选择要转换的 JSON。",
+      "default": "",
+      "scan_dir": "BBchannel/settings",
+      "scan_filter": "*.json",
+      "cases": [],
+      "pipeline_override": {
+        "BBC配置转Chaldea本地队伍": {
+          "attach": {
+            "bbc_source_config": "{BBC转换来源配置}"
+          }
+        }
+      }
+    }
+  }
+}

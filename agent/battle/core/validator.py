@@ -1,10 +1,12 @@
 """战斗动作的独立安全校验。纯 stdlib，不依赖设备或 MaaFramework。"""
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, replace
 
 from .enums import PrimitiveKind, Scene
-from .models import BattleAction, BattleState, is_slot
+from .models import (BattleAction, BattleState, OrderChangeAction,
+                     ServantSkillAction, is_slot)
 from .policy import StrategyProfile
 
 
@@ -24,6 +26,11 @@ def skip_unusable_servant_skills(
     profile: StrategyProfile,
 ) -> tuple[BattleAction, tuple[str, ...]]:
     """跳过无法确认可执行的从者技能，保留结构非法动作给 Validator 拒绝。"""
+    ordered_swap = (
+        any(isinstance(step, OrderChangeAction) for step in action.skill_sequence)
+        and sum(isinstance(step, ServantSkillAction) for step in action.skill_sequence)
+        == len(action.servant_skills)
+    )
     seen: set[tuple[int, int]] = set()
     for skill in action.servant_skills:
         if (
@@ -33,11 +40,40 @@ def skip_unusable_servant_skills(
         ):
             return action, ()
         key = (skill.servant_slot, skill.skill_index)
-        if key in seen:
+        if key in seen and not ordered_swap:
             return action, ()
         seen.add(key)
 
     servants = {servant.slot: servant for servant in state.servants}
+    if ordered_swap:
+        kept = []
+        sequence = []
+        skipped = []
+        after_swap = False
+        for step in action.skill_sequence:
+            if isinstance(step, OrderChangeAction):
+                after_swap = True
+            if isinstance(step, ServantSkillAction) and not after_swap:
+                field = f"servant[{step.servant_slot}].skill[{step.skill_index}].available"
+                servant = servants.get(step.servant_slot)
+                skill_state = servant.skills[step.skill_index - 1] if servant else None
+                reason = (
+                    "state_missing" if skill_state is None else
+                    "unknown" if skill_state.available is None else
+                    "low_confidence" if not skill_state.confidence.passes(profile.min_skill_confidence) else
+                    "cooldown" if skill_state.available is False else None
+                )
+                if reason:
+                    skipped.append(f"{field}:{reason}")
+                    continue
+            if isinstance(step, ServantSkillAction):
+                kept.append(step)
+            sequence.append(step)
+        if not skipped:
+            return action, ()
+        return replace(action, servant_skills=tuple(kept),
+                       skill_sequence=tuple(sequence)), tuple(skipped)
+
     kept = []
     skipped: list[str] = []
     for skill in action.servant_skills:
@@ -61,7 +97,16 @@ def skip_unusable_servant_skills(
 
     if len(kept) == len(action.servant_skills):
         return action, ()
-    return replace(action, servant_skills=tuple(kept)), tuple(skipped)
+    counts = Counter(kept)
+    sequence = []
+    for step in action.skill_sequence:
+        if isinstance(step, ServantSkillAction):
+            if counts[step] == 0:
+                continue
+            counts[step] -= 1
+        sequence.append(step)
+    return replace(action, servant_skills=tuple(kept),
+                   skill_sequence=tuple(sequence)), tuple(skipped)
 
 
 def skip_unusable_master_skills(
@@ -138,7 +183,16 @@ def validate_main_action(
         return target_verdict
 
     servants = {servant.slot: servant for servant in state.servants}
-    for skill in action.servant_skills:
+    post_swap_flags = []
+    after_swap = False
+    for step in action.skill_sequence:
+        if isinstance(step, OrderChangeAction):
+            after_swap = True
+        elif isinstance(step, ServantSkillAction):
+            post_swap_flags.append(after_swap)
+    if len(post_swap_flags) != len(action.servant_skills):
+        post_swap_flags = [False] * len(action.servant_skills)
+    for index, skill in enumerate(action.servant_skills):
         if not is_slot(skill.servant_slot, 1, 3) or not is_slot(
             skill.skill_index, 1, 3
         ):
@@ -146,6 +200,10 @@ def validate_main_action(
         # 不校验同回合重复技能: 减CD策略/部分英灵技能允许同一技能一回合多次释放
         if skill.target_ally is not None and not is_slot(skill.target_ally, 1, 3):
             return Verdict(False, "invalid_skill_target")
+
+        # 换人后该位置属于新从者；当前帧里仍是换人前的技能状态。
+        if post_swap_flags[index]:
+            continue
 
         servant = servants.get(skill.servant_slot)
         if servant is None:
@@ -256,4 +314,3 @@ def _validate_enemy_target(
     if not enemy.confidence.passes(profile.min_enemy_confidence):
         return Verdict(False, "enemy_target_not_confident", fatal=False)
     return Verdict(True)
-

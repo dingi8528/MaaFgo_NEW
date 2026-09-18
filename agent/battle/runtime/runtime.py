@@ -15,7 +15,9 @@ from dataclasses import dataclass, replace
 
 from ..core.decider import Decider
 from ..core.enums import PrimitiveKind, Scene
-from ..core.models import BattleState, CardPick, InitialFormation, is_slot
+from ..core.models import (BattleState, CardPick, InitialFormation,
+                           MasterSkillAction, OrderChangeAction,
+                           ServantSkillAction, is_slot)
 from ..core.policy import BattlePolicy, StrategyProfile
 from ..core.validator import (
     skip_unusable_servant_skills,
@@ -395,80 +397,81 @@ class AutoBattleRuntime:
 
     def _execute_skills(self, action) -> bool:
         # 日志：输出实际要执行的技能队列（安全门过滤后）
+        sequence = action.skill_sequence or (
+            *action.servant_skills, *action.master_skills,
+            *((action.order_change,) if action.order_change is not None else ()),
+        )
         if action.servant_skills or action.master_skills or action.order_change:
             parts = []
-            for sk in action.servant_skills:
-                target = f"->从者{sk.target_ally}" if sk.target_ally else ""
-                parts.append(f"从者{sk.servant_slot}技能{sk.skill_index}{target}")
-            for sk in action.master_skills:
-                target = f"->从者{sk.target_ally}" if sk.target_ally else ""
-                parts.append(f"御主技能{sk.skill_index}{target}")
-            if action.order_change:
-                parts.append(f"换人: {action.order_change.starting_member_idx}↔{action.order_change.sub_member_idx}")
+            for step in sequence:
+                if isinstance(step, ServantSkillAction):
+                    target = f"->从者{step.target_ally}" if step.target_ally else ""
+                    parts.append(f"从者{step.servant_slot}技能{step.skill_index}{target}")
+                elif isinstance(step, MasterSkillAction):
+                    target = f"->从者{step.target_ally}" if step.target_ally else ""
+                    parts.append(f"御主技能{step.skill_index}{target}")
+                elif isinstance(step, OrderChangeAction):
+                    parts.append(f"换人: {step.starting_member_idx}↔{step.sub_member_idx}")
             mfaalog.info(f"[AutoBattle] 执行技能队列: {' | '.join(parts)}")
 
-        for sk in action.servant_skills:
-            if not (
-                is_slot(sk.servant_slot, 1, 3)
-                and is_slot(sk.skill_index, 1, 3)
-                and (sk.target_ally is None or is_slot(sk.target_ally, 1, 3))
-            ):
-                mfaalog.info(f"[AutoBattle] invalid servant skill skipped: {sk}")
+        for index, step in enumerate(sequence):
+            if isinstance(step, ServantSkillAction):
+                sk = step
+                if not (
+                    is_slot(sk.servant_slot, 1, 3)
+                    and is_slot(sk.skill_index, 1, 3)
+                    and (sk.target_ally is None or is_slot(sk.target_ally, 1, 3))
+                ):
+                    mfaalog.info(f"[AutoBattle] invalid servant skill skipped: {sk}")
+                    continue
+                mfaalog.info(f"[AutoBattle] cast_servant_skill(slot={sk.servant_slot}, idx={sk.skill_index})")
+                if not self._execute_skill_cast(
+                    "cast_servant_skill",
+                    lambda: self.executor.cast_servant_skill(sk.servant_slot, sk.skill_index),
+                    sk.target_ally,
+                    (Scene.MAIN_BATTLE,),
+                    _SKILL_ANIM_TIMEOUT_S,
+                    default_target=sk.servant_slot,
+                ):
+                    return False
                 continue
-            mfaalog.info(f"[AutoBattle] cast_servant_skill(slot={sk.servant_slot}, idx={sk.skill_index})")
-            if not self._execute_skill_cast(
-                "cast_servant_skill",
-                lambda: self.executor.cast_servant_skill(sk.servant_slot, sk.skill_index),
-                sk.target_ally,
-                (Scene.MAIN_BATTLE,),
-                _SKILL_ANIM_TIMEOUT_S,
-                default_target=sk.servant_slot,  # 选自己
-            ):
-                return False
 
-        for sk in action.master_skills:
-            has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
-            if not has_plan and not self.battle_policy.skill.use_master_skills:
-                mfaalog.info(
-                    f"[AutoBattle] master skill skipped (use_master_skills=False): "
-                    f"idx={sk.skill_index}"
+            if isinstance(step, MasterSkillAction):
+                sk = step
+                has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
+                if not has_plan and not self.battle_policy.skill.use_master_skills:
+                    mfaalog.info(f"[AutoBattle] master skill skipped (use_master_skills=False): idx={sk.skill_index}")
+                    continue
+                if not (
+                    is_slot(sk.skill_index, 1, 3)
+                    and (sk.target_ally is None or is_slot(sk.target_ally, 1, 3))
+                ):
+                    mfaalog.info(f"[AutoBattle] invalid master skill skipped: {sk}")
+                    continue
+                next_is_swap = (
+                    index + 1 < len(sequence)
+                    and isinstance(sequence[index + 1], OrderChangeAction)
                 )
+                mfaalog.info(f"[AutoBattle] cast_master_skill(idx={sk.skill_index})")
+                if not self._execute_skill_cast(
+                    "cast_master_skill",
+                    lambda: self.executor.cast_master_skill(sk.skill_index),
+                    sk.target_ally,
+                    (Scene.ORDER_CHANGE, Scene.MAIN_BATTLE) if next_is_swap else (Scene.MAIN_BATTLE,),
+                    _MASTER_SKILL_RETURN_TIMEOUT_S if next_is_swap else _SKILL_ANIM_TIMEOUT_S,
+                ):
+                    return False
                 continue
-            if not (
-                is_slot(sk.skill_index, 1, 3)
-                and (sk.target_ally is None or is_slot(sk.target_ally, 1, 3))
-            ):
-                mfaalog.info(f"[AutoBattle] invalid master skill skipped: {sk}")
-                continue
-            mfaalog.info(f"[AutoBattle] cast_master_skill(idx={sk.skill_index})")
-            # 御主技能可能是换人技能 → 之后进 ORDER_CHANGE；也可能是普通技能直接回 MAIN_BATTLE
-            return_scenes = (
-                (Scene.ORDER_CHANGE, Scene.MAIN_BATTLE)
-                if action.order_change is not None
-                else (Scene.MAIN_BATTLE,)
-            )
-            return_timeout = (
-                _MASTER_SKILL_RETURN_TIMEOUT_S
-                if action.order_change is not None
-                else _SKILL_ANIM_TIMEOUT_S
-            )
-            if not self._execute_skill_cast(
-                "cast_master_skill",
-                lambda: self.executor.cast_master_skill(sk.skill_index),
-                sk.target_ally,
-                return_scenes,
-                return_timeout,
-            ):
-                return False
 
-        if action.order_change is not None:
-            oc = action.order_change
+            if not isinstance(step, OrderChangeAction):
+                continue
+            oc = step
             if not (
                 is_slot(oc.starting_member_idx, 1, 3)
                 and is_slot(oc.sub_member_idx, 4, 6)
             ):
                 mfaalog.info(f"[AutoBattle] invalid order change skipped: {oc}")
-                return True
+                continue
             mfaalog.info(f"[AutoBattle] order_change(starting={oc.starting_member_idx}, sub={oc.sub_member_idx})")
             # 换人技能已由前面的 master_skills 触发（御主换人服技能）
             # 等待换人界面出现
@@ -477,7 +480,8 @@ class AutoBattleRuntime:
                 return False
             # 在换人界面选择首发成员和候补成员
             self._mark_action("order_change")
-            self.executor.order_change(oc.starting_member_idx, oc.sub_member_idx)
+            if not self.executor.order_change(oc.starting_member_idx, oc.sub_member_idx):
+                return False
             # 等待回到主界面
             if not self._wait_until((Scene.MAIN_BATTLE,), _ORDER_CHANGE_RETURN_TIMEOUT_S):
                 return False

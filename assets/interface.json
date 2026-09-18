@@ -177,6 +177,8 @@
     "options/整理礼物盒.json",
     "options/强化从者.json",
     "tasks/原生自动战斗.json",
+    "tasks/BBC配置转Chaldea本地队伍.json",
+    "options/BBC配置转Chaldea本地队伍.json",
     "options/原生自动战斗次数.json",
     "options/原生自动战斗跳过剧情.json",
     "options/原生自动战斗助战方式.json",
