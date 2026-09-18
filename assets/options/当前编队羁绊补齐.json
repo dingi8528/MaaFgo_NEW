@@ -32,33 +32,33 @@
       }
     },
     "当前编队使用本地从者库": {
-      "type": "select",
+      "type": "switch",
       "label": "使用本地从者库",
       "description": "使用“构建个人从者礼装库”保存的从者记录加快补齐；持有从者变化后请重新构建。无有效记录时自动扫描。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
-        {"name": "否", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": false}}}},
-        {"name": "是", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": true}}}}
+        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": false}}}},
+        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": true}}}}
       ]
     },
     "当前编队使用本地礼装库": {
-      "type": "select",
+      "type": "switch",
       "label": "使用本地礼装库",
       "description": "使用“构建个人从者礼装库”保存的礼装记录加快补齐；持有礼装或满破状态变化后请重新构建。无有效记录时自动扫描。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
-        {"name": "否", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": false}}}},
-        {"name": "是", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": true}}}}
+        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": false}}}},
+        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": true}}}}
       ]
     },
     "当前编队是否修改所有礼装": {
-      "type": "select",
+      "type": "switch",
       "label": "允许更换已有礼装",
       "description": "否：只补空礼装位。是：卸下已有礼装，重新搭配以提高羁绊收益。助战礼装保持不变。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
-        {"name": "否", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": false}}}},
-        {"name": "是", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": true}}}}
+        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": false}}}},
+        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": true}}}}
       ]
     }
   }

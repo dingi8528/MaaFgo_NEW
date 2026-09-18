@@ -1,13 +1,13 @@
 {
     "option": {
         "原生自动战斗使用Chaldea队伍": {
-            "type": "select",
+            "type": "switch",
             "label": "是否使用 Chaldea 队伍",
             "description": "选择助战后按编队方式检查或还原导入队伍，再进入战斗。无法按等级或技能区分同名从者，请将不用的个体放入保管室。\n >",
-            "default": "否",
+            "default_case": "No",
             "cases": [
                 {
-                    "name": "否",
+                    "name": "No",
                     "label": "否",
                     "pipeline_override": {
                         "Chaldea助战action": {
@@ -18,7 +18,7 @@
                     }
                 },
                 {
-                    "name": "是",
+                    "name": "Yes",
                     "label": "是",
                     "option": [
                         "Chaldea导入手动输入",
@@ -140,13 +140,13 @@
             ]
         },
         "自动编队助战替代": {
-            "type": "select",
+            "type": "switch",
             "label": "是否用助战代替编队数据",
             "description": "队伍未标记助战时，可用当前同名助战替代对应从者；无法识别或不匹配会停止任务。已标记助战时按数据校验。",
-            "default": "否",
+            "default_case": "Yes",
             "cases": [
                 {
-                    "name": "否",
+                    "name": "No",
                     "label": "否",
                     "pipeline_override": {
                         "执行自动编队": {
@@ -162,7 +162,7 @@
                     }
                 },
                 {
-                    "name": "是",
+                    "name": "Yes",
                     "label": "是",
                     "pipeline_override": {
                         "执行自动编队": {
@@ -180,13 +180,13 @@
             ]
         },
         "自动编队礼装开关": {
-            "type": "select",
+            "type": "switch",
             "label": "自动编成礼装",
             "description": "关闭后只编排从者和助战，不更换礼装。",
-            "default": "是",
+            "default_case": "Yes",
             "cases": [
                 {
-                    "name": "是",
+                    "name": "Yes",
                     "label": "是",
                     "option": [
                         "自动编队礼装缺失处理"
@@ -200,7 +200,7 @@
                     }
                 },
                 {
-                    "name": "否",
+                    "name": "No",
                     "label": "否",
                     "pipeline_override": {
                         "执行自动编队": {

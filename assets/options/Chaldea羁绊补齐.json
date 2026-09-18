@@ -1,20 +1,20 @@
 {
   "option": {
     "自动补齐从者和羁绊礼装": {
-      "type": "select",
+      "type": "switch",
       "label": "自动补齐从者和羁绊礼装",
       "description": "按 Chaldea 编队后，利用剩余 COST 补齐从者和羁绊加成礼装，提高全队羁绊收益。保留助战及 Chaldea 指定的从者和礼装。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
         {
-          "name": "否",
+          "name": "No",
           "label": "否",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"bond_completion_enabled": false}}
           }
         },
         {
-          "name": "是",
+          "name": "Yes",
           "label": "是",
           "option": ["补齐从者优先X星", "羁绊基础值", "使用本地从者库", "使用本地礼装库", "自动修改其他位置从者", "自动修改其他位置礼装"],
           "pipeline_override": {
@@ -38,20 +38,20 @@
       ]
     },
     "使用本地从者库": {
-      "type": "select",
+      "type": "switch",
       "label": "使用本地从者库",
       "description": "使用“构建个人从者礼装库”保存的从者记录加快补齐；持有从者变化后请重新构建。无有效记录时自动扫描。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
         {
-          "name": "否",
+          "name": "No",
           "label": "否",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"use_local_servant_inventory": false}}
           }
         },
         {
-          "name": "是",
+          "name": "Yes",
           "label": "是",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"use_local_servant_inventory": true}}
@@ -60,20 +60,20 @@
       ]
     },
     "使用本地礼装库": {
-      "type": "select",
+      "type": "switch",
       "label": "使用本地礼装库",
       "description": "使用“构建个人从者礼装库”保存的礼装记录加快补齐；持有礼装或满破状态变化后请重新构建。无有效记录时自动扫描。",
-      "default": "否",
+      "default_case": "No",
       "cases": [
         {
-          "name": "否",
+          "name": "No",
           "label": "否",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"use_local_equip_inventory": false}}
           }
         },
         {
-          "name": "是",
+          "name": "Yes",
           "label": "是",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"use_local_equip_inventory": true}}
@@ -82,20 +82,20 @@
       ]
     },
     "自动修改其他位置从者": {
-      "type": "select",
+      "type": "switch",
       "label": "允许更换未指定的从者",
       "description": "仅针对 Chaldea 未指定的位置。是：允许替换已有从者。否：保留已有从者，只补空位。",
-      "default": "是",
+      "default_case": "Yes",
       "cases": [
         {
-          "name": "是",
+          "name": "Yes",
           "label": "是",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"modify_unspecified_servants": true}}
           }
         },
         {
-          "name": "否",
+          "name": "No",
           "label": "否",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"modify_unspecified_servants": false}}
@@ -104,20 +104,20 @@
       ]
     },
     "自动修改其他位置礼装": {
-      "type": "select",
+      "type": "switch",
       "label": "允许更换未指定的礼装",
       "description": "仅针对 Chaldea 未指定的礼装。是：允许更换已装备礼装。否：保留已装备礼装，只补空位。",
-      "default": "是",
+      "default_case": "Yes",
       "cases": [
         {
-          "name": "是",
+          "name": "Yes",
           "label": "是",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"modify_unspecified_equips": true}}
           }
         },
         {
-          "name": "否",
+          "name": "No",
           "label": "否",
           "pipeline_override": {
             "执行羁绊补齐自动编队": {"attach": {"modify_unspecified_equips": false}}
