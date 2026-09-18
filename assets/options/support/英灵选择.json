@@ -220,7 +220,7 @@
         "职介筛选": {
             "type": "select",
             "label": "职介筛选",
-            "description": "选择职介筛选方式: ALL=点击 all 阶(91,130), 默认=按所选英灵职介点击对应 tab",
+            "description": "选择 ALL 阶或从者所属职介。",
             "default": "默认",
             "cases": [
                 {

@@ -3,7 +3,7 @@
         "battle_mode": {
             "type": "select",
             "label": "战斗方式",
-            "description": "选择使用 BBC 战斗还是原生自动战斗。使用 BBC 前请单独启用“启动bbc”任务。",
+            "description": "选择 BBC 或原生自动战斗；使用 BBC 前需启动 BBC。",
             "default": "bbc",
             "cases": [
                 {
