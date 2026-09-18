@@ -8,7 +8,14 @@
             "cases": [
                 {
                     "name": "否",
-                    "label": "否"
+                    "label": "否",
+                    "pipeline_override": {
+                        "Chaldea助战action": {
+                            "attach": {
+                                "chaldea_enabled": false
+                            }
+                        }
+                    }
                 },
                 {
                     "name": "是",
@@ -16,7 +23,14 @@
                     "option": [
                         "Chaldea导入手动输入",
                         "Chaldea编队方式"
-                    ]
+                    ],
+                    "pipeline_override": {
+                        "Chaldea助战action": {
+                            "attach": {
+                                "chaldea_enabled": true
+                            }
+                        }
+                    }
                 }
             ]
         },
@@ -72,6 +86,11 @@
                     "attach": {
                         "chaldea_import_source": "{chaldea_import_source}"
                     }
+                },
+                "Chaldea助战action": {
+                    "attach": {
+                        "chaldea_import_source": "{chaldea_import_source}"
+                    }
                 }
             }
         },
@@ -103,7 +122,6 @@
                     "option": [
                         "自动编队助战替代",
                         "自动编队礼装开关",
-                        "自动编队礼装缺失处理",
                         "自动补齐从者和羁绊礼装"
                     ],
                     "pipeline_override": {
@@ -170,6 +188,9 @@
                 {
                     "name": "是",
                     "label": "是",
+                    "option": [
+                        "自动编队礼装缺失处理"
+                    ],
                     "pipeline_override": {
                         "执行自动编队": {
                             "attach": {
@@ -195,7 +216,7 @@
             "type": "select",
             "label": "满破礼装缺失时",
             "description": "仅在指定的满破礼装未找到时生效。",
-            "default": "跳过礼装",
+            "default": "查找非满破礼装",
             "cases": [
                 {
                     "name": "跳过礼装",
