@@ -3,7 +3,7 @@
         "team_config": {
             "type": "select",
             "label": "队伍配置类型",
-            "description": "选择直接使用bbc的队伍还是chaldea的队伍",
+            "description": "",
             "default": "bbc_team_config",
             "cases": [
                 {

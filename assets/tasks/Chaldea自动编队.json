@@ -3,7 +3,7 @@
     {
       "name": "Chaldea 自动编队",
       "label": "🧩 Chaldea 自动编队",
-      "description": "从编队确认/编辑页启动，或在战斗任务中启用；按 Chaldea 数据编排从者、助战和礼装。\n无法按等级或技能区分同名从者，请将不用的个体放入保管室。",
+      "description": "从编队页启动，或在战斗任务中启用；按 Chaldea 数据编队。",
       "doc": "docs/Chaldea自动编队使用说明.md",
       "entry": "自动编队",
       "controller": ["安卓设备"],

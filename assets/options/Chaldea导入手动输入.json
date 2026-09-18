@@ -3,7 +3,7 @@
         "原生自动战斗使用Chaldea队伍": {
             "type": "switch",
             "label": "是否使用 Chaldea 队伍",
-            "description": "选择助战后按编队方式检查或还原导入队伍，再进入战斗。无法按等级或技能区分同名从者，请将不用的个体放入保管室。\n >",
+            "description": "使用chaldea编队和战斗数据\n >",
             "default_case": "No",
             "cases": [
                 {
@@ -37,7 +37,7 @@
         "Chaldea导入手动输入": {
             "type": "input",
             "label": "Chaldea 队伍导入",
-            "description": "必填。支持分享链接、队伍ID、关卡ID、本地 JSON，或 config/Battle 下的缓存文件名。",
+            "description": "本地文件：config/Battle 下的缓存文件名。",
             "inputs": [
                 {
                     "name": "chaldea_import_source",
@@ -97,7 +97,7 @@
         "Chaldea编队方式": {
             "type": "select",
             "label": "编队方式",
-            "description": "手动仅核对从者；身份一致但位置不同会自动换位保存。自动会按导入数据完整编队。",
+            "description": "手动核对从者并调整位置；自动按数据编队。",
             "default": "手动",
             "cases": [
                 {
@@ -142,7 +142,7 @@
         "自动编队助战替代": {
             "type": "switch",
             "label": "是否用助战代替编队数据",
-            "description": "队伍未标记助战时，可用当前同名助战替代对应从者；无法识别或不匹配会停止任务。已标记助战时按数据校验。",
+            "description": "chaldea数据里没有助战时，可用当前同名助战替代对应从者",
             "default_case": "Yes",
             "cases": [
                 {
@@ -182,7 +182,7 @@
         "自动编队礼装开关": {
             "type": "switch",
             "label": "自动编成礼装",
-            "description": "关闭后只编排从者和助战，不更换礼装。",
+            "description": "",
             "default_case": "Yes",
             "cases": [
                 {
@@ -215,7 +215,7 @@
         "自动编队礼装缺失处理": {
             "type": "select",
             "label": "满破礼装缺失时",
-            "description": "仅在指定的满破礼装未找到时生效。",
+            "description": "",
             "default": "查找非满破礼装",
             "cases": [
                 {

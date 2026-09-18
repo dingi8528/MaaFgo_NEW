@@ -3,21 +3,81 @@
     "当前编队补齐从者优先星级": {
       "type": "select",
       "label": "补齐从者优先星级",
-      "description": "补空位时优先选择该星级；没有合适从者时，再按 5→0 星查找。",
+      "description": "补空位时优先选择该星级。",
       "default": "5星",
       "cases": [
-        {"name": "5星", "label": "5星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 5}}}},
-        {"name": "4星", "label": "4星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 4}}}},
-        {"name": "3星", "label": "3星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 3}}}},
-        {"name": "2星", "label": "2星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 2}}}},
-        {"name": "1星", "label": "1星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 1}}}},
-        {"name": "0星", "label": "0星", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"preferred_rarity": 0}}}}
+        {
+          "name": "5星",
+          "label": "5星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 5
+              }
+            }
+          }
+        },
+        {
+          "name": "4星",
+          "label": "4星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 4
+              }
+            }
+          }
+        },
+        {
+          "name": "3星",
+          "label": "3星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 3
+              }
+            }
+          }
+        },
+        {
+          "name": "2星",
+          "label": "2星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 2
+              }
+            }
+          }
+        },
+        {
+          "name": "1星",
+          "label": "1星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 1
+              }
+            }
+          }
+        },
+        {
+          "name": "0星",
+          "label": "0星",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "preferred_rarity": 0
+              }
+            }
+          }
+        }
       ]
     },
     "当前编队羁绊基础值": {
       "type": "input",
       "label": "关卡基础羁绊",
-      "description": "填写关卡不含加成的羁绊点数（正整数），用于选择收益更高的礼装。",
+      "description": "填写关卡初始羁绊点数（正整数）。",
       "inputs": [
         {
           "name": "current_bond_base",
@@ -28,37 +88,101 @@
         }
       ],
       "pipeline_override": {
-        "当前编队羁绊补齐": {"attach": {"bond_base": "{current_bond_base}"}}
+        "当前编队羁绊补齐": {
+          "attach": {
+            "bond_base": "{current_bond_base}"
+          }
+        }
       }
     },
     "当前编队使用本地从者库": {
       "type": "switch",
       "label": "使用本地从者库",
-      "description": "使用“构建个人从者礼装库”保存的从者记录加快补齐；持有从者变化后请重新构建。无有效记录时自动扫描。",
+      "description": "",
       "default_case": "No",
       "cases": [
-        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": false}}}},
-        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_servant_inventory": true}}}}
+        {
+          "name": "No",
+          "label": "否",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "use_local_servant_inventory": false
+              }
+            }
+          }
+        },
+        {
+          "name": "Yes",
+          "label": "是",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "use_local_servant_inventory": true
+              }
+            }
+          }
+        }
       ]
     },
     "当前编队使用本地礼装库": {
       "type": "switch",
       "label": "使用本地礼装库",
-      "description": "使用“构建个人从者礼装库”保存的礼装记录加快补齐；持有礼装或满破状态变化后请重新构建。无有效记录时自动扫描。",
+      "description": "",
       "default_case": "No",
       "cases": [
-        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": false}}}},
-        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"use_local_equip_inventory": true}}}}
+        {
+          "name": "No",
+          "label": "否",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "use_local_equip_inventory": false
+              }
+            }
+          }
+        },
+        {
+          "name": "Yes",
+          "label": "是",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "use_local_equip_inventory": true
+              }
+            }
+          }
+        }
       ]
     },
     "当前编队是否修改所有礼装": {
       "type": "switch",
       "label": "允许更换已有礼装",
-      "description": "否：只补空礼装位。是：卸下已有礼装，重新搭配以提高羁绊收益。助战礼装保持不变。",
+      "description": "开启后重新搭配已有礼装，助战礼装不变。",
       "default_case": "No",
       "cases": [
-        {"name": "No", "label": "否", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": false}}}},
-        {"name": "Yes", "label": "是", "pipeline_override": {"当前编队羁绊补齐": {"attach": {"modify_all_equips": true}}}}
+        {
+          "name": "No",
+          "label": "否",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "modify_all_equips": false
+              }
+            }
+          }
+        },
+        {
+          "name": "Yes",
+          "label": "是",
+          "pipeline_override": {
+            "当前编队羁绊补齐": {
+              "attach": {
+                "modify_all_equips": true
+              }
+            }
+          }
+        }
       ]
     }
   }

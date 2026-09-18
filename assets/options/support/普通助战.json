@@ -3,7 +3,7 @@
         "普通助战-礼装": {
             "type": "select",
             "label": "礼装",
-            "description": "选择助战礼装是否满破",
+            "description": "",
             "default": "满破",
             "cases": [
                 {

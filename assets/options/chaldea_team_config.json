@@ -3,7 +3,7 @@
         "chaldea_team_config": {
             "type": "input",
             "label": "Chaldea 队伍导入",
-            "description": "必填。支持分享链接、队伍ID、关卡ID、本地 JSON，或 config/Battle 下的缓存文件名。",
+            "description": "本地文件：config/Battle 下的缓存文件名。",
             "inputs": [
                 {
                     "name": "chaldea_import_source",

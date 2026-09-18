@@ -3,7 +3,7 @@
         "冠位助战-1号礼装": {
             "type": "select",
             "label": "1号礼装",
-            "description": "选择1号助战礼装是否满破",
+            "description": "",
             "default": "满破",
             "cases": [
                 {
@@ -39,7 +39,7 @@
         "冠位助战-2号礼装": {
             "type": "select",
             "label": "2号礼装",
-            "description": "选择2号助战礼装是否满破",
+            "description": "",
             "default": "满破",
             "cases": [
                 {
