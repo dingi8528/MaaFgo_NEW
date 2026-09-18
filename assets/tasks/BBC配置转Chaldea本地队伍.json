@@ -8,6 +8,14 @@
       "entry": "BBC配置转Chaldea本地队伍",
       "option": ["BBC转换来源配置"],
       "group": ["战斗相关"]
+    },
+    {
+      "name": "BBC 全部配置转 Chaldea 本地队伍",
+      "label": "🔄 BBC 全部配置转 Chaldea 本地队伍",
+      "description": "一键转换 BBchannel/settings 中的全部队伍配置；无法转换的文件会记录原因并继续处理其余配置。",
+      "doc": "docs/BBC配置转Chaldea本地队伍.md",
+      "entry": "BBC全部配置转Chaldea本地队伍",
+      "group": ["战斗相关"]
     }
   ]
 }

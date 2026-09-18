@@ -25,7 +25,8 @@ from battle.core.validator import (skip_unusable_servant_skills,
                                    validate_main_action)
 from battle.runtime.runtime import AutoBattleRuntime
 from chaldea.bbc_importer import (BbcImportError, _catalogs, _read_json,
-                                  convert_bbc_config, import_bbc_file)
+                                  convert_bbc_config, import_bbc_all,
+                                  import_bbc_file)
 import chaldea
 
 
@@ -170,6 +171,30 @@ class BbcToChaldeaTest(unittest.TestCase):
             self.assertEqual(path, same)
             with self.assertRaises(BbcImportError):
                 import_bbc_file("../servant_info_CH.json", root=root)
+
+    def test_all_configs_continue_after_rejected_file_and_reuse_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = root / "BBchannel" / "settings"
+            settings.mkdir(parents=True)
+            (settings / "a_bad.json").write_text("{}", encoding="utf-8")
+            shutil.copy2(ROOT / "BBchannel/settings/爱尔奎特_光狐_光狐.json",
+                         settings / "z_good.json")
+            shutil.copy2(ROOT / "BBchannel/servant_info_CH.json", root / "BBchannel")
+            data_dir = root / "agent/utils/Chaldea"
+            data_dir.mkdir(parents=True)
+            shutil.copy2(ROOT / "agent/utils/Chaldea/equip_names_CN.json", data_dir)
+
+            converted, skipped = import_bbc_all(root=root)
+            self.assertEqual(len(converted), 1)
+            self.assertEqual(converted[0][0], "z_good.json")
+            self.assertTrue(converted[0][1].is_file())
+            self.assertEqual(skipped[0][0], "a_bad.json")
+            before = converted[0][1].read_bytes()
+            again, skipped_again = import_bbc_all(root=root)
+            self.assertEqual(again[0][1], converted[0][1])
+            self.assertEqual(again[0][1].read_bytes(), before)
+            self.assertEqual(skipped_again, skipped)
 
 
 if __name__ == "__main__":

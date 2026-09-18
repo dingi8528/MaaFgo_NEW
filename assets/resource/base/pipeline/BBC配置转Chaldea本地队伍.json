@@ -9,5 +9,16 @@
       "bbc_source_config": ""
     },
     "on_error": []
+  },
+  "BBC全部配置转Chaldea本地队伍": {
+    "recognition": "DirectHit",
+    "action": {
+      "type": "Custom",
+      "param": {"custom_action": "import_bbc_to_chaldea"}
+    },
+    "attach": {
+      "bbc_import_all": true
+    },
+    "on_error": []
   }
 }
