@@ -2309,9 +2309,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             self._leave_servant_select()
         if self._confirmed_now(self._in_formation_edit) and self._run_pipeline("羁绊补齐-取消配置"):
             # 队伍发生过变化时，游戏会询问是否放弃当前改动。右侧“决定”才会
-            # 恢复进入本 Action 前的第一阶段队伍；左侧“取消”会留在编辑页。
-            self._run_pipeline("羁绊补齐-取消变更确认")
+            # 恢复进入本 Action 前的第一阶段队伍；没有实际变更时则会直接返回
+            # 编队确认页，此时不能继续等待一个不会出现的弹窗。
             self.opened_edit = False
+            if not self._confirmed_now(self._on_confirm_page):
+                self._run_pipeline("羁绊补齐-取消变更确认")
             if self._wait_for(self._on_confirm_page, 6.0):
                 self._focus_user("羁绊优化已取消，原编队已恢复", "orange")
                 mfaalog.warning("[羁绊补齐] bond_completion_aborted_safe: 已恢复第一阶段编队")

@@ -114,6 +114,13 @@ SERVANT_LIST_FEATURE_MARGIN = 0.12
 SELECT_PAGE_ENTER_TIMEOUT_SECONDS = 8.0
 EMPTY_SLOT_STD_THRESHOLD = 25.0
 EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD = 6.0
+# 戴冠战空槽会在卡片中下部叠加黄色“仅限对应职阶”文字，导致整张槽位的
+# 标准差超过普通空槽阈值。额外检查卡片上方无遮挡的灰色内区，同时保留整卡
+# 检查以兼容普通编队页面。
+EMPTY_SLOT_CORE_X_START_RATIO = 0.12
+EMPTY_SLOT_CORE_X_END_RATIO = 0.88
+EMPTY_SLOT_CORE_Y_START_RATIO = 0.08
+EMPTY_SLOT_CORE_Y_END_RATIO = 0.36
 FORMATION_CONFIRM_ROI = (724, 583, 232, 101)
 FORMATION_CONFIRM_DELAY_SECONDS = 1.0
 FORMATION_CONFIRM_APPEAR_TIMEOUT_SECONDS = 3.0
@@ -872,18 +879,32 @@ class AutoFormationFromChaldea(CustomAction):
         return best
 
     def _is_empty_slot(self, image, roi):
-        """识别编队中灰色的 SELECT 空槽；不依赖文字 OCR。"""
+        """识别编队中灰色的 SELECT 空槽；兼容戴冠战职阶限制文字。"""
         x, y, width, height = self._scale_roi(roi)
         region = image[y:y + height, x:x + width]
         if region.size == 0:
             return False
-        channel_means = np.mean(region, axis=(0, 1))
-        channel_std = float(np.mean(np.std(region, axis=(0, 1))))
-        channel_delta = float(np.max(channel_means) - np.min(channel_means))
-        return (
-            channel_std <= EMPTY_SLOT_STD_THRESHOLD
-            and channel_delta <= EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD
-        )
+
+        def is_gray_panel(candidate):
+            if candidate.size == 0:
+                return False
+            channel_means = np.mean(candidate, axis=(0, 1))
+            channel_std = float(np.mean(np.std(candidate, axis=(0, 1))))
+            channel_delta = float(np.max(channel_means) - np.min(channel_means))
+            return (
+                channel_std <= EMPTY_SLOT_STD_THRESHOLD
+                and channel_delta <= EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD
+            )
+
+        if is_gray_panel(region):
+            return True
+
+        core_x1 = int(round(width * EMPTY_SLOT_CORE_X_START_RATIO))
+        core_x2 = int(round(width * EMPTY_SLOT_CORE_X_END_RATIO))
+        core_y1 = int(round(height * EMPTY_SLOT_CORE_Y_START_RATIO))
+        core_y2 = int(round(height * EMPTY_SLOT_CORE_Y_END_RATIO))
+        core = region[core_y1:core_y2, core_x1:core_x2]
+        return is_gray_panel(core)
 
     def _matches(self, expected, current):
         if expected["kind"] == "LOCAL":
