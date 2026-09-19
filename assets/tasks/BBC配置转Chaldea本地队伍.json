@@ -7,7 +7,7 @@
       "doc": "docs/BBC配置转Chaldea本地队伍.md",
       "entry": "BBC配置转Chaldea本地队伍",
       "option": ["BBC转换来源配置"],
-      "group": ["战斗相关"]
+      "group": ["其他"]
     },
     {
       "name": "BBC 全部配置转 Chaldea 本地队伍",
