@@ -397,6 +397,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 f"(+{final_score - self.initial_score})，COST={self.used_cost}/{self.max_cost}，"
                 f"剩余={self.max_cost - self.used_cost}"
             )
+            if final_score < self.initial_score:
+                return self._abort_safe(
+                    "bond_completion_score_regression: "
+                    f"最终羁绊收益 {final_score} 低于初始值 {self.initial_score}"
+                )
             if not self._run_pipeline("羁绊补齐-编队决定"):
                 return self._abort_safe("bond_completion_final_mismatch: 未能点击编队决定")
             self.opened_edit = False
