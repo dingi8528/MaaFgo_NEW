@@ -67,6 +67,11 @@
       "name": "日常行为",
       "label": "📅 日常行为",
       "default_expand": true
+    },
+    {
+      "name": "其他",
+      "label": "📦 其他",
+      "default_expand": true
     }
   ],
   "task": [],

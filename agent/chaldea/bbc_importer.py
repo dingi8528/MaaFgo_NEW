@@ -284,3 +284,24 @@ def import_bbc_file(source: str, *, root: Path = ROOT) -> tuple[Path, list[str]]
             output.unlink(missing_ok=True)
         raise
     return output, warnings
+
+
+def import_bbc_all(*, root: Path = ROOT) -> tuple[
+    list[tuple[str, Path, list[str]]], list[tuple[str, str]]
+]:
+    """逐个导入 settings 中的 JSON，单个配置失败时继续处理其余文件。"""
+    settings = root / "BBchannel" / "settings"
+    sources = sorted(settings.glob("*.json"), key=lambda path: path.name.casefold())
+    if not sources:
+        raise BbcImportError(f"未找到 BBC 队伍配置: {settings}")
+
+    converted: list[tuple[str, Path, list[str]]] = []
+    skipped: list[tuple[str, str]] = []
+    for path in sources:
+        try:
+            output, warnings = import_bbc_file(path.name, root=root)
+        except (BbcImportError, OSError) as exc:
+            skipped.append((path.name, str(exc)))
+        else:
+            converted.append((path.name, output, warnings))
+    return converted, skipped

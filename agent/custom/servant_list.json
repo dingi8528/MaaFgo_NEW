@@ -1476,7 +1476,8 @@
         "f_5021001.png",
         "f_5021002.png",
         "f_5021003.png",
-        "f_5021004.png"
+        "f_5021004.png",
+        "f_5021300.png"
       ],
       "name_jp": "クー?フーリン",
       "bond": {
@@ -2231,7 +2232,8 @@
         "f_1012002.png",
         "f_1012003.png",
         "f_1012004.png",
-        "f_1012300.png"
+        "f_1012300.png",
+        "f_1012400.png"
       ],
       "name_jp": "ベディヴィエール",
       "bond": {
@@ -3401,7 +3403,8 @@
         "f_3061001.png",
         "f_3061002.png",
         "f_3061003.png",
-        "f_3061004.png"
+        "f_3061004.png",
+        "f_3061300.png"
       ],
       "name_jp": "原田左之助",
       "bond": {
@@ -3596,7 +3599,14 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_28013000.png",
+        "f_28013001.png",
+        "f_28013002.png",
+        "f_28013003.png",
+        "f_28013300.png"
+      ]
     },
     {
       "id": "203000",
@@ -4008,7 +4018,8 @@
         "f_2043001.png",
         "f_2043002.png",
         "f_2043003.png",
-        "f_2043004.png"
+        "f_2043004.png",
+        "f_2043300.png"
       ],
       "name_jp": "妖精騎士トリスタン",
       "bond": {
@@ -4230,7 +4241,13 @@
         "gender": "female",
         "sub_attribute": "sky",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_2056000.png",
+        "f_2056001.png",
+        "f_2056002.png",
+        "f_2056003.png"
+      ]
     },
     {
       "id": "501200",
@@ -4919,7 +4936,8 @@
         "f_1044002.png",
         "f_1044003.png",
         "f_1044004.png",
-        "f_1044300.png"
+        "f_1044300.png",
+        "f_1044400.png"
       ],
       "name_jp": "斎藤一",
       "bond": {
@@ -5386,7 +5404,13 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_5060000.png",
+        "f_5060001.png",
+        "f_5060002.png",
+        "f_5060003.png"
+      ]
     },
     {
       "id": "704800",
@@ -5612,7 +5636,8 @@
         "f_1047001.png",
         "f_1047002.png",
         "f_1047003.png",
-        "f_1047004.png"
+        "f_1047004.png",
+        "f_1047300.png"
       ],
       "name_jp": "渡辺綱",
       "bond": {
@@ -6575,7 +6600,8 @@
         "f_6050001.png",
         "f_6050002.png",
         "f_6050003.png",
-        "f_6050004.png"
+        "f_6050004.png",
+        "f_6050300.png"
       ],
       "name_jp": "耀星のハサン",
       "bond": {
@@ -8489,7 +8515,13 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_23012000.png",
+        "f_23012001.png",
+        "f_23012002.png",
+        "f_23012003.png"
+      ]
     },
     {
       "id": "1102300",
@@ -8512,7 +8544,13 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_11023000.png",
+        "f_11023001.png",
+        "f_11023002.png",
+        "f_11023003.png"
+      ]
     },
     {
       "id": "1000200",
@@ -9103,7 +9141,8 @@
         "f_28010001.png",
         "f_28010002.png",
         "f_28010003.png",
-        "f_28010004.png"
+        "f_28010004.png",
+        "f_28010300.png"
       ],
       "name_jp": "ダンテ?アリギエーリ",
       "bond": {
@@ -9635,7 +9674,13 @@
         "gender": "unknown",
         "sub_attribute": "human",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_6053000.png",
+        "f_6053001.png",
+        "f_6053002.png",
+        "f_6053003.png"
+      ]
     },
     {
       "id": "1001700",
@@ -9716,7 +9761,8 @@
         "f_2053001.png",
         "f_2053002.png",
         "f_2053003.png",
-        "f_2053004.png"
+        "f_2053004.png",
+        "f_2053300.png"
       ],
       "name_jp": "ツタンカーメン",
       "bond": {
@@ -9746,7 +9792,8 @@
         "f_7025001.png",
         "f_7025002.png",
         "f_7025003.png",
-        "f_7025004.png"
+        "f_7025004.png",
+        "f_7025300.png"
       ],
       "name_jp": "土方歳三",
       "bond": {
@@ -9901,7 +9948,8 @@
         "f_28011001.png",
         "f_28011002.png",
         "f_28011003.png",
-        "f_28011004.png"
+        "f_28011004.png",
+        "f_28011300.png"
       ],
       "name_jp": "テュフォン?エフェメロス",
       "bond": {
@@ -10154,7 +10202,8 @@
         "f_4038003.png",
         "f_4038004.png",
         "f_4038300.png",
-        "f_4038400.png"
+        "f_4038400.png",
+        "f_4038500.png"
       ],
       "name_jp": "オデュッセウス",
       "bond": {
@@ -10965,7 +11014,8 @@
         "f_25011001.png",
         "f_25011002.png",
         "f_25011003.png",
-        "f_25011004.png"
+        "f_25011004.png",
+        "f_25011300.png"
       ],
       "name_jp": "ククルカン",
       "bond": {
@@ -11057,7 +11107,8 @@
         "f_3046001.png",
         "f_3046002.png",
         "f_3046003.png",
-        "f_3046004.png"
+        "f_3046004.png",
+        "f_3046300.png"
       ],
       "name_jp": "ヴリトラ",
       "bond": {
@@ -11119,7 +11170,8 @@
         "f_3064001.png",
         "f_3064002.png",
         "f_3064003.png",
-        "f_3064004.png"
+        "f_3064004.png",
+        "f_3064300.png"
       ],
       "name_jp": "デメテル",
       "bond": {
@@ -11303,7 +11355,13 @@
           "canBeInBattle",
           "unknown"
         ]
-      }
+      },
+      "images": [
+        "f_99355000.png",
+        "f_99355004.png",
+        "f_99355300.png",
+        "f_99355304.png"
+      ]
     },
     {
       "id": "2801200",
@@ -12103,7 +12161,8 @@
         "f_6051001.png",
         "f_6051002.png",
         "f_6051003.png",
-        "f_6051004.png"
+        "f_6051004.png",
+        "f_6051300.png"
       ],
       "name_jp": "河上彦斎",
       "bond": {
@@ -12255,7 +12314,8 @@
         "f_6047002.png",
         "f_6047003.png",
         "f_6047004.png",
-        "f_6047300.png"
+        "f_6047300.png",
+        "f_6047400.png"
       ],
       "name_jp": "テスカトリポカ",
       "bond": {
@@ -12316,7 +12376,8 @@
         "f_23011001.png",
         "f_23011002.png",
         "f_23011003.png",
-        "f_23011004.png"
+        "f_23011004.png",
+        "f_23011300.png"
       ],
       "name_jp": "玉兎",
       "bond": {
@@ -12678,7 +12739,13 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_7053000.png",
+        "f_7053001.png",
+        "f_7053002.png",
+        "f_7053003.png"
+      ]
     },
     {
       "id": "1100700",
@@ -12926,7 +12993,13 @@
         "gender": "female",
         "sub_attribute": "earth",
         "atlas_tags_raw": []
-      }
+      },
+      "images": [
+        "f_4059000.png",
+        "f_4059001.png",
+        "f_4059002.png",
+        "f_4059003.png"
+      ]
     },
     {
       "id": "100900",
@@ -13158,7 +13231,8 @@
         "f_9013001.png",
         "f_9013002.png",
         "f_9013003.png",
-        "f_9013004.png"
+        "f_9013004.png",
+        "f_9013300.png"
       ],
       "name_jp": "ジェームズ?モリアーティ",
       "bond": {
@@ -13473,7 +13547,8 @@
         "f_1064001.png",
         "f_1064002.png",
         "f_1064003.png",
-        "f_1064004.png"
+        "f_1064004.png",
+        "f_1064300.png"
       ],
       "name_jp": "近藤勇",
       "bond": {
@@ -14321,7 +14396,8 @@
         "f_6005001.png",
         "f_6005002.png",
         "f_6005003.png",
-        "f_6005004.png"
+        "f_6005004.png",
+        "f_6005300.png"
       ],
       "name_jp": "ジャック?ザ?リッパー",
       "bond": {
@@ -14595,7 +14671,8 @@
         "f_40001001.png",
         "f_40001002.png",
         "f_40001003.png",
-        "f_40001004.png"
+        "f_40001004.png",
+        "f_40001300.png"
       ],
       "name_jp": "Ｕ－オルガマリー",
       "bond": {
@@ -14625,6 +14702,55 @@
         "gender": "female",
         "sub_attribute": "star",
         "atlas_tags_raw": []
+      }
+    },
+    {
+      "id": "705400",
+      "collection_no": 482,
+      "name": "新增从者1",
+      "class": "berserker",
+      "rarity": 5,
+      "images": [
+        "f_7054000.png",
+        "f_7054001.png",
+        "f_7054002.png",
+        "f_7054003.png"
+      ],
+      "name_jp": "ダイダロス",
+      "bond": {
+        "tags": [
+          "male",
+          "female",
+          "neutral",
+          "evil",
+          "berserker_class"
+        ],
+        "tags_by_ascension": {},
+        "tags_by_costume": {},
+        "alignment": "neutral",
+        "attribute": "evil",
+        "gender": "unknown",
+        "sub_attribute": "human",
+        "atlas_tags_raw": [
+          "genderMale",
+          "genderFemale",
+          "classBerserker",
+          "attributeHuman",
+          "alignmentNeutral",
+          "alignmentEvil",
+          "fiveStarServant",
+          "servant",
+          "humanoid",
+          "weakToEnumaElish",
+          "greekMythologyMales",
+          "hominidaeServant",
+          "mechanical",
+          "standardClassServant",
+          "groupServant",
+          "canFlyInSpace",
+          "canBeInBattle",
+          "unknown"
+        ]
       }
     }
   ]
