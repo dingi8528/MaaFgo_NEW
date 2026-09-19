@@ -79,6 +79,16 @@ SERVANT_REPLACE_VERIFY_INTERVAL_SECONDS = 0.5
 SERVANT_LIST_STABILITY_MAX_CHECKS = 3
 SERVANT_LIST_STABILITY_INTERVAL_SECONDS = 0.4
 SERVANT_LIST_STABILITY_CENTER_DELTA_PX = 6
+# 小图标从者仓库每屏按六列排列。完整头像模板会被等级、锁定和 COST 覆盖，
+# 因此仓库选择复用羁绊补齐已经过真机验证的内部特征区域；编队槽位识别仍使用
+# 上面的 FACE_THRESHOLD 与 NarrowFigures，不受这里的阈值影响。
+SERVANT_LIST_FACE_X = (97, 284, 472, 659, 847, 1035)
+SERVANT_LIST_FALLBACK_Y = (206, 406)
+SERVANT_LIST_FACE_SIZE = 158
+SERVANT_LIST_FEATURE_REGION = (44, 44, 158, 101)
+SERVANT_LIST_FEATURE_SIZE = (48, 38)
+SERVANT_LIST_FEATURE_THRESHOLD = 0.88
+SERVANT_LIST_FEATURE_MARGIN = 0.12
 SELECT_PAGE_ENTER_TIMEOUT_SECONDS = 8.0
 EMPTY_SLOT_STD_THRESHOLD = 25.0
 EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD = 6.0
@@ -158,6 +168,101 @@ def _read_image(path):
     if not path or not os.path.isfile(path):
         return None
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+
+def _normalized_servant_list_feature(image):
+    """提取仓库卡片内不易受等级、锁定和 COST 遮挡的归一化头像特征。"""
+    if image is None or image.size == 0:
+        return None
+    x1, y1, x2, y2 = SERVANT_LIST_FEATURE_REGION
+    if image.shape[0] < y2 or image.shape[1] < x2:
+        image = cv2.resize(image, (SERVANT_LIST_FACE_SIZE, SERVANT_LIST_FACE_SIZE))
+    region = image[y1:y2, x1:x2]
+    feature = cv2.resize(region, SERVANT_LIST_FEATURE_SIZE).astype(np.float32).reshape(-1)
+    feature -= feature.mean()
+    norm = float(np.linalg.norm(feature))
+    return feature / norm if norm > 0 else None
+
+
+def _visible_servant_list_features(image, sx=1.0, sy=1.0):
+    """返回从者仓库中完整卡片的头像特征和实际截图坐标。"""
+    if image is None or image.size == 0:
+        return [], []
+    base_image = image
+    if image.shape[:2] != (BASE_H, BASE_W):
+        base_image = cv2.resize(image, (BASE_W, BASE_H))
+
+    # 从卡片底部黄色 Servant 条带反推每行头像原点。滑动落点会略有漂移，
+    # 不能把 y 固定为 206/406；fallback 只处理条带暂时识别不到的稳定页面。
+    hsv = cv2.cvtColor(base_image, cv2.COLOR_BGR2HSV)
+    yellow = cv2.inRange(hsv, (18, 100, 100), (40, 255, 255))
+    row_ratio = np.mean(yellow[:, 70:1230] > 0, axis=1)
+    rows = np.where(row_ratio > 0.25)[0]
+    runs = []
+    for row in rows:
+        row = int(row)
+        if not runs or row > runs[-1][-1] + 1:
+            runs.append([row])
+        else:
+            runs[-1].append(row)
+
+    y_origins = []
+    for run in runs:
+        if len(run) < 8 or float(row_ratio[run].max()) < 0.35:
+            continue
+        origin = run[0] - SERVANT_LIST_FACE_SIZE
+        if 165 <= origin and origin + SERVANT_LIST_FACE_SIZE <= BASE_H:
+            if not y_origins or abs(origin - y_origins[-1]) > 20:
+                y_origins.append(origin)
+    if not y_origins:
+        y_origins = list(SERVANT_LIST_FALLBACK_Y)
+
+    features, centers = [], []
+    for base_y in y_origins:
+        for base_x in SERVANT_LIST_FACE_X:
+            card = base_image[
+                base_y:base_y + SERVANT_LIST_FACE_SIZE,
+                base_x:base_x + SERVANT_LIST_FACE_SIZE,
+            ]
+            if card.shape[:2] != (SERVANT_LIST_FACE_SIZE, SERVANT_LIST_FACE_SIZE):
+                continue
+            feature = _normalized_servant_list_feature(card)
+            if feature is None:
+                continue
+            features.append(feature)
+            centers.append((
+                int(round((base_x + SERVANT_LIST_FACE_SIZE / 2) * sx)),
+                int(round((base_y + SERVANT_LIST_FACE_SIZE / 2) * sy)),
+            ))
+    return features, centers
+
+
+def _match_servant_list_cards(image, templates, sx=1.0, sy=1.0):
+    """只在完整仓库卡位内匹配目标从者，返回分数、中心、模板及卡位分差。"""
+    card_features, centers = _visible_servant_list_features(image, sx, sy)
+    variants = []
+    variant_features = []
+    for template_name, template in templates:
+        feature = _normalized_servant_list_feature(template)
+        if feature is not None:
+            variants.append(template_name)
+            variant_features.append(feature)
+    if not card_features or not variant_features:
+        return None
+
+    scores = np.stack(variant_features) @ np.stack(card_features).T
+    ranked_cards = []
+    for card_index, center in enumerate(centers):
+        variant_index = int(np.argmax(scores[:, card_index]))
+        ranked_cards.append((
+            float(scores[variant_index, card_index]),
+            center,
+            variants[variant_index],
+        ))
+    ranked_cards.sort(key=lambda item: item[0], reverse=True)
+    best = ranked_cards[0]
+    second_score = ranked_cards[1][0] if len(ranked_cards) > 1 else -1.0
+    return best[0], best[1], best[2], best[0] - second_score
 
 
 @AgentServer.custom_action("auto_formation_from_chaldea")
@@ -1158,8 +1263,6 @@ class AutoFormationFromChaldea(CustomAction):
     def _find_and_select_servant(self, servant):
         templates = self._load_servant_templates(servant["id"], self.face_dirs)
         if not templates:
-            templates = self._load_servant_templates(servant["id"], self.narrow_dirs)
-        if not templates:
             return self._fail(f"resource_missing: 从者选择图 {servant['id']}")
         # 每次开始查找前都先通过右侧滚动条复位到列表顶端。筛选后的默认位置
         # 不能作为前提，否则上一名从者的滚动位置会漏掉前面的匹配项。
@@ -1174,9 +1277,11 @@ class AutoFormationFromChaldea(CustomAction):
             if match is not None:
                 mfaalog.info(
                     f"[自动编队] 查找 {servant['name']} 第{round_index + 1}轮，"
-                    f"最高分={match[0]:.3f} 模板={match[2]}"
+                    f"最高分={match[0]:.3f}/{SERVANT_LIST_FEATURE_THRESHOLD:.2f} "
+                    f"卡位分差={match[3]:.3f}/{SERVANT_LIST_FEATURE_MARGIN:.2f} "
+                    f"模板={match[2]}"
                 )
-            if match is not None and match[0] >= FACE_THRESHOLD:
+            if self._servant_list_match_accepted(match):
                 self.controller.post_click(*match[1]).wait()
                 if self._wait_for(self._in_formation_edit, 5.0):
                     return True
@@ -1189,12 +1294,12 @@ class AutoFormationFromChaldea(CustomAction):
         """只返回连续两帧中位置稳定的从者列表匹配，避免滚动残影误点。"""
         latest = None
         for check_index in range(SERVANT_LIST_STABILITY_MAX_CHECKS):
-            first = self._match_servant(self._shot(), templates, None)
+            first = _match_servant_list_cards(self._shot(), templates, self.sx, self.sy)
             time.sleep(SERVANT_LIST_STABILITY_INTERVAL_SECONDS)
-            second = self._match_servant(self._shot(), templates, None)
+            second = _match_servant_list_cards(self._shot(), templates, self.sx, self.sy)
             latest = second or first
-            first_hit = first is not None and first[0] >= FACE_THRESHOLD
-            second_hit = second is not None and second[0] >= FACE_THRESHOLD
+            first_hit = self._servant_list_match_accepted(first)
+            second_hit = self._servant_list_match_accepted(second)
             if not first_hit and not second_hit:
                 return latest
             if first_hit and second_hit:
@@ -1211,6 +1316,14 @@ class AutoFormationFromChaldea(CustomAction):
                 f"第{check_index + 1}/{SERVANT_LIST_STABILITY_MAX_CHECKS}次等待"
             )
         return None
+
+    @staticmethod
+    def _servant_list_match_accepted(match):
+        return bool(
+            match is not None
+            and match[0] >= SERVANT_LIST_FEATURE_THRESHOLD
+            and match[3] >= SERVANT_LIST_FEATURE_MARGIN
+        )
 
     def _get_servant_info(self, svt_id):
         path = os.path.join(_CUSTOM_DIR, "servant_list.json")
