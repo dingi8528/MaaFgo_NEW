@@ -62,6 +62,28 @@ EQUIP_TEAM_ROIS = (
     (1055, 436, 188, 120),
 )
 
+
+def _expand_roi_from_center(roi, scale):
+    """按中心点扩大基准 ROI，供允许轻微 UI 偏移的模板搜索使用。"""
+    x, y, width, height = roi
+    expanded_width = int(round(width * scale))
+    expanded_height = int(round(height * scale))
+    return (
+        x - (expanded_width - width) // 2,
+        y - (expanded_height - height) // 2,
+        expanded_width,
+        expanded_height,
+    )
+
+
+# 只放宽礼装模板的搜索范围，不改变空位检测、槽位快照与点击坐标使用的
+# EQUIP_TEAM_ROIS。1280x720 真机截图中礼装模板实际从 y=435 开始，旧 ROI
+# 从 y=436 开始会裁掉顶部 1px；中心放大 10% 后，9408590 的复核分数由
+# 0.8120 提升至 0.9351，空槽最高误匹配仍低于阈值。
+EQUIP_TEAM_MATCH_ROIS = tuple(
+    _expand_roi_from_center(roi, 1.10) for roi in EQUIP_TEAM_ROIS
+)
+
 # 真机编队验证的最低有效命中约为 0.649；取 0.62 以降低误匹配，同时保留
 # 资源加载、抗锯齿和不同灵基图带来的合理余量。
 FACE_THRESHOLD = 0.62
@@ -1351,7 +1373,9 @@ class AutoFormationFromChaldea(CustomAction):
 
     def _equip_matches_slot(self, slot_index, equip_id):
         image = self._shot()
-        match = self._match_equip(image, equip_id, EQUIP_TEAM_ROIS[slot_index])
+        match = self._match_equip(
+            image, equip_id, EQUIP_TEAM_MATCH_ROIS[slot_index]
+        )
         return match is not None and match[0] >= EQUIP_TEAM_THRESHOLD, match
 
     def _equip_matches_slot_stable(self, slot_index, equip_id):
@@ -1399,6 +1423,13 @@ class AutoFormationFromChaldea(CustomAction):
                 return "grand"
             self._fail(f"equip_relocation_failed: 槽位{slot_index + 1}未进入礼装选择界面")
             return "failed"
+        if not self.equip_list_view_prepared:
+            if not self._run_pipeline("自动编队-准备礼装列表"):
+                self._fail(
+                    f"equip_relocation_failed: 槽位{slot_index + 1}未能准备礼装列表"
+                )
+                return "failed"
+            self.equip_list_view_prepared = True
         if not self._run_pipeline("自动编队-卸下当前礼装"):
             self._fail(f"equip_relocation_failed: 槽位{slot_index + 1}未能卸下礼装")
             return "failed"

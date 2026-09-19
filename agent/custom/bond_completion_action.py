@@ -33,6 +33,7 @@ from bond_matcher import (
 )
 from formation_action import (
     EQUIP_SLOT_CLICK_Y,
+    EQUIP_TEAM_MATCH_ROIS,
     EQUIP_TEAM_ROIS,
     GRAND_EQUIP_POPUP_CONTENT_ROI,
     AutoFormationFromChaldea,
@@ -1013,7 +1014,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         if data is None:
             return None
         _name, template = data
-        return self._match_template(image, template, EQUIP_TEAM_ROIS[slot])
+        return self._match_template(image, template, EQUIP_TEAM_MATCH_ROIS[slot])
 
     def _classify_current_equips_stable(self, detected):
         """要求连续两帧得到相同礼装分类，再用于规划或保护校验。"""
@@ -2043,6 +2044,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         """卸下指定本地槽位礼装，并以 UI COST 与空槽状态复核。"""
         if not self._enter_equip_select_new(slot):
             return False
+        if not getattr(self, "equip_list_prepared", False):
+            if not self._run_pipeline("羁绊补齐-准备礼装列表"):
+                return False
+            self.equip_list_prepared = True
         if not self._run_pipeline("羁绊补齐-卸下当前礼装"):
             return False
         if not self._wait_for(self._in_formation_edit, 6.0):
