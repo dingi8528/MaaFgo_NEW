@@ -87,6 +87,31 @@ class BbcToChaldeaTest(unittest.TestCase):
         self.assertEqual(calls[5:9], ["cast_master_skill", "order_change",
                                      "cast_master_skill", "cast_servant_skill"])
 
+    def test_order_change_accepts_chaldea_relative_backup_indexes(self):
+        actions = [
+            {"type": "skill", "svt": None, "skill": 2},
+            {"type": "attack", "attacks": []},
+        ]
+        cases = (
+            ([0, 0], (1, 4)),
+            ([2, 2], (3, 6)),
+            ([1, 3], (2, 4)),  # BBC 导入使用整队 0-based 候补槽位。
+        )
+        for raw_indexes, expected in cases:
+            with self.subTest(raw_indexes=raw_indexes):
+                plan = convert_chaldea_actions_to_battle_plan(
+                    actions,
+                    {"replaceMemberIndexes": [raw_indexes]},
+                    440,
+                )
+                order_change = plan.turns[0].order_change
+                self.assertIsNotNone(order_change)
+                self.assertEqual(
+                    (order_change.starting_member_idx,
+                     order_change.sub_member_idx),
+                    expected,
+                )
+
     def test_explicit_empty_np_turn_does_not_auto_cast_np(self):
         plan = BattlePlan(turns=(TurnPlan(np_order=()),))
         state = SimpleNamespace(
