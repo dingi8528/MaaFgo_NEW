@@ -9,6 +9,7 @@
         "attach": {
             "bond_base": "1200",
             "bond_completion_enabled": false,
+            "auto_memory_enabled": true,
             "chaldea_import_source": "",
             "debug_preserve_failure": false,
             "modify_unspecified_equips": true,

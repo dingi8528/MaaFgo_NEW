@@ -21,6 +21,7 @@
           "name": "Yes",
           "label": "是",
           "option": [
+            "自动记忆",
             "补齐从者优先X星",
             "羁绊基础值",
             "使用本地从者库",
@@ -32,6 +33,36 @@
             "执行羁绊补齐自动编队": {
               "attach": {
                 "bond_completion_enabled": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "自动记忆": {
+      "type": "switch",
+      "label": "自动记忆",
+      "description": "记住成功编队，相同阵容下跳过重复优化。",
+      "default_case": "Yes",
+      "cases": [
+        {
+          "name": "Yes",
+          "label": "是",
+          "pipeline_override": {
+            "执行羁绊补齐自动编队": {
+              "attach": {
+                "auto_memory_enabled": true
+              }
+            }
+          }
+        },
+        {
+          "name": "No",
+          "label": "否",
+          "pipeline_override": {
+            "执行羁绊补齐自动编队": {
+              "attach": {
+                "auto_memory_enabled": false
               }
             }
           }
