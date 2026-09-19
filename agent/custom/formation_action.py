@@ -2553,7 +2553,8 @@ class FormationIdentityFrame(CustomRecognition):
             return CustomRecognition.AnalyzeResult(box=(0, 0, 1, 1), detail={"frame_ok": True})
         except Exception as exc:
             # 命中只代表本次采样已结束，不代表身份/页面识别成功。
-            # 外层采集动作检查 error，失败不得走开始任务。
+            # 外层采集动作检查 error，失败时清除旧快照并按通用策略继续。
+            mfaalog.warning(f"[初始编队] 单帧采集失败: {exc}")
             try:
                 sessions.append_frame(root, token, revision, (), str(exc))
             except ValueError:
@@ -2603,8 +2604,13 @@ class CaptureInitialFormation(CustomAction):
             return CustomAction.RunResult(success=True)
         except Exception as exc:
             try:
-                sessions.invalidate(root, token, str(exc))
+                sessions.skip_capture(root, token)
             except ValueError:
                 pass
-            mfaalog.error(f"[初始编队] 采集失败，旧快照已失效，不开始战斗: {exc}")
-            return CustomAction.RunResult(success=False)
+            if context.tasker.stopping:
+                mfaalog.warning(f"[初始编队] 采集因任务停止而中断: {exc}")
+                return CustomAction.RunResult(success=False)
+            mfaalog.warning(
+                f"[初始编队] 采集失败，已清除旧快照；本次战斗按通用策略继续: {exc}"
+            )
+            return CustomAction.RunResult(success=True)
