@@ -488,9 +488,13 @@ tools/start_maa_mcp.ps1
 
 # 羁绊数据维护工具生成的同目录备份
 *.before-atlas-append-*.csv
+*.before-atlas-servant-sync-*.csv
 *.before-atlas-bond-sync-*.csv
 *.before-bond-archive-*.csv
 
 
 # 本地礼装图标 Skill（不提交）
 skills/fgo-equip-icon-pipeline/
+
+# 本地从者图标 Skill（不提交）
+skills/fgo-servant-icon-pipeline/

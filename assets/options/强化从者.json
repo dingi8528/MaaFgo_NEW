@@ -56,8 +56,38 @@
         "强化从者-全从者列表": {
             "type": "select",
             "label": "从者",
-            "default": "481. 哈贝特洛特（4星·伪）(2801300)",
+            "default": "482. 新增从者1（5星·狂）",
             "cases": [
+                {
+                    "name": "482. 新增从者1（5星·狂）",
+                    "label": "482. 新增从者1（5星·狂）",
+                    "option": [
+                        "强化从者-目标-705400"
+                    ],
+                    "pipeline_override": {
+                        "执行强化从者": {
+                            "attach": {
+                                "servant_id": "705400"
+                            }
+                        },
+                        "强化从者-筛选职介": {
+                            "recognition": {
+                                "param": {
+                                    "template": "强化从者/职介-狂战士.png"
+                                }
+                            }
+                        },
+                        "强化从者-筛选星级": {
+                            "recognition": {
+                                "param": {
+                                    "template": "整理礼物盒/5星未选中.png"
+                                }
+                            }
+                        }
+                    },
+                    "description": "已选从者：新增从者1\n\n<img src=\"resource/base/image/servant_face/f_7054000.png\" width=\"79\" height=\"79\" alt=\"新增从者1头像\" />",
+                    "icon": "resource/base/image/servant_face/f_7054000.png"
+                },
                 {
                     "name": "481. 哈贝特洛特（4星·伪）(2801300)",
                     "label": "481. 哈贝特洛特（4星·伪）(2801300)",
@@ -84,7 +114,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：哈贝特洛特\n\n<img src=\"resource/base/image/servant_face/f_28013000.png\" width=\"79\" height=\"79\" alt=\"哈贝特洛特头像\" />",
+                    "icon": "resource/base/image/servant_face/f_28013000.png"
                 },
                 {
                     "name": "480. 小野小町（4星·弓）(205600)",
@@ -112,7 +144,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：小野小町\n\n<img src=\"resource/base/image/servant_face/f_2056000.png\" width=\"79\" height=\"79\" alt=\"小野小町头像\" />",
+                    "icon": "resource/base/image/servant_face/f_2056000.png"
                 },
                 {
                     "name": "479. Kingprotea·Alter（5星·仇）",
@@ -140,7 +174,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：Kingprotea·Alter\n\n<img src=\"resource/base/image/servant_face/f_11023000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea·Alter头像\" />",
+                    "icon": "resource/base/image/servant_face/f_11023000.png"
                 },
                 {
                     "name": "478. 莉莉丝（5星·骑）(405900)",
@@ -168,7 +204,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：莉莉丝\n\n<img src=\"resource/base/image/servant_face/f_4059000.png\" width=\"79\" height=\"79\" alt=\"莉莉丝头像\" />",
+                    "icon": "resource/base/image/servant_face/f_4059000.png"
                 },
                 {
                     "name": "477. 比肖内（4星·术）(506000)",
@@ -196,7 +234,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：比肖内\n\n<img src=\"resource/base/image/servant_face/f_5060000.png\" width=\"79\" height=\"79\" alt=\"比肖内头像\" />",
+                    "icon": "resource/base/image/servant_face/f_5060000.png"
                 },
                 {
                     "name": "476. Kingprotea（5星·月）(2301200)",
@@ -224,7 +264,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：Kingprotea\n\n<img src=\"resource/base/image/servant_face/f_23012000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea头像\" />",
+                    "icon": "resource/base/image/servant_face/f_23012000.png"
                 },
                 {
                     "name": "475. 红阎魔（5星·狂）(705300)",
@@ -252,7 +294,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：红阎魔\n\n<img src=\"resource/base/image/servant_face/f_7053000.png\" width=\"79\" height=\"79\" alt=\"红阎魔头像\" />",
+                    "icon": "resource/base/image/servant_face/f_7053000.png"
                 },
                 {
                     "name": "474. 哈桑·萨巴赫（5星·杀）",
@@ -280,7 +324,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：哈桑·萨巴赫\n\n<img src=\"resource/base/image/servant_face/f_6053000.png\" width=\"79\" height=\"79\" alt=\"哈桑·萨巴赫头像\" />",
+                    "icon": "resource/base/image/servant_face/f_6053000.png"
                 },
                 {
                     "name": "473. 格蕾·Lily（4星·枪）(306300)",
@@ -9698,7 +9744,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：所罗门\n\n<img src=\"resource/base/image/servant_face/f_99355000.png\" width=\"79\" height=\"79\" alt=\"所罗门头像\" />",
+                    "icon": "resource/base/image/servant_face/f_99355000.png"
                 },
                 {
                     "name": "150. 梅林（5星·术）",
@@ -18083,7 +18131,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：哈贝特洛特\n\n<img src=\"resource/base/image/servant_face/f_28013000.png\" width=\"79\" height=\"79\" alt=\"哈贝特洛特头像\" />",
+                    "icon": "resource/base/image/servant_face/f_28013000.png"
                 },
                 {
                     "name": "430. 阿比盖尔·威廉姆斯〔圣诞〕",
@@ -19115,7 +19165,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：比肖内\n\n<img src=\"resource/base/image/servant_face/f_5060000.png\" width=\"79\" height=\"79\" alt=\"比肖内头像\" />",
+                    "icon": "resource/base/image/servant_face/f_5060000.png"
                 },
                 {
                     "name": "404. 由井正雪",
@@ -21204,7 +21256,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：小野小町\n\n<img src=\"resource/base/image/servant_face/f_2056000.png\" width=\"79\" height=\"79\" alt=\"小野小町头像\" />",
+                    "icon": "resource/base/image/servant_face/f_2056000.png"
                 },
                 {
                     "name": "399. 杂贺孙一",
@@ -23007,7 +23061,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：Kingprotea\n\n<img src=\"resource/base/image/servant_face/f_23012000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea头像\" />",
+                    "icon": "resource/base/image/servant_face/f_23012000.png"
                 },
                 {
                     "name": "448. 玉兔",
@@ -23649,7 +23705,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：Kingprotea·Alter\n\n<img src=\"resource/base/image/servant_face/f_11023000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea·Alter头像\" />",
+                    "icon": "resource/base/image/servant_face/f_11023000.png"
                 },
                 {
                     "name": "469. 无地王约翰",
@@ -24928,7 +24986,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：哈桑·萨巴赫\n\n<img src=\"resource/base/image/servant_face/f_6053000.png\" width=\"79\" height=\"79\" alt=\"哈桑·萨巴赫头像\" />",
+                    "icon": "resource/base/image/servant_face/f_6053000.png"
                 },
                 {
                     "name": "453. 河上彦斋",
@@ -26170,7 +26230,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：所罗门\n\n<img src=\"resource/base/image/servant_face/f_99355000.png\" width=\"79\" height=\"79\" alt=\"所罗门头像\" />",
+                    "icon": "resource/base/image/servant_face/f_99355000.png"
                 },
                 {
                     "name": "150. 梅林",
@@ -27479,7 +27541,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：莉莉丝\n\n<img src=\"resource/base/image/servant_face/f_4059000.png\" width=\"79\" height=\"79\" alt=\"莉莉丝头像\" />",
+                    "icon": "resource/base/image/servant_face/f_4059000.png"
                 },
                 {
                     "name": "452. 尼莫／诺亚",
@@ -28056,8 +28120,38 @@
         "强化从者-从者-5-berserker": {
             "type": "select",
             "label": "从者",
-            "default": "475. 红阎魔",
+            "default": "482. 新增从者1",
             "cases": [
+                {
+                    "name": "482. 新增从者1",
+                    "label": "482. 新增从者1",
+                    "option": [
+                        "强化从者-目标-705400"
+                    ],
+                    "pipeline_override": {
+                        "执行强化从者": {
+                            "attach": {
+                                "servant_id": "705400"
+                            }
+                        },
+                        "强化从者-筛选职介": {
+                            "recognition": {
+                                "param": {
+                                    "template": "强化从者/职介-狂战士.png"
+                                }
+                            }
+                        },
+                        "强化从者-筛选星级": {
+                            "recognition": {
+                                "param": {
+                                    "template": "整理礼物盒/5星未选中.png"
+                                }
+                            }
+                        }
+                    },
+                    "description": "已选从者：新增从者1\n\n<img src=\"resource/base/image/servant_face/f_7054000.png\" width=\"79\" height=\"79\" alt=\"新增从者1头像\" />",
+                    "icon": "resource/base/image/servant_face/f_7054000.png"
+                },
                 {
                     "name": "475. 红阎魔",
                     "label": "475. 红阎魔",
@@ -28084,7 +28178,9 @@
                                 }
                             }
                         }
-                    }
+                    },
+                    "description": "已选从者：红阎魔\n\n<img src=\"resource/base/image/servant_face/f_7053000.png\" width=\"79\" height=\"79\" alt=\"红阎魔头像\" />",
+                    "icon": "resource/base/image/servant_face/f_7053000.png"
                 },
                 {
                     "name": "440. 莉莉丝",
@@ -31587,7 +31683,9 @@
                         "target_level": "{target_level_2801300}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：哈贝特洛特\n\n<img src=\"resource/base/image/servant_face/f_28013000.png\" width=\"79\" height=\"79\" alt=\"哈贝特洛特头像\" />",
+            "icon": "resource/base/image/servant_face/f_28013000.png"
         },
         "强化从者-目标-203000": {
             "type": "input",
@@ -32047,7 +32145,9 @@
                         "target_level": "{target_level_205600}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：小野小町\n\n<img src=\"resource/base/image/servant_face/f_2056000.png\" width=\"79\" height=\"79\" alt=\"小野小町头像\" />",
+            "icon": "resource/base/image/servant_face/f_2056000.png"
         },
         "强化从者-目标-501200": {
             "type": "input",
@@ -32881,7 +32981,9 @@
                         "target_level": "{target_level_506000}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：比肖内\n\n<img src=\"resource/base/image/servant_face/f_5060000.png\" width=\"79\" height=\"79\" alt=\"比肖内头像\" />",
+            "icon": "resource/base/image/servant_face/f_5060000.png"
         },
         "强化从者-目标-704800": {
             "type": "input",
@@ -35101,7 +35203,9 @@
                         "target_level": "{target_level_2301200}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：Kingprotea\n\n<img src=\"resource/base/image/servant_face/f_23012000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea头像\" />",
+            "icon": "resource/base/image/servant_face/f_23012000.png"
         },
         "强化从者-目标-1102300": {
             "type": "input",
@@ -35121,7 +35225,9 @@
                         "target_level": "{target_level_1102300}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：Kingprotea·Alter\n\n<img src=\"resource/base/image/servant_face/f_11023000.png\" width=\"79\" height=\"79\" alt=\"Kingprotea·Alter头像\" />",
+            "icon": "resource/base/image/servant_face/f_11023000.png"
         },
         "强化从者-目标-1000200": {
             "type": "input",
@@ -35911,7 +36017,9 @@
                         "target_level": "{target_level_605300}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：哈桑·萨巴赫\n\n<img src=\"resource/base/image/servant_face/f_6053000.png\" width=\"79\" height=\"79\" alt=\"哈桑·萨巴赫头像\" />",
+            "icon": "resource/base/image/servant_face/f_6053000.png"
         },
         "强化从者-目标-1001700": {
             "type": "input",
@@ -37075,7 +37183,9 @@
                         "target_level": "{target_level_9935530}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：所罗门\n\n<img src=\"resource/base/image/servant_face/f_99355000.png\" width=\"79\" height=\"79\" alt=\"所罗门头像\" />",
+            "icon": "resource/base/image/servant_face/f_99355000.png"
         },
         "强化从者-目标-2801200": {
             "type": "input",
@@ -38041,7 +38151,9 @@
                         "target_level": "{target_level_705300}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：红阎魔\n\n<img src=\"resource/base/image/servant_face/f_7053000.png\" width=\"79\" height=\"79\" alt=\"红阎魔头像\" />",
+            "icon": "resource/base/image/servant_face/f_7053000.png"
         },
         "强化从者-目标-1100700": {
             "type": "input",
@@ -38215,7 +38327,9 @@
                         "target_level": "{target_level_405900}"
                     }
                 }
-            }
+            },
+            "description": "已选从者：莉莉丝\n\n<img src=\"resource/base/image/servant_face/f_4059000.png\" width=\"79\" height=\"79\" alt=\"莉莉丝头像\" />",
+            "icon": "resource/base/image/servant_face/f_4059000.png"
         },
         "强化从者-目标-100900": {
             "type": "input",
@@ -39360,6 +39474,28 @@
             },
             "description": "已选从者：Ｕ－奥尔加玛丽\n\n<img src=\"resource/base/image/servant_face/f_40001000.png\" width=\"79\" height=\"79\" alt=\"Ｕ－奥尔加玛丽头像\" />",
             "icon": "resource/base/image/servant_face/f_40001000.png"
+        },
+        "强化从者-目标-705400": {
+            "type": "input",
+            "label": "目标等级",
+            "inputs": [
+                {
+                    "name": "target_level_705400",
+                    "label": "目标等级（1-120，默认满破 90）",
+                    "default": "90",
+                    "pipeline_type": "int",
+                    "verify": "^(1[0-2][0-9]|[1-9][0-9]?)$"
+                }
+            ],
+            "pipeline_override": {
+                "执行强化从者": {
+                    "attach": {
+                        "target_level": "{target_level_705400}"
+                    }
+                }
+            },
+            "description": "已选从者：新增从者1\n\n<img src=\"resource/base/image/servant_face/f_7054000.png\" width=\"79\" height=\"79\" alt=\"新增从者1头像\" />",
+            "icon": "resource/base/image/servant_face/f_7054000.png"
         }
     }
 }
