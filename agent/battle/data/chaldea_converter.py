@@ -48,6 +48,32 @@ def _parse_target(options: Optional[dict]) -> Optional[int]:
     return None
 
 
+def _normalize_replace_member(item: object) -> Optional[Tuple[int, int]]:
+    """把换人索引统一为战斗界面的 1-based 槽位。
+
+    Chaldea 分享数据把首发与候补分别编号，因此候补索引为 0..2；
+    项目内 BBC 导入的兼容数据则沿用整队 0-based 槽位 3..5。
+    """
+    if not (
+        isinstance(item, (list, tuple))
+        and len(item) >= 2
+        and type(item[0]) is int
+        and type(item[1]) is int
+    ):
+        return None
+
+    front, back = item[0], item[1]
+    if not 0 <= front <= 2:
+        return None
+    if 0 <= back <= 2:
+        sub_member_idx = back + 4
+    elif 3 <= back <= 5:
+        sub_member_idx = back + 1
+    else:
+        return None
+    return front + 1, sub_member_idx
+
+
 def convert_chaldea_actions_to_battle_plan(
     actions: List[dict],
     delegate: Optional[dict] = None,
@@ -69,19 +95,19 @@ def convert_chaldea_actions_to_battle_plan(
     mfaalog.info(f"[chaldea_converter] 开始转换: actions={len(actions)}条, "
                  f"mystic_code_id={mystic_code_id}, delegate={'有' if delegate else '无'}")
 
-    # 换人信息：delegate.replaceMemberIndexes -> [(front,back), ...]（0-based）
-    replace_members: List[List[int]] = []
+    # 换人信息统一为战斗界面的实际槽位：首发 1..3，候补 4..6。
+    replace_members: List[Tuple[int, int]] = []
     if isinstance(delegate, dict):
         raw = delegate.get("replaceMemberIndexes")
         if isinstance(raw, list):
             for item in raw:
-                if (
-                    isinstance(item, (list, tuple))
-                    and len(item) >= 2
-                    and isinstance(item[0], int)
-                    and isinstance(item[1], int)
-                ):
-                    replace_members.append([item[0], item[1]])
+                normalized = _normalize_replace_member(item)
+                if normalized is not None:
+                    replace_members.append(normalized)
+                else:
+                    mfaalog.warning(
+                        f"[chaldea_converter] 忽略无效换人槽位: {item!r}"
+                    )
     replace_ptr = 0
 
     is_order_change = _is_order_change_mystic_code(mystic_code_id)
@@ -129,11 +155,11 @@ def convert_chaldea_actions_to_battle_plan(
                 # 御主技能
                 if skill_idx == 2 and is_order_change and replace_ptr < len(replace_members):
                     # 换人服第 3 技能 = 换人（Chaldea 0-based: skill=2）
-                    front, back = replace_members[replace_ptr]
+                    front_slot, sub_slot = replace_members[replace_ptr]
                     replace_ptr += 1
                     cur_order_change = OrderChangeAction(
-                        starting_member_idx=front + 1,
-                        sub_member_idx=back + 1,
+                        starting_member_idx=front_slot,
+                        sub_member_idx=sub_slot,
                     )
                     master = MasterSkillAction(skill_idx + 1)
                     cur_masters.append(master)

@@ -94,6 +94,16 @@ class SessionTests(unittest.TestCase):
         store.finish(1)
         self.assertFalse(store.valid(1, token))
 
+    def test_skipped_capture_discards_old_snapshot_and_allows_empty_read(self):
+        store = FormationSessions()
+        token = store.begin(1)
+        publish(store, 1, token)
+        store.begin_capture(1, token)
+        store.skip_capture(1, token)
+        snapshot, battle = store.read(1, token)
+        self.assertIsNone(snapshot)
+        self.assertEqual(battle, 1)
+
     def test_stop_clears_only_matching_owner(self):
         store = FormationSessions()
         for root in (1, 2):
@@ -126,7 +136,11 @@ class EntryTests(unittest.TestCase):
             self.assertEqual(entry, "编队身份-采样")
             params = [pipeline_override[n]["recognition"]["param"]["custom_recognition_param"]
                       for n in f.IDENTITY_FRAME_NODES]
-            self.assertEqual([p["full_audit"] for p in params], [True])
+            self.assertEqual(
+                [p["full_audit"] for p in params],
+                [len(f.IDENTITY_FRAME_NODES) > 1 and i == len(f.IDENTITY_FRAME_NODES) - 1
+                 for i in range(len(f.IDENTITY_FRAME_NODES))],
+            )
             for p in params:
                 sessions.append_frame(ctx.root, token, p["revision"], SLOTS)
             return NS(status=NS(succeeded=True))
@@ -134,21 +148,23 @@ class EntryTests(unittest.TestCase):
         result = f.CaptureInitialFormation().run(ctx, NS(node_name="编队身份-采集"))
         self.assertTrue(result.success)
         snapshot, _ = sessions.read(ctx.root, token)
+        self.assertIsNotNone(snapshot)
         with patch.object(a, "AutoBattleRuntime") as runtime:
             runtime.return_value.run.return_value = NS(ok=True, reason="victory", turns=1)
             result = a.AutoBattleAction().run(ctx, NS(custom_action_param="{}"))
             self.assertTrue(result.success)
             self.assertIs(runtime.call_args.kwargs["initial_formation"], snapshot)
 
-    def test_failed_capture_invalidates_snapshot_and_does_not_start_runtime(self):
+    def test_failed_capture_discards_snapshot_and_starts_runtime_with_generic_strategy(self):
         ctx = FakeContext()
         token = self.start(ctx)
         publish(sessions, ctx.root, token)
         ctx.run_task.return_value = NS(status=NS(succeeded=False))
-        self.assertFalse(f.CaptureInitialFormation().run(ctx, NS(node_name="编队身份-采集")).success)
+        self.assertTrue(f.CaptureInitialFormation().run(ctx, NS(node_name="编队身份-采集")).success)
         with patch.object(a, "AutoBattleRuntime") as runtime:
-            self.assertFalse(a.AutoBattleAction().run(ctx, NS(custom_action_param="{}")).success)
-            runtime.assert_not_called()
+            runtime.return_value.run.return_value = NS(ok=True, reason="victory", turns=1)
+            self.assertTrue(a.AutoBattleAction().run(ctx, NS(custom_action_param="{}")).success)
+            self.assertIsNone(runtime.call_args.kwargs["initial_formation"])
 
     def test_direct_battle_has_no_formation(self):
         ctx = FakeContext()

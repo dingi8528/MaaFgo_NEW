@@ -33,6 +33,7 @@ from bond_matcher import (
 )
 from formation_action import (
     EQUIP_SLOT_CLICK_Y,
+    EQUIP_TEAM_MATCH_ROIS,
     EQUIP_TEAM_ROIS,
     GRAND_EQUIP_POPUP_CONTENT_ROI,
     AutoFormationFromChaldea,
@@ -396,6 +397,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 f"(+{final_score - self.initial_score})，COST={self.used_cost}/{self.max_cost}，"
                 f"剩余={self.max_cost - self.used_cost}"
             )
+            if final_score < self.initial_score:
+                return self._abort_safe(
+                    "bond_completion_score_regression: "
+                    f"最终羁绊收益 {final_score} 低于初始值 {self.initial_score}"
+                )
             if not self._run_pipeline("羁绊补齐-编队决定"):
                 return self._abort_safe("bond_completion_final_mismatch: 未能点击编队决定")
             self.opened_edit = False
@@ -1013,7 +1019,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         if data is None:
             return None
         _name, template = data
-        return self._match_template(image, template, EQUIP_TEAM_ROIS[slot])
+        return self._match_template(image, template, EQUIP_TEAM_MATCH_ROIS[slot])
 
     def _classify_current_equips_stable(self, detected):
         """要求连续两帧得到相同礼装分类，再用于规划或保护校验。"""
@@ -2043,6 +2049,10 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         """卸下指定本地槽位礼装，并以 UI COST 与空槽状态复核。"""
         if not self._enter_equip_select_new(slot):
             return False
+        if not getattr(self, "equip_list_prepared", False):
+            if not self._run_pipeline("羁绊补齐-准备礼装列表"):
+                return False
+            self.equip_list_prepared = True
         if not self._run_pipeline("羁绊补齐-卸下当前礼装"):
             return False
         if not self._wait_for(self._in_formation_edit, 6.0):
@@ -2304,9 +2314,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             self._leave_servant_select()
         if self._confirmed_now(self._in_formation_edit) and self._run_pipeline("羁绊补齐-取消配置"):
             # 队伍发生过变化时，游戏会询问是否放弃当前改动。右侧“决定”才会
-            # 恢复进入本 Action 前的第一阶段队伍；左侧“取消”会留在编辑页。
-            self._run_pipeline("羁绊补齐-取消变更确认")
+            # 恢复进入本 Action 前的第一阶段队伍；没有实际变更时则会直接返回
+            # 编队确认页，此时不能继续等待一个不会出现的弹窗。
             self.opened_edit = False
+            if not self._confirmed_now(self._on_confirm_page):
+                self._run_pipeline("羁绊补齐-取消变更确认")
             if self._wait_for(self._on_confirm_page, 6.0):
                 self._focus_user("羁绊优化已取消，原编队已恢复", "orange")
                 mfaalog.warning("[羁绊补齐] bond_completion_aborted_safe: 已恢复第一阶段编队")

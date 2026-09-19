@@ -88,6 +88,12 @@ class FormationSessions:
             session = self._get(task_id, token)
             self._invalidate(session, reason)
 
+    def skip_capture(self, task_id: int, token: str) -> None:
+        """丢弃本次采集并允许战斗在无初始快照时继续。"""
+        with self._lock:
+            session = self._get(task_id, token)
+            self._invalidate(session, "")
+
     def begin_capture(self, task_id: int, token: str) -> int:
         with self._lock:
             session = self._get(task_id, token)

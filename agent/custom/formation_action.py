@@ -62,6 +62,28 @@ EQUIP_TEAM_ROIS = (
     (1055, 436, 188, 120),
 )
 
+
+def _expand_roi_from_center(roi, scale):
+    """按中心点扩大基准 ROI，供允许轻微 UI 偏移的模板搜索使用。"""
+    x, y, width, height = roi
+    expanded_width = int(round(width * scale))
+    expanded_height = int(round(height * scale))
+    return (
+        x - (expanded_width - width) // 2,
+        y - (expanded_height - height) // 2,
+        expanded_width,
+        expanded_height,
+    )
+
+
+# 只放宽礼装模板的搜索范围，不改变空位检测、槽位快照与点击坐标使用的
+# EQUIP_TEAM_ROIS。1280x720 真机截图中礼装模板实际从 y=435 开始，旧 ROI
+# 从 y=436 开始会裁掉顶部 1px；中心放大 10% 后，9408590 的复核分数由
+# 0.8120 提升至 0.9351，空槽最高误匹配仍低于阈值。
+EQUIP_TEAM_MATCH_ROIS = tuple(
+    _expand_roi_from_center(roi, 1.10) for roi in EQUIP_TEAM_ROIS
+)
+
 # 真机编队验证的最低有效命中约为 0.649；取 0.62 以降低误匹配，同时保留
 # 资源加载、抗锯齿和不同灵基图带来的合理余量。
 FACE_THRESHOLD = 0.62
@@ -92,6 +114,13 @@ SERVANT_LIST_FEATURE_MARGIN = 0.12
 SELECT_PAGE_ENTER_TIMEOUT_SECONDS = 8.0
 EMPTY_SLOT_STD_THRESHOLD = 25.0
 EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD = 6.0
+# 戴冠战空槽会在卡片中下部叠加黄色“仅限对应职阶”文字，导致整张槽位的
+# 标准差超过普通空槽阈值。额外检查卡片上方无遮挡的灰色内区，同时保留整卡
+# 检查以兼容普通编队页面。
+EMPTY_SLOT_CORE_X_START_RATIO = 0.12
+EMPTY_SLOT_CORE_X_END_RATIO = 0.88
+EMPTY_SLOT_CORE_Y_START_RATIO = 0.08
+EMPTY_SLOT_CORE_Y_END_RATIO = 0.36
 FORMATION_CONFIRM_ROI = (724, 583, 232, 101)
 FORMATION_CONFIRM_DELAY_SECONDS = 1.0
 FORMATION_CONFIRM_APPEAR_TIMEOUT_SECONDS = 3.0
@@ -850,18 +879,32 @@ class AutoFormationFromChaldea(CustomAction):
         return best
 
     def _is_empty_slot(self, image, roi):
-        """识别编队中灰色的 SELECT 空槽；不依赖文字 OCR。"""
+        """识别编队中灰色的 SELECT 空槽；兼容戴冠战职阶限制文字。"""
         x, y, width, height = self._scale_roi(roi)
         region = image[y:y + height, x:x + width]
         if region.size == 0:
             return False
-        channel_means = np.mean(region, axis=(0, 1))
-        channel_std = float(np.mean(np.std(region, axis=(0, 1))))
-        channel_delta = float(np.max(channel_means) - np.min(channel_means))
-        return (
-            channel_std <= EMPTY_SLOT_STD_THRESHOLD
-            and channel_delta <= EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD
-        )
+
+        def is_gray_panel(candidate):
+            if candidate.size == 0:
+                return False
+            channel_means = np.mean(candidate, axis=(0, 1))
+            channel_std = float(np.mean(np.std(candidate, axis=(0, 1))))
+            channel_delta = float(np.max(channel_means) - np.min(channel_means))
+            return (
+                channel_std <= EMPTY_SLOT_STD_THRESHOLD
+                and channel_delta <= EMPTY_SLOT_CHANNEL_DELTA_THRESHOLD
+            )
+
+        if is_gray_panel(region):
+            return True
+
+        core_x1 = int(round(width * EMPTY_SLOT_CORE_X_START_RATIO))
+        core_x2 = int(round(width * EMPTY_SLOT_CORE_X_END_RATIO))
+        core_y1 = int(round(height * EMPTY_SLOT_CORE_Y_START_RATIO))
+        core_y2 = int(round(height * EMPTY_SLOT_CORE_Y_END_RATIO))
+        core = region[core_y1:core_y2, core_x1:core_x2]
+        return is_gray_panel(core)
 
     def _matches(self, expected, current):
         if expected["kind"] == "LOCAL":
@@ -1351,7 +1394,9 @@ class AutoFormationFromChaldea(CustomAction):
 
     def _equip_matches_slot(self, slot_index, equip_id):
         image = self._shot()
-        match = self._match_equip(image, equip_id, EQUIP_TEAM_ROIS[slot_index])
+        match = self._match_equip(
+            image, equip_id, EQUIP_TEAM_MATCH_ROIS[slot_index]
+        )
         return match is not None and match[0] >= EQUIP_TEAM_THRESHOLD, match
 
     def _equip_matches_slot_stable(self, slot_index, equip_id):
@@ -1399,6 +1444,13 @@ class AutoFormationFromChaldea(CustomAction):
                 return "grand"
             self._fail(f"equip_relocation_failed: 槽位{slot_index + 1}未进入礼装选择界面")
             return "failed"
+        if not self.equip_list_view_prepared:
+            if not self._run_pipeline("自动编队-准备礼装列表"):
+                self._fail(
+                    f"equip_relocation_failed: 槽位{slot_index + 1}未能准备礼装列表"
+                )
+                return "failed"
+            self.equip_list_view_prepared = True
         if not self._run_pipeline("自动编队-卸下当前礼装"):
             self._fail(f"equip_relocation_failed: 槽位{slot_index + 1}未能卸下礼装")
             return "failed"
@@ -2522,7 +2574,8 @@ class FormationIdentityFrame(CustomRecognition):
             return CustomRecognition.AnalyzeResult(box=(0, 0, 1, 1), detail={"frame_ok": True})
         except Exception as exc:
             # 命中只代表本次采样已结束，不代表身份/页面识别成功。
-            # 外层采集动作检查 error，失败不得走开始任务。
+            # 外层采集动作检查 error，失败时清除旧快照并按通用策略继续。
+            mfaalog.warning(f"[初始编队] 单帧采集失败: {exc}")
             try:
                 sessions.append_frame(root, token, revision, (), str(exc))
             except ValueError:
@@ -2572,8 +2625,13 @@ class CaptureInitialFormation(CustomAction):
             return CustomAction.RunResult(success=True)
         except Exception as exc:
             try:
-                sessions.invalidate(root, token, str(exc))
+                sessions.skip_capture(root, token)
             except ValueError:
                 pass
-            mfaalog.error(f"[初始编队] 采集失败，旧快照已失效，不开始战斗: {exc}")
-            return CustomAction.RunResult(success=False)
+            if context.tasker.stopping:
+                mfaalog.warning(f"[初始编队] 采集因任务停止而中断: {exc}")
+                return CustomAction.RunResult(success=False)
+            mfaalog.warning(
+                f"[初始编队] 采集失败，已清除旧快照；本次战斗按通用策略继续: {exc}"
+            )
+            return CustomAction.RunResult(success=True)

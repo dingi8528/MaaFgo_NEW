@@ -131,7 +131,7 @@ class FrameworkTests(unittest.TestCase):
             def reader_factory(roots, calibration):
                 return reader_class([self.fixture.root], calibration, self.fixture.catalog)
 
-            with patch.object(f, "FormationIdentityReader", side_effect=reader_factory), \
+            with patch.object(reader_class, "acquire", side_effect=reader_factory), \
                  patch.object(reader_class, "read_frame", observe_frame):
                 job = tasker.post_task("root")
                 deadline = time.monotonic() + 15
@@ -140,18 +140,20 @@ class FrameworkTests(unittest.TestCase):
                 if not job.status.done:
                     tasker.post_stop()
                     self.fail("framework integration timed out")
-                self.assertEqual(job.status.succeeded, page_ok and not fail_capture)
+                self.assertEqual(job.status.succeeded, not fail_capture)
             self.assertEqual(controller.inputs, 0)
             if fail_capture:
                 self.assertEqual(received_images, [])
             else:
                 self.assertEqual(len(received_images), 1)
-            self.assertEqual(len(observed), int(page_ok and not fail_capture))
+            self.assertEqual(len(observed), int(not fail_capture))
             if page_ok and not fail_capture:
                 snapshot = observed[0]
                 self.assertEqual(snapshot.task_id, job.job_id)
                 self.assertTrue(all(slot.servant_id == "1000" for slot in snapshot.slots))
                 self.assertFalse(sessions.valid(snapshot.task_id, snapshot.session_id))
+            elif not fail_capture:
+                self.assertIsNone(observed[0])
             # Context 覆盖不得污染共享 Resource/BBC 的默认路径。
             gate = resource.get_node_data("进本-点击队伍确认")["next"]
             self.assertEqual(gate[0]["name"] if isinstance(gate[0], dict) else gate[0],
@@ -160,10 +162,10 @@ class FrameworkTests(unittest.TestCase):
     def test_fresh_frames_and_root_identity_through_nested_run_task(self):
         self.run_pipeline(True)
 
-    def test_failed_page_never_reaches_start_boundary(self):
+    def test_failed_page_reaches_start_boundary_without_snapshot(self):
         self.run_pipeline(False)
 
-    def test_screenshot_failure_never_reaches_start_boundary(self):
+    def test_screenshot_failure_still_stops_when_later_battle_cannot_observe(self):
         self.run_pipeline(True, fail_capture=True)
 
 
