@@ -1,17 +1,18 @@
 {
     "option": {
         "原生自动战斗跳过剧情": {
-            "type": "select",
+            "type": "switch",
             "label": "跳过剧情",
-            "default": "skip",
+            "description": "开启后自动跳过可跳过的剧情；关闭后正常播放剧情。",
+            "default_case": "Yes",
             "cases": [
                 {
-                    "name": "skip",
-                    "label": "跳过剧情"
+                    "name": "Yes",
+                    "label": "是"
                 },
                 {
-                    "name": "noskip",
-                    "label": "不跳过剧情",
+                    "name": "No",
+                    "label": "否",
                     "pipeline_override": {
                         "跳过剧情-点击跳过": {
                             "enabled": false
