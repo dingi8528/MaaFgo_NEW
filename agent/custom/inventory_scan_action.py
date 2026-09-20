@@ -50,33 +50,54 @@ MATCH_CENTER_DELTA = 6
 BOTTOM_STABLE_ROUNDS = 3
 CONTENT_STABLE_ROUNDS = 3
 CONTENT_DIFF_THRESHOLD = 0.012
+INVENTORY_ICON_LAYOUT_NODES = {
+    "servant": "个人库存-从者图标大小检测",
+    "equip": "个人库存-礼装图标大小检测",
+}
+ICON_LAYOUT_TRANSITION_TIMEOUT_SECONDS = 2.0
+ICON_LAYOUT_RECOVERY_TIMEOUT_SECONDS = 2.5
 
-# 从者小图标：仅在内存中裁剪模板，不改动原图。
-SERVANT_FACE_X = (83, 270, 458, 646, 834, 1022)
-SERVANT_FACE_SIZE = 158
-SERVANT_CARD_WIDTH = 164
+# “构建个人从者礼装库”独占小图标布局：8 列，卡片纵向节距约 149px。
+# 其他任务仍使用各自的大/中图标参数，不能复用这里的坐标与缩放。
+INVENTORY_ICON_SCALE = 0.75
+INVENTORY_CARD_X = (83, 223, 362, 502, 642, 781, 921, 1061)
+INVENTORY_CARD_WIDTH = 123
+INVENTORY_ROW_PITCH = 149
+RARITY_ANCHOR_TEMPLATE = "rarity1_0.png"
+RARITY_SEARCH_TOP = 165
+RARITY_SEARCH_BOTTOM = 708
+RARITY_TO_CARD_TOP = 101
+RARITY_THRESHOLD = 0.90
+RARITY_MIN_COLUMNS = 4
+
+# 从者身份模板在内存中按 0.75 倍 Bilinear 缩小。完整行优先使用更高的
+# 眼部/面部特征区；页面底部第 4 行只露出上半张卡时，再使用短裁剪区。
+SERVANT_FACE_X = INVENTORY_CARD_X
+SERVANT_FACE_SIZE = 118
+SERVANT_CARD_WIDTH = INVENTORY_CARD_WIDTH
 SERVANT_OVERVIEW_SCALE = 1.04
-SERVANT_Y_OFFSETS = (0, 3, 6)
-SERVANT_FEATURE_REGION = (44, 44, 158, 101)
+SERVANT_Y_OFFSETS = (-3, 0, 3)
+SERVANT_FEATURE_REGIONS = (
+    (33, 33, 118, 76),
+    (33, 33, 118, 64),
+)
 SERVANT_FEATURE_SIZE = (48, 38)
-SERVANT_THRESHOLD = 0.70
-SERVANT_MARGIN = 0.12
-SERVANT_FOOTER_OFFSET = 163
+SERVANT_THRESHOLD = 0.50
+SERVANT_MARGIN = 0.06
 
-# EquipFaces/list 是礼装列表原图。灵基一览“大图标”布局中，模板左缘相对
-# 卡片金框内缩约 14px；实机直接匹配 f_94020900.png 为 0.9804。此前沿用
-# 礼装选择页的列起点而整体右偏 14px，会让所有礼装都落到错误裁剪区域。
+# EquipFaces/list 是礼装列表原图。小图标布局中先把 147x56 模板按 0.75 倍
+# Bilinear 缩为 110x42；模板左缘相对卡片金框内缩约 11px。
 # 快速特征只用于从 1000+ 张模板中筛出唯一候选；最终入库前仍会拿完整的
-# 147x56 list 原图在卡面邻域直接执行 TM_CCOEFF_NORMED。这样既保留滚动后
+# 110x42 小图模板在卡面邻域直接执行 TM_CCOEFF_NORMED。这样既保留滚动后
 # 1–4px 位置浮动，又不会把 team 模板或变形后的图片当作最终判断依据。
-EQUIP_FACE_X = (97, 284, 472, 659, 847, 1034)
-EQUIP_TEMPLATE_CUT_TOP = 20
+EQUIP_FACE_X = tuple(value + 11 for value in INVENTORY_CARD_X)
+EQUIP_TEMPLATE_SIZE = (110, 42)
+EQUIP_TEMPLATE_TOP_OFFSET = 24
+EQUIP_TEMPLATE_CUT_TOP = 15
 EQUIP_FEATURE_SIZE = (64, 18)
-EQUIP_THRESHOLD = 0.88
+EQUIP_THRESHOLD = 0.85
 EQUIP_MARGIN = 0.15
-EQUIP_BAR_TO_TEMPLATE_TOP = 131
-EQUIP_FEATURE_MIN_Y = 160
-EQUIP_DIRECT_SEARCH_RADIUS = 6
+EQUIP_DIRECT_SEARCH_RADIUS = 5
 EQUIP_DIRECT_THRESHOLD = 0.88
 
 # 上限按“持有目录接近全收集”计算；通常会由到底检测大幅提前结束。
@@ -127,6 +148,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         self.controller = context.tasker.controller
         self.current_list = None
         self.opened_overview = False
+        self.current_scan_recoveries = 0
         ok = False
         try:
             node = context.get_node_data(argv.node_name) or {}
@@ -144,6 +166,10 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                 return self._result(False, "没有选择要构建的库存类型")
 
             self._init_paths()
+            self.rarity_dirs = [
+                os.path.join(root, "个人库存", "稀有度") for root in self.image_roots
+            ]
+            self._load_rarity_anchor()
             self._init_scale()
             if not self._in_inventory_overview():
                 return self._result(False, "未进入灵基一览仓库")
@@ -212,10 +238,166 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
     def _in_inventory_overview(self):
         return self._active_inventory_tab() is not None
 
+    def _current_icon_layout_active(self, image=None):
+        """用本任务的小图标按钮模板确认库存列表与布局都已恢复。"""
+        node_name = INVENTORY_ICON_LAYOUT_NODES.get(self.current_list)
+        if node_name is None:
+            return False
+        image = self._shot() if image is None else image
+        if image is None:
+            return False
+        try:
+            detail = self.context.run_recognition(node_name, image)
+        except Exception as exc:
+            mfaalog.warning(
+                f"[个人库存] 小图标布局识别异常（{node_name}）: {exc}"
+            )
+            return False
+        return bool(detail and detail.hit)
+
+    def _ensure_current_icon_layout(self):
+        """等待列表稳定；若误入卡片详情，则返回并重新确认小图标按钮。"""
+        if self.current_list not in INVENTORY_ICON_LAYOUT_NODES:
+            return False
+
+        # 正常翻页后也可能仍在 1–2 秒的页面动画/截图缓存期。先等待模板出现，
+        # 不因单帧漏识别立刻按返回，以免从正常仓库误退到编成菜单。
+        if self._confirmed_now(self._current_icon_layout_active):
+            return True
+        if self._wait_for(
+            self._current_icon_layout_active,
+            ICON_LAYOUT_TRANSITION_TIMEOUT_SECONDS,
+        ):
+            return True
+
+        mfaalog.warning(
+            "[个人库存] 当前屏未检测到本任务的小图标按钮，"
+            "按 Esc 尝试从卡片详情返回列表"
+        )
+        if not self._run_pipeline("个人库存-详情返回列表"):
+            return False
+        if not self._wait_for(
+            self._current_icon_layout_active,
+            ICON_LAYOUT_RECOVERY_TIMEOUT_SECONDS,
+        ):
+            mfaalog.error(
+                "[个人库存] 返回后仍未检测到本任务的小图标按钮，停止扫描以保留旧文件"
+            )
+            return False
+        self.current_scan_recoveries += 1
+        mfaalog.info(
+            f"[个人库存] 已从卡片详情恢复列表，累计 {self.current_scan_recoveries} 次"
+        )
+        return True
+
+    def _load_rarity_anchor(self):
+        """加载小图标行列定位用的单星绿幕模板。"""
+        template = self._read_first_template(
+            self.rarity_dirs, RARITY_ANCHOR_TEMPLATE
+        )
+        if template is None:
+            raise RuntimeError("rarity_anchor_unavailable")
+        green = (
+            (template[:, :, 1] >= 250) &
+            (template[:, :, 0] <= 5) &
+            (template[:, :, 2] <= 5)
+        )
+        mask = (~green).astype(np.uint8) * 255
+        if np.count_nonzero(mask) < 8:
+            raise RuntimeError("rarity_anchor_mask_empty")
+        self.rarity_anchor_template = template
+        self.rarity_anchor_mask = mask
+
+    def _small_icon_row_origins(self, image):
+        """用星级图标求 8 列小图标布局的 149px 行相位。
+
+        ``TM_CCORR_NORMED`` 对加色渲染的星级条比默认 CCOEFF 稳定，但也会
+        产生亮色误候选。因此不接受单点命中，而是在 8 个固定卡片列中分别
+        计算纵向分数，再选择能形成至少两行、间距固定为 149px 的整页相位。
+        最后按相位外推底部星级条尚未露出的第 4 行。
+        """
+        base = self._to_base(image)
+        if base is None:
+            return []
+        template = self.rarity_anchor_template
+        mask = self.rarity_anchor_mask
+        template_height, template_width = template.shape[:2]
+        curves = []
+        for base_x in INVENTORY_CARD_X:
+            region = base[
+                RARITY_SEARCH_TOP:RARITY_SEARCH_BOTTOM,
+                base_x:base_x + INVENTORY_CARD_WIDTH,
+            ]
+            if (
+                region.shape[0] < template_height or
+                region.shape[1] < template_width
+            ):
+                return []
+            result = cv2.matchTemplate(
+                region, template, cv2.TM_CCORR_NORMED, mask=mask
+            )
+            result = np.nan_to_num(
+                result, nan=-1.0, posinf=-1.0, neginf=-1.0
+            )
+            curves.append(result.max(axis=1))
+
+        last_star_y = RARITY_SEARCH_BOTTOM - template_height
+        best = None
+        for phase in range(INVENTORY_ROW_PITCH):
+            first_star_y = RARITY_SEARCH_TOP + (
+                (phase - RARITY_SEARCH_TOP) % INVENTORY_ROW_PITCH
+            )
+            rows = []
+            for star_y in range(
+                first_star_y, last_star_y + 1, INVENTORY_ROW_PITCH
+            ):
+                index = star_y - RARITY_SEARCH_TOP
+                scores = [float(curve[index]) for curve in curves]
+                support = sum(score >= RARITY_THRESHOLD for score in scores)
+                if support >= RARITY_MIN_COLUMNS:
+                    rows.append((star_y, support, float(np.mean(scores))))
+            candidate = (
+                len(rows),
+                sum(row[1] for row in rows),
+                sum(row[2] for row in rows),
+                rows,
+                phase,
+            )
+            if best is None or candidate[:3] > best[:3]:
+                best = candidate
+        if best is None or best[0] < 2:
+            mfaalog.warning("[个人库存] 星级网格未形成至少两行稳定相位")
+            return []
+
+        rows = best[3]
+        anchor_top = rows[0][0] - RARITY_TO_CARD_TOP
+        card_phase = anchor_top % INVENTORY_ROW_PITCH
+        origins = list(range(card_phase, BASE_H, INVENTORY_ROW_PITCH))
+        self.last_rarity_grid = {
+            "phase": best[4],
+            "detected_rows": [row[0] for row in rows],
+            "supports": [row[1] for row in rows],
+            "means": [round(row[2], 4) for row in rows],
+            "card_origins": origins,
+        }
+        return origins
+
     # ---------- 从者 ----------
 
     def _build_servant_inventory(self):
-        catalog = self._load_catalog("servant_list.json", "servants")
+        full_catalog = self._load_catalog("servant_list.json", "servants")
+        # 个人库存只能生成有正式图鉴号的可持有从者。运行目录还保留少量
+        # collection_no 为空的内部变体/NPC（供其他任务兼容），不能把它们
+        # 当成独立身份候选，否则共享 face 会与其所属从者形成 0 分差。
+        catalog = [
+            item for item in full_catalog
+            if item.get("collection_no") is not None
+        ]
+        excluded = len(full_catalog) - len(catalog)
+        if excluded:
+            mfaalog.info(
+                f"[个人库存] 已排除 {excluded} 个无正式图鉴号的内部变体/NPC"
+            )
         matrix, variants, covered, missing = self._prepare_servant_features(catalog)
         if matrix is None:
             raise RuntimeError("servant_templates_unavailable")
@@ -254,13 +436,15 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                     continue
                 if template.shape[:2] != (SERVANT_FACE_SIZE, SERVANT_FACE_SIZE):
                     template = cv2.resize(template, (SERVANT_FACE_SIZE, SERVANT_FACE_SIZE))
-                x1, y1, x2, y2 = SERVANT_FEATURE_REGION
-                vector = _normalized_vector(template[y1:y2, x1:x2], SERVANT_FEATURE_SIZE)
-                if vector is not None:
-                    vectors.append(vector)
-                    variants.append((str(item["id"]), name))
-                    loaded_names.add(name)
-                    found = True
+                for x1, y1, x2, y2 in SERVANT_FEATURE_REGIONS:
+                    vector = _normalized_vector(
+                        template[y1:y2, x1:x2], SERVANT_FEATURE_SIZE
+                    )
+                    if vector is not None:
+                        vectors.append(vector)
+                        variants.append((str(item["id"]), name))
+                        loaded_names.add(name)
+                        found = True
             # Atlas 增量条目可能已补图但尚未回填 images 数组；按从者 ID 的
             # 既有文件命名规则补充发现，确保“目录元数据缺 images”不会被误报
             # 成真正缺少识图资源。
@@ -270,13 +454,15 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                         continue
                     if template.shape[:2] != (SERVANT_FACE_SIZE, SERVANT_FACE_SIZE):
                         template = cv2.resize(template, (SERVANT_FACE_SIZE, SERVANT_FACE_SIZE))
-                    x1, y1, x2, y2 = SERVANT_FEATURE_REGION
-                    vector = _normalized_vector(template[y1:y2, x1:x2], SERVANT_FEATURE_SIZE)
-                    if vector is not None:
-                        vectors.append(vector)
-                        variants.append((str(item["id"]), name))
-                        loaded_names.add(name)
-                        found = True
+                    for x1, y1, x2, y2 in SERVANT_FEATURE_REGIONS:
+                        vector = _normalized_vector(
+                            template[y1:y2, x1:x2], SERVANT_FEATURE_SIZE
+                        )
+                        if vector is not None:
+                            vectors.append(vector)
+                            variants.append((str(item["id"]), name))
+                            loaded_names.add(name)
+                            found = True
             if found:
                 covered += 1
             else:
@@ -287,73 +473,29 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         base = self._to_base(image)
         if base is None:
             return [], []
-        hsv = cv2.cvtColor(base, cv2.COLOR_BGR2HSV)
-        origins = []
-        for base_x in SERVANT_FACE_X:
-            # “灵基一览”大图标底部的 Servant/Grand Servant 条横跨卡片。
-            # Grand 从者使用蓝色底条，因此必须与金/银/铜边框一并检测。
-            area = hsv[:, base_x:base_x + SERVANT_CARD_WIDTH]
-            hue, saturation, value = area[:, :, 0], area[:, :, 1], area[:, :, 2]
-            silver = (saturation < 90) & (value > 90)
-            gold = (
-                (hue >= 15) & (hue <= 48) &
-                (saturation >= 60) & (value >= 70)
-            )
-            bronze = (
-                (hue <= 20) & (saturation >= 50) & (value >= 50)
-            )
-            grand = (
-                (hue >= 80) & (hue <= 115) &
-                (saturation >= 80) & (value >= 70)
-            )
-            # 三种边框色分别找连续行；若先做并集，彩色卡面也可能被拼成
-            # 一段“近乎满宽”的伪底条。
-            for footer_mask in (silver, gold, bronze, grand):
-                ratios = np.mean(footer_mask, axis=1)
-                for run in _runs(np.where(ratios > 0.88)[0]):
-                    # 仓库实测底条连续高同色区约为 14–24px；为兼容描边断点
-                    # 适度放宽，但仍排除卡面中的大块同色区域。
-                    if not 12 <= len(run) <= 30:
-                        continue
-                    base_y = run[0] - SERVANT_FOOTER_OFFSET
-                    # 顶部第一行允许被标题栏遮住约 25px；用于匹配的内部头像
-                    # 区域仍完整可见，不能把仓库顶部对象整体丢掉。
-                    if 121 <= base_y and base_y + SERVANT_FACE_SIZE <= BASE_H:
-                        origins.append((base_y, base_x))
-        groups = []
-        for value in sorted(origins):
-            if not groups or value[0] - groups[-1][-1][0] > 24:
-                groups.append([value])
-            else:
-                groups[-1].append(value)
-        # 同一底条可能被相邻色罩切成两段，以组内最靠上的候选作为真实卡片
-        # 起点；至少两列共同出现才视为一行，排除单张卡面里的伪横条。
-        y_origins = [
-            min(item[0] for item in group)
-            for group in groups
-            if len({item[1] for item in group}) >= 2
-        ]
-
         features, centers = [], []
-        for base_y in y_origins:
-            # 只要该行至少一张卡的黄色底条可见，就评估整行。这样已装备遮罩
-            # 不会漏卡，最后一行不足六张时多出的空位则会被高阈值自然排除。
+        for base_y in self._small_icon_row_origins(base):
             for base_x in SERVANT_FACE_X:
-                x1, y1, x2, y2 = SERVANT_FEATURE_REGION
                 center = self._scaled_center(
                     base_x, base_y, SERVANT_CARD_WIDTH, SERVANT_CARD_WIDTH
                 )
-                for offset_y in SERVANT_Y_OFFSETS:
-                    feature = base[
-                        base_y + offset_y + round(y1 * SERVANT_OVERVIEW_SCALE):
-                        base_y + offset_y + round(y2 * SERVANT_OVERVIEW_SCALE),
-                        base_x + round(x1 * SERVANT_OVERVIEW_SCALE):
-                        base_x + round(x2 * SERVANT_OVERVIEW_SCALE),
-                    ]
-                    vector = _normalized_vector(feature, SERVANT_FEATURE_SIZE)
-                    if vector is not None:
-                        features.append(vector)
-                        centers.append(center)
+                for x1, y1, x2, y2 in SERVANT_FEATURE_REGIONS:
+                    for offset_y in SERVANT_Y_OFFSETS:
+                        top = base_y + offset_y + round(y1 * SERVANT_OVERVIEW_SCALE)
+                        bottom = base_y + offset_y + round(y2 * SERVANT_OVERVIEW_SCALE)
+                        left = base_x + round(x1 * SERVANT_OVERVIEW_SCALE)
+                        right = base_x + round(x2 * SERVANT_OVERVIEW_SCALE)
+                        if (
+                            top < RARITY_SEARCH_TOP or
+                            bottom > RARITY_SEARCH_BOTTOM or
+                            left < 0 or right > BASE_W
+                        ):
+                            continue
+                        feature = base[top:bottom, left:right]
+                        vector = _normalized_vector(feature, SERVANT_FEATURE_SIZE)
+                        if vector is not None:
+                            features.append(vector)
+                            centers.append(center)
         return features, centers
 
     def _stable_servant_hits(self, catalog, matrix, variants):
@@ -414,7 +556,14 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         for item in catalog:
             name = f"f_{item['id']}0.png"
             template = self._read_first_template(self.equip_list_dirs, name)
-            if template is None or template.shape[0] <= EQUIP_TEMPLATE_CUT_TOP:
+            if template is None:
+                missing.append(str(item.get("id")))
+                continue
+            if template.shape[:2] != (EQUIP_TEMPLATE_SIZE[1], EQUIP_TEMPLATE_SIZE[0]):
+                template = cv2.resize(
+                    template, EQUIP_TEMPLATE_SIZE, interpolation=cv2.INTER_LINEAR
+                )
+            if template.shape[0] <= EQUIP_TEMPLATE_CUT_TOP:
                 missing.append(str(item.get("id")))
                 continue
             vector = _normalized_vector(template[EQUIP_TEMPLATE_CUT_TOP:], EQUIP_FEATURE_SIZE)
@@ -431,36 +580,30 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         base = self._to_base(image)
         if base is None:
             return [], []
-        hsv = cv2.cvtColor(base, cv2.COLOR_BGR2HSV)
-        gold = cv2.inRange(hsv, (18, 80, 80), (45, 255, 255))
-        bar_starts = []
-        for base_x in EQUIP_FACE_X:
-            # 头像条从卡片左侧内缩 15px；金色 Craft Essence 条覆盖整张卡宽。
-            card_left = max(0, base_x - 15)
-            ratios = np.mean(gold[:, card_left:card_left + 167] > 0, axis=1)
-            rows = np.where(ratios > 0.55)[0]
-            for run in _runs(rows):
-                if len(run) < 12 or float(ratios[run].max()) < 0.75:
-                    continue
-                bar_starts.append(run[0])
         features, centers = [], []
-        for bar_start in _cluster_positions(bar_starts):
+        template_width, template_height = EQUIP_TEMPLATE_SIZE
+        feature_height = template_height - EQUIP_TEMPLATE_CUT_TOP
+        for base_y in self._small_icon_row_origins(base):
             for base_x in EQUIP_FACE_X:
-                template_top = bar_start - EQUIP_BAR_TO_TEMPLATE_TOP
+                template_top = base_y + EQUIP_TEMPLATE_TOP_OFFSET
                 feature_y = template_top + EQUIP_TEMPLATE_CUT_TOP
-                height = 56 - EQUIP_TEMPLATE_CUT_TOP
-                # 顶部第一行在列表复位后是完整卡片，必须纳入；旧下限 345 会让
-                # 第一行永远在首次下滑前被跳过。160 仍排除了页签/筛选栏，并允许
-                # 下滑后只露出模板底条的卡片由完整 list 原图做最终复核。
-                if feature_y < EQUIP_FEATURE_MIN_Y or feature_y + height > BASE_H:
+                if (
+                    feature_y < RARITY_SEARCH_TOP or
+                    feature_y + feature_height > RARITY_SEARCH_BOTTOM
+                ):
                     continue
-                crop = base[feature_y:feature_y + height, base_x:base_x + 147]
-                if crop.shape[:2] != (height, 147):
+                crop = base[
+                    feature_y:feature_y + feature_height,
+                    base_x:base_x + template_width,
+                ]
+                if crop.shape[:2] != (feature_height, template_width):
                     continue
                 vector = _normalized_vector(crop, EQUIP_FEATURE_SIZE)
                 if vector is not None:
                     features.append(vector)
-                    centers.append(self._scaled_center(base_x, feature_y, 147, height))
+                    centers.append(self._scaled_center(
+                        base_x, feature_y, template_width, feature_height
+                    ))
         return features, centers
 
     def _stable_equip_hits(self, catalog, matrix, variants):
@@ -490,7 +633,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             center_x = center[0] / self.sx
             center_y = center[1] / self.sy
             expected_x = int(round(center_x - template_width / 2))
-            feature_height = 56 - EQUIP_TEMPLATE_CUT_TOP
+            feature_height = template_height - EQUIP_TEMPLATE_CUT_TOP
             expected_y = int(round(
                 center_y - feature_height / 2 - EQUIP_TEMPLATE_CUT_TOP
             ))
@@ -593,8 +736,14 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         content_unchanged = 0
         unmatched_cells = 0
         swipes = 0
+        self.current_scan_recoveries = 0
         for page_index in range(max_swipes + 1):
             if self.context.tasker.stopping:
+                return None, None
+            # 必须先命中“从者/礼装图标大小检测”使用的小图标按钮模板。
+            # 详情页没有该按钮，因此异常画面不会进入身份匹配、累计结果或到底判断。
+            if not self._ensure_current_icon_layout():
+                mfaalog.error(f"[个人库存] {label}列表布局确认失败")
                 return None, None
             hits, image = matcher(catalog, matrix, variants)
             if image is None:
@@ -646,6 +795,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                     "pages_scanned": page_index + 1,
                     "swipes": swipes,
                     "unmatched_candidate_cells": unmatched_cells,
+                    "detail_recoveries": self.current_scan_recoveries,
                     "bottom_confirmed": True,
                     "bottom_detection": bottom_detection,
                 }

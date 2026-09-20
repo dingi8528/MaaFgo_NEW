@@ -1,0 +1,297 @@
+{
+  "purpose": "构建个人从者礼装库的小图标星级网格定位",
+  "scale": 0.74,
+  "interpolation": "Bilinear",
+  "key_color": "#000000",
+  "green_mask": "#00FF00",
+  "files": [
+    {
+      "name": "rarity0_1.png",
+      "source_size": [
+        24,
+        21
+      ],
+      "output_size": [
+        20,
+        18
+      ],
+      "sha256": "dc799949e4d85a8aaea4ec67bda25c241511d023419d1165341b753e3f756cfd"
+    },
+    {
+      "name": "rarity0_2.png",
+      "source_size": [
+        24,
+        21
+      ],
+      "output_size": [
+        20,
+        18
+      ],
+      "sha256": "97ad830372865d4b286e674141e4bb6097c7585f8125673ed7ce6b4fb8342f13"
+    },
+    {
+      "name": "rarity0_3.png",
+      "source_size": [
+        24,
+        21
+      ],
+      "output_size": [
+        20,
+        18
+      ],
+      "sha256": "020fea532713891aea1b1d1d1714194bdb94e1c21b626ca64cd1ba710787e3af"
+    },
+    {
+      "name": "rarity0_4.png",
+      "source_size": [
+        24,
+        21
+      ],
+      "output_size": [
+        20,
+        18
+      ],
+      "sha256": "3868c59179dd1e6655b454db304a50883dcb5a0ac019eacd510f50d5bf08015d"
+    },
+    {
+      "name": "rarity1_0.png",
+      "source_size": [
+        21,
+        20
+      ],
+      "output_size": [
+        18,
+        17
+      ],
+      "sha256": "ff0d6e14531e06834470a19c387dad7b97cc99cd2445a89f05b1b24499696848"
+    },
+    {
+      "name": "rarity1_1.png",
+      "source_size": [
+        37,
+        21
+      ],
+      "output_size": [
+        29,
+        18
+      ],
+      "sha256": "f75be4a157328e29a17f773b2b34692622e24aa1802786c663562ad31037ce15"
+    },
+    {
+      "name": "rarity1_2.png",
+      "source_size": [
+        37,
+        21
+      ],
+      "output_size": [
+        29,
+        18
+      ],
+      "sha256": "b878aa475d1497240cffa34c00ac714aeb52cbdcfbdbbc3df8e75c0395cfeacc"
+    },
+    {
+      "name": "rarity1_3.png",
+      "source_size": [
+        37,
+        21
+      ],
+      "output_size": [
+        29,
+        18
+      ],
+      "sha256": "12cdddb69726cd9e78233a0b5b158b0fc048b629aaf83b5ad9993148d39fdab3"
+    },
+    {
+      "name": "rarity2_0.png",
+      "source_size": [
+        33,
+        20
+      ],
+      "output_size": [
+        26,
+        17
+      ],
+      "sha256": "af7b92c41d4fc8429b035a747f6f07fc34e5be5a53c8b0430838e2f9a41d1c5d"
+    },
+    {
+      "name": "rarity2_1.png",
+      "source_size": [
+        49,
+        21
+      ],
+      "output_size": [
+        38,
+        18
+      ],
+      "sha256": "692942978caafb5026bf56feaa62a216e289035edc8f93a5e4d164e9b37d8794"
+    },
+    {
+      "name": "rarity2_2.png",
+      "source_size": [
+        49,
+        21
+      ],
+      "output_size": [
+        38,
+        18
+      ],
+      "sha256": "91f6237c1a9dbda35b1e69b657624296b2d53a35294e7310b333ec77c57ea301"
+    },
+    {
+      "name": "rarity2_3.png",
+      "source_size": [
+        49,
+        21
+      ],
+      "output_size": [
+        38,
+        18
+      ],
+      "sha256": "174ad8b682cffcae9a7f4a5b241fc6043d84d2a31408642c981ca99f26ba64d2"
+    },
+    {
+      "name": "rarity3_0.png",
+      "source_size": [
+        45,
+        20
+      ],
+      "output_size": [
+        35,
+        17
+      ],
+      "sha256": "0ad608dc5a4c2c997608a96e02d2e25b337311a3234ca6a8fe1fa9a8977069ef"
+    },
+    {
+      "name": "rarity3_1.png",
+      "source_size": [
+        61,
+        21
+      ],
+      "output_size": [
+        47,
+        18
+      ],
+      "sha256": "c66d1571b70b2e65efc57fd59f10e1ee898d2a6047e8e615ad810f3585b00ed6"
+    },
+    {
+      "name": "rarity3_2.png",
+      "source_size": [
+        61,
+        21
+      ],
+      "output_size": [
+        47,
+        18
+      ],
+      "sha256": "96c15740b221f0a5edcf801194b70ad99b1a68c90c2db4284398e5bd22bbdb45"
+    },
+    {
+      "name": "rarity3_3.png",
+      "source_size": [
+        61,
+        21
+      ],
+      "output_size": [
+        47,
+        18
+      ],
+      "sha256": "d03bf85c9000c849c8ca636aa9ea280308249669d141692c938de2b99832a06c"
+    },
+    {
+      "name": "rarity4_0.png",
+      "source_size": [
+        57,
+        20
+      ],
+      "output_size": [
+        44,
+        17
+      ],
+      "sha256": "ec1a940a43136679d4b6e4543f857711c02c0c81fca72bdb5ea440fb5875a0b0"
+    },
+    {
+      "name": "rarity4_1.png",
+      "source_size": [
+        73,
+        21
+      ],
+      "output_size": [
+        56,
+        18
+      ],
+      "sha256": "996dddd2ca5e07562218f442d5f6dc4745ef5596e6dc0caafdd65a5616ae8815"
+    },
+    {
+      "name": "rarity4_2.png",
+      "source_size": [
+        73,
+        21
+      ],
+      "output_size": [
+        56,
+        18
+      ],
+      "sha256": "a5697d4a9efbce54189cda21a975e191eb27cea6f9283fc9d88ce3c1409aed71"
+    },
+    {
+      "name": "rarity4_3.png",
+      "source_size": [
+        60,
+        21
+      ],
+      "output_size": [
+        46,
+        18
+      ],
+      "sha256": "6a83f454cd501bb2d92989c36869c492e442ce4f7c96a8d186a666798326877c"
+    },
+    {
+      "name": "rarity5_0.png",
+      "source_size": [
+        69,
+        20
+      ],
+      "output_size": [
+        53,
+        17
+      ],
+      "sha256": "22d402c79fd85f54fd48caefafa3c8ba5be5d87fe5e7c3b8b796c8e4cd0ffc0d"
+    },
+    {
+      "name": "rarity5_1.png",
+      "source_size": [
+        85,
+        21
+      ],
+      "output_size": [
+        65,
+        18
+      ],
+      "sha256": "20f5fee5600a050e63536ad3d70f58e839892a181b98f955d3b95d60262e6b4d"
+    },
+    {
+      "name": "rarity5_2.png",
+      "source_size": [
+        85,
+        21
+      ],
+      "output_size": [
+        65,
+        18
+      ],
+      "sha256": "4adb189ff41ae4959572bebe16114b3cca89cac5773e5abed874971ab30064ed"
+    },
+    {
+      "name": "rarity5_3.png",
+      "source_size": [
+        67,
+        21
+      ],
+      "output_size": [
+        52,
+        18
+      ],
+      "sha256": "af1930075956021873b2c120aebf07d02d626c196c3b9c447c7602edd2a2a737"
+    }
+  ]
+}
