@@ -6,7 +6,8 @@
       "param": {"custom_action": "import_bbc_to_chaldea"}
     },
     "attach": {
-      "bbc_source_config": ""
+      "bbc_source_config": "",
+      "bbc_import_all": false
     },
     "on_error": []
   },

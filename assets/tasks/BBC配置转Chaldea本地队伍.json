@@ -3,19 +3,11 @@
     {
       "name": "BBC 配置转 Chaldea 本地队伍",
       "label": "🔄 BBC 配置转 Chaldea 本地队伍",
-      "description": "读取 BBchannel/settings 中的队伍配置，生成 config/Battle 中可供原生自动战斗和 Chaldea 自动编队读取的本地 JSON。",
+      "description": "将 BBchannel/settings 中的一个或全部队伍配置转换为 Chaldea 本地队伍。",
       "doc": "docs/BBC配置转Chaldea本地队伍.md",
       "entry": "BBC配置转Chaldea本地队伍",
-      "option": ["BBC转换来源配置"],
+      "option": ["BBC转换范围"],
       "group": ["其他"]
-    },
-    {
-      "name": "BBC 全部配置转 Chaldea 本地队伍",
-      "label": "🔄 BBC 全部配置转 Chaldea 本地队伍",
-      "description": "一键转换 BBchannel/settings 中的全部队伍配置；无法转换的文件会记录原因并继续处理其余配置。",
-      "doc": "docs/BBC配置转Chaldea本地队伍.md",
-      "entry": "BBC全部配置转Chaldea本地队伍",
-      "group": ["战斗相关"]
     }
   ]
 }
