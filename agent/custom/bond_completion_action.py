@@ -31,6 +31,11 @@ from bond_matcher import (
     rarity_order,
     team_bond_score,
 )
+from bond_completion_memory import (
+    BondCompletionMemory,
+    build_task_key as build_memory_task_key,
+    formation_signature,
+)
 from formation_action import (
     EQUIP_SLOT_CLICK_Y,
     EQUIP_TEAM_MATCH_ROIS,
@@ -47,6 +52,9 @@ _PROJECT_DIR = os.path.dirname(os.path.dirname(_CUSTOM_DIR))
 _PLAYER_INVENTORY_DIR = os.path.join(_PROJECT_DIR, "config", "Inventory")
 _PLAYER_SERVANTS_PATH = os.path.join(_PLAYER_INVENTORY_DIR, "player_servants.json")
 _PLAYER_EQUIPS_PATH = os.path.join(_PLAYER_INVENTORY_DIR, "player_equips.json")
+_BOND_MEMORY_PATH = os.path.join(
+    _PROJECT_DIR, "config", "BondCompletion", "auto_memory.json"
+)
 
 COST_ROI = (915, 671, 154, 43)
 SERVANT_BOND_REMAINING_ROI = (1079, 528, 126, 31)
@@ -134,6 +142,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         self._grand_equip_probe_complete = set()
         self._grand_fixed_applied_slots = set()
         self.empty_protected_equip_slots = set()
+        self.full_existing_slots = set()
+        self.memory_store = None
+        self.memory_task_key = None
         try:
             node = context.get_node_data(argv.node_name) or {}
             attach = node.get("attach") or {}
@@ -163,6 +174,9 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 )
                 self.modify_unspecified_equips = _truthy(
                     attach.get("modify_unspecified_equips", True)
+                )
+                self.auto_memory_enabled = _truthy(
+                    attach.get("auto_memory_enabled", True)
                 )
                 self.debug_preserve_failure = _truthy(
                     attach.get("debug_preserve_failure", False)
@@ -210,6 +224,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 f"本地礼装库={self.local_equip_inventory_active}，"
                 f"修改其他从者={self.modify_unspecified_servants}，"
                 f"修改其他礼装={self.modify_unspecified_equips}，"
+                f"自动记忆={self.auto_memory_enabled}，"
                 f"任务类型={self.quest_type or '普通'}，"
                 f"戴冠战职介={self.grand_class or '无限制'}"
             )
@@ -244,6 +259,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 return self._abort_safe(
                     "bond_completion_slot_invalid: 助战身份或替代目标不匹配"
                 )
+            self._prepare_auto_memory()
             self.equip_probe_slots = [
                 i for i, item in enumerate(detected)
                 if item["kind"] not in {"EMPTY", "SUPPORT"}
@@ -316,6 +332,15 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                         str(slot + 1) for slot in sorted(self.empty_protected_equip_slots)
                     )
                 )
+            memory_result = self._try_auto_memory_hit(
+                detected,
+                current_servants,
+                equip_by_slot,
+                empty_equip_slots,
+                occupied_unknown,
+            )
+            if memory_result is not None:
+                return memory_result
             self.locked_unspecified_equips = {}
             if not self.modify_unspecified_equips:
                 self._remember_locked_unspecified_equips(
@@ -390,6 +415,14 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             if not self._verify_final_state():
                 return self._abort_safe("bond_completion_final_mismatch: 最终槽位或模板复核失败")
 
+            final_memory_signature = self._build_auto_memory_signature(
+                detected,
+                current_servants,
+                equip_by_slot,
+                self.empty_equip_slots,
+                occupied_unknown,
+            )
+
             all_equips = [*self.fixed_equips, *self.added_equips.values()]
             final_score = team_bond_score(current_servants, all_equips, self.bond_base)
             mfaalog.info(
@@ -406,6 +439,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 return self._abort_safe("bond_completion_final_mismatch: 未能点击编队决定")
             self.opened_edit = False
             self._confirm_formation_change_if_present()
+            self._save_auto_memory(final_memory_signature)
             status = "bond_completion_no_change" if not (self.added_servants or self.added_equips) else "bond_completion_complete"
             if status == "bond_completion_no_change":
                 self._focus_user(
@@ -439,6 +473,179 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         if quest_type == "grand" and grand_class not in GRAND_QUEST_CLASSES:
             raise ValueError(f"戴冠战职介无效: {grand_class or '未提供'}")
         return quest_type, grand_class
+
+    def _prepare_auto_memory(self):
+        """读取当前有效配置对应的记忆；损坏时仅关闭本次加速。"""
+        self.remembered_signature = None
+        if not self.auto_memory_enabled:
+            return
+        settings = {
+            "preferred_rarity": self.preferred_rarity,
+            "bond_base": self.bond_base,
+            "use_local_servant_inventory": self.use_local_servant_inventory,
+            "use_local_equip_inventory": self.use_local_equip_inventory,
+            "modify_unspecified_servants": self.modify_unspecified_servants,
+            "modify_unspecified_equips": self.modify_unspecified_equips,
+            "use_support_substitution": self.use_support_substitution,
+            "quest_type": self.quest_type,
+            "grand_class": self.grand_class,
+        }
+        try:
+            self.memory_task_key = build_memory_task_key(self.expected, settings)
+            self.memory_store = BondCompletionMemory(_BOND_MEMORY_PATH)
+            self.remembered_signature = self.memory_store.get(self.memory_task_key)
+        except Exception as exc:
+            self.memory_store = None
+            self.memory_task_key = None
+            mfaalog.warning(f"[羁绊补齐] 自动记忆不可用，本次执行完整优化：{exc}")
+            return
+        mfaalog.info(
+            f"[羁绊补齐] 自动记忆{'已找到' if self.remembered_signature else '暂无记录'}："
+            f"task={self.memory_task_key[:12]}"
+        )
+
+    def _build_auto_memory_signature(
+        self, detected, current_servants, equip_by_slot, empty_equip_slots,
+        occupied_unknown,
+    ):
+        """将当前已可靠识别的编队转换为六槽签名；未知状态拒绝记忆。"""
+        if not self.auto_memory_enabled:
+            return None
+        servants_by_slot = {
+            int(item.get("slot")): str(item.get("id") or "")
+            for item in current_servants
+            if item.get("slot") is not None and item.get("id") is not None
+        }
+        servant_slots = []
+        for slot, state in enumerate(detected):
+            if slot in servants_by_slot and servants_by_slot[slot]:
+                servant_slots.append(f"local:{servants_by_slot[slot]}")
+            elif state.get("kind") == "SUPPORT":
+                support_id = str(state.get("svt_id") or "")
+                if not support_id:
+                    return None
+                servant_slots.append(f"support:{support_id}")
+            elif state.get("kind") == "EMPTY":
+                servant_slots.append("empty")
+            else:
+                return None
+
+        empty = set(empty_equip_slots)
+        unknown = set(occupied_unknown)
+        equips = []
+        for slot, servant_value in enumerate(servant_slots):
+            if servant_value == "empty" or servant_value.startswith("support:"):
+                equips.append("none")
+                continue
+            if slot in self.grand_equip_slots:
+                equips.append([
+                    "grand",
+                    *[
+                        str(item.get("id"))
+                        for item in self.grand_equips_by_slot.get(slot, [])
+                        if item.get("id") is not None
+                    ],
+                ])
+                continue
+            if slot in self.added_equips:
+                equips.append(f"equip:{self.added_equips[slot]['id']}")
+                continue
+            expected_equip = self.expected[slot].get("equip_id")
+            if expected_equip:
+                if slot in self.empty_protected_equip_slots:
+                    equips.append("empty")
+                else:
+                    equips.append(f"equip:{expected_equip}")
+                continue
+            existing = equip_by_slot.get(slot)
+            if existing is not None and existing.get("id") is not None:
+                equips.append(f"equip:{existing['id']}")
+            elif slot in empty:
+                equips.append("empty")
+            elif slot in unknown:
+                return None
+            else:
+                return None
+        return formation_signature(servant_slots, equips)
+
+    def _finish_auto_memory_hit(self, full_locked_slots):
+        if full_locked_slots:
+            details = "、".join(
+                f"槽位{slot + 1}{self.unspecified_servants_by_slot[slot]['name']}"
+                for slot in full_locked_slots
+            )
+            mfaalog.warning(
+                f"[羁绊补齐] 自动记忆命中，但{details}羁绊已满；"
+                "当前禁止替换未指定从者，保持编队并继续战斗"
+            )
+            self._focus_user("发现满羁绊从者；当前禁止替换，保持编队", "orange")
+        if not self._run_pipeline("羁绊补齐-编队决定"):
+            return self._abort_safe("bond_completion_final_mismatch: 自动记忆命中后未能点击编队决定")
+        self.opened_edit = False
+        self._confirm_formation_change_if_present()
+        mfaalog.info("[羁绊补齐] bond_completion_memory_hit: 编队一致，已跳过完整羁绊优化")
+        if not full_locked_slots:
+            self._focus_user("编队与羁绊记忆一致，已跳过重复优化", "green")
+        return CustomAction.RunResult(success=True)
+
+    def _try_auto_memory_hit(
+        self, detected, current_servants, equip_by_slot, empty_equip_slots,
+        occupied_unknown,
+    ):
+        if self.remembered_signature is None:
+            return None
+        current = self._build_auto_memory_signature(
+            detected,
+            current_servants,
+            equip_by_slot,
+            empty_equip_slots,
+            occupied_unknown,
+        )
+        if current is None:
+            mfaalog.info("[羁绊补齐] 自动记忆无法完整复核，执行完整优化")
+            return None
+        if current != self.remembered_signature:
+            mfaalog.info("[羁绊补齐] 自动记忆未命中：当前编队与记录不一致")
+            return None
+
+        full_slots = []
+        for slot, servant in sorted(self.unspecified_servants_by_slot.items()):
+            state = self._check_new_servant_bond(slot, servant)
+            if state == "failed":
+                mfaalog.warning(
+                    "[羁绊补齐] 自动记忆命中但羁绊状态无法确认，执行完整优化"
+                )
+                return None
+            if state == "full":
+                full_slots.append(slot)
+                self.full_existing_slots.add(slot)
+                self.unavailable_servants.add(str(servant["id"]))
+
+        if full_slots and self.modify_unspecified_servants:
+            mfaalog.warning(
+                "[羁绊补齐] 自动记忆中的额外从者羁绊已满，记忆本次失效并重新优化：槽位"
+                + "、".join(str(slot + 1) for slot in full_slots)
+            )
+            self._focus_user("记忆编队存在满羁绊从者，正在重新优化", "orange")
+            return None
+        return self._finish_auto_memory_hit(full_slots)
+
+    def _save_auto_memory(self, signature):
+        if (
+            signature is None
+            or self.memory_store is None
+            or not self.memory_task_key
+        ):
+            if self.auto_memory_enabled and signature is None:
+                mfaalog.warning("[羁绊补齐] 最终编队含未知状态，本次不更新自动记忆")
+            return
+        try:
+            self.memory_store.put(self.memory_task_key, signature)
+            mfaalog.info(
+                f"[羁绊补齐] 自动记忆已更新：task={self.memory_task_key[:12]}"
+            )
+        except Exception as exc:
+            mfaalog.warning(f"[羁绊补齐] 自动记忆写入失败，不影响本次战斗：{exc}")
 
     def _load_databases(self):
         with open(os.path.join(_CUSTOM_DIR, "servant_list.json"), encoding="utf-8-sig") as file:
@@ -1626,10 +1833,13 @@ class CompleteBondFormation(AutoFormationFromChaldea):
         for slot in fillable:
             replacing_existing = slot in self.replaceable_slots
             old_servant = self.unspecified_servants_by_slot.get(slot)
+            replacing_full_servant = slot in getattr(
+                self, "full_existing_slots", set()
+            )
             if not self._enter_servant_select_new(slot):
                 return None
             chosen = None
-            rejected_full_in_slot = False
+            rejected_full_in_slot = replacing_full_servant
             for rarity in self.rarity_order:
                 candidates = self._servant_candidates(rarity)
                 if not candidates:
@@ -1694,7 +1904,11 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                         ):
                             continue
                         net_gain = row["plan"].score - current_score
-                        if replacing_existing and net_gain <= 0:
+                        if (
+                            replacing_existing
+                            and not replacing_full_servant
+                            and net_gain <= 0
+                        ):
                             mfaalog.info(
                                 f"[羁绊补齐] 保留槽位{slot + 1}原从者："
                                 f"候选 {candidate['name']}({candidate['id']}) "
@@ -1705,6 +1919,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                             f"[羁绊补齐] 候选 {candidate['name']}({candidate['id']})："
                             f"COST={candidate['cost']}，释放旧COST={released_cost}，"
                             f"预估净羁绊增量={net_gain}，"
+                            f"替换满羁绊从者={replacing_full_servant}，"
                             f"匹配计划礼装={row['matched_equips']}"
                         )
                         availability = self._preflight_servant_plan_equips(
