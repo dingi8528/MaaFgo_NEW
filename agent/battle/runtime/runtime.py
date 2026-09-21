@@ -499,7 +499,7 @@ class AutoBattleRuntime:
 
     def _execute_skill_cast(self, label, cast_callable, target_ally, return_scenes, return_timeout,
                             default_target: int = 1):
-        """通用技能执行核：cast → sleep 0.2s → 子流水线处理特殊覆盖层 → 等回主界面。
+        """通用技能执行核：cast → sleep 0.6s → 子流水线处理特殊覆盖层 → 等回主界面。
 
         特殊覆盖层（弹窗/目标选择/专属技能流程）的识别与点击已下沉到
         自动战斗_特殊技能.json，next 列表按序识别自动路由。
@@ -507,7 +507,7 @@ class AutoBattleRuntime:
         """
         self._mark_action(label)
         cast_callable()
-        time.sleep(0.2)
+        time.sleep(0.6)
         # 子流水线：处理技能点击后可能出现的特殊覆盖层
         # 注意：选从者1/2/3 均为 DirectHit 节点（必命中），必须显式禁用
         # 未选中的两个节点，否则 next 列表按序识别永远先命中「选从者1」
