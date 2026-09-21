@@ -776,7 +776,11 @@ class SupportAction(CustomAction):
             if source_mode == "chaldea":
                 for ce_name, _, status in ce_targets:
                     if not os.path.isfile(os.path.join(ce_dir, status, ce_name)):
-                        mfaalog.error(f"[SupportAction] Chaldea 助战礼装模板缺失: {status}/{ce_name}")
+                        display_name = os.path.splitext(ce_name)[0]
+                        mfaalog.error(
+                            f"[SupportAction] 暂时没有 Chaldea 数据中礼装「{display_name}」的"
+                            f"{status}模板图。请联系 MaaFGO 开发者补充模板，或改用“自定义助战”继续任务。"
+                        )
                         return CustomAction.RunResult(success=False)
             np_dir = os.path.join(base_dir, "nplevel")   # 宝具模板按 pkg 动态选择(base/cn)
             skill_dir = os.path.join(base_dir, "skill")   # 视图判断模板(主动/被动), 按 pkg 动态选择
