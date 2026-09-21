@@ -33,7 +33,9 @@
                     399
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_仇凛2技能_选B": {
         "action": {
@@ -44,7 +46,9 @@
                     393
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_仇凛2技能_选Q": {
         "action": {
@@ -55,7 +59,9 @@
                     402
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_岸波白野3技能_天之力选择": {
         "doc": "岸波白野3技能「天之力」选项：模板识别（ROI [428,386,221,77]，点识别位置）。命中即选天之力并关闭子屏；后续如需其他力选项（地之力等），新增对应模板节点挂入入口 next，顺序即优先级",
@@ -78,6 +84,7 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
@@ -105,6 +112,7 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
@@ -132,6 +140,8 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
+        "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
             "战斗_特殊技能_已回主界面"
@@ -181,6 +191,8 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
+        "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
             "战斗_特殊技能_已回主界面"
@@ -211,6 +223,7 @@
                 ]
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500
     },
     "战斗_技能无法使用弹窗": {
@@ -227,6 +240,7 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500
     },
     "战斗_技能目标子屏": {
@@ -263,7 +277,9 @@
                     397
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_技能目标子屏_选从者2": {
         "action": {
@@ -274,7 +290,9 @@
                     386
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_技能目标子屏_选从者3": {
         "action": {
@@ -285,7 +303,9 @@
                     388
                 ]
             }
-        }
+        },
+        "post_wait_freezes": 500,
+        "post_delay": 500
     },
     "战斗_特殊技能_已回主界面": {
         "doc": "多步链终点：覆盖层处理完直接回了主界面（如库库尔坎 1/3 技能选完暴击星后无后续子屏）。DirectHit 立即命中结束，避免空等目标子屏的 timeout；与「无覆盖层」的区别是本节点处于链中（前面已处理过覆盖层）"
@@ -330,6 +350,7 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
@@ -357,6 +378,7 @@
                 "target": true
             }
         },
+        "post_wait_freezes": 500,
         "post_delay": 500,
         "next": [
             "战斗_技能目标子屏",
