@@ -50,6 +50,12 @@ MATCH_CENTER_DELTA = 6
 BOTTOM_STABLE_ROUNDS = 3
 CONTENT_STABLE_ROUNDS = 3
 CONTENT_DIFF_THRESHOLD = 0.012
+SCROLL_THUMB_WIDTH_RANGE = (18, 30)
+# 1280x720 小图标列表里的滑块实测高 58–60px。旧上限 50px 会导致每一屏
+# 都返回 None，使本应最可靠的到底判定完全失效。
+SCROLL_THUMB_HEIGHT_RANGE = (30, 70)
+SCROLL_BOTTOM_CENTER_Y = 650
+SCROLL_STABLE_DELTA = 1
 INVENTORY_ICON_LAYOUT_NODES = {
     "servant": "个人库存-从者图标大小检测",
     "equip": "个人库存-礼装图标大小检测",
@@ -780,9 +786,9 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             content_unchanged = content_unchanged + 1 if stable_content else 0
             stable_page = (
                 current_thumb is not None and previous_thumb is not None and
-                abs(current_thumb - previous_thumb) <= 1 and
+                abs(current_thumb - previous_thumb) <= SCROLL_STABLE_DELTA and
                 (
-                    current_thumb >= 650 or
+                    current_thumb >= SCROLL_BOTTOM_CENTER_Y or
                     (bool(current_ids) and current_ids == previous_ids)
                 )
             )
@@ -815,7 +821,10 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             if page_index >= max_swipes:
                 mfaalog.error(
                     f"[个人库存] {label}达到安全上限 {max_swipes} 次下滑，"
-                    "仍未确认列表底部"
+                    "仍未确认列表底部："
+                    f"滚动条={current_thumb}，上一屏滚动条={previous_thumb}，"
+                    f"滚动条稳定={unchanged}，画面稳定={content_unchanged}，"
+                    f"画面差异={content_diff}"
                 )
                 self._leave_current_list()
                 return None, None
@@ -955,8 +964,14 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         mask = ((hsv[:, :, 1] < 80) & (hsv[:, :, 2] > 180)).astype(np.uint8)
         _count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(mask)
         candidates = []
+        min_width, max_width = SCROLL_THUMB_WIDTH_RANGE
+        min_height, max_height = SCROLL_THUMB_HEIGHT_RANGE
         for x, y, width, height, area in stats[1:]:
-            if 18 <= width <= 30 and 30 <= height <= 50 and area >= 300:
+            if (
+                min_width <= width <= max_width and
+                min_height <= height <= max_height and
+                area >= 300
+            ):
                 candidates.append((int(area), int(round(roi_y + y + height / 2))))
         return max(candidates)[1] if candidates else None
 

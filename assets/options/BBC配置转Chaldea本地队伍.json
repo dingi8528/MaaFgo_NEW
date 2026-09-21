@@ -1,5 +1,36 @@
 {
   "option": {
+    "BBC转换范围": {
+      "type": "select",
+      "label": "转换范围",
+      "description": "选择转换一个指定配置，或批量转换 BBchannel/settings 中的全部配置。",
+      "default": "单个配置",
+      "cases": [
+        {
+          "name": "单个配置",
+          "label": "转换一个配置",
+          "option": ["BBC转换来源配置"],
+          "pipeline_override": {
+            "BBC配置转Chaldea本地队伍": {
+              "attach": {
+                "bbc_import_all": false
+              }
+            }
+          }
+        },
+        {
+          "name": "全部配置",
+          "label": "转换全部配置",
+          "pipeline_override": {
+            "BBC配置转Chaldea本地队伍": {
+              "attach": {
+                "bbc_import_all": true
+              }
+            }
+          }
+        }
+      ]
+    },
     "BBC转换来源配置": {
       "type": "scan_select",
       "label": "BBC 队伍配置",

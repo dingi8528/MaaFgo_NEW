@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "purpose": "构建个人从者礼装库的小图标星级网格定位",
   "scale": 0.74,
   "interpolation": "Bilinear",
