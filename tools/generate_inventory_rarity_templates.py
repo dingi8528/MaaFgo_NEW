@@ -42,6 +42,14 @@ def main():
     parser.add_argument("source", type=Path, help="包含 rarity*.png 的解包目录")
     parser.add_argument("output", type=Path, help="输出绿幕模板目录")
     parser.add_argument("--scale", type=float, default=0.74)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path(__file__).resolve().parent
+        / "manifests"
+        / "inventory_rarity_templates.json",
+        help="生成记录输出路径（默认写入 tools/manifests，不进入 Maa 资源目录）",
+    )
     args = parser.parse_args()
     if not 0 < args.scale <= 2:
         raise SystemExit("--scale 必须位于 (0, 2]")
@@ -49,6 +57,7 @@ def main():
     if not sources:
         raise SystemExit(f"没有找到 rarity*.png：{args.source}")
     manifest = {
+        "schema_version": 1,
         "purpose": "构建个人从者礼装库的小图标星级网格定位",
         "scale": args.scale,
         "interpolation": "Bilinear",
@@ -71,11 +80,13 @@ def main():
                 "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
             }
         )
-    args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "_manifest.json").write_text(
+    args.manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.manifest.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"generated={len(sources)} output={args.output}")
+    print(
+        f"generated={len(sources)} output={args.output} manifest={args.manifest}"
+    )
 
 
 if __name__ == "__main__":
