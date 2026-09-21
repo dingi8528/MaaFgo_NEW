@@ -1,7 +1,7 @@
 """回合循环（按真实两屏流程 + 长动画宽容等待）。
 
 流程：
-  MAIN_BATTLE --点攻击--> COMMAND_SELECTION --选3张--> 自动发动 -> 20~40s 动画 -> 回主界面/胜利
+  MAIN_BATTLE --点攻击--> COMMAND_SELECTION --选3张--> 自动发动 -> 等待攻击动画 -> 回主界面/胜利
 
 设计要点：
 - 攻击动画期间画面既非主界面也非选卡，会读成 UNKNOWN；这段是"宽容等待"（轮询到已知场景/超时），
@@ -28,8 +28,8 @@ from ..execution.executor import Executor
 from ..perception import perception
 import mfaalog
 
-# 选完卡后等攻击动画结束（20~40s，留足余量）
-_ANIMATION_TIMEOUT_S = 60.0
+# 选完卡后等攻击动画结束（部分长演出可能超过 60s，留足余量）
+_ANIMATION_TIMEOUT_S = 120.0
 # 意外 UNKNOWN（加载等）的最大等待
 _UNKNOWN_TIMEOUT_S = 30.0
 # 每次轮询之间等画面静止的窗口（ms）

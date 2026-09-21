@@ -4,6 +4,11 @@ from .game_data import get_equip_name
 
 
 _SUPPORT_TYPES = {"friend", "fixed", "npc"}
+_FULLWIDTH_ALNUM = str.maketrans({
+    codepoint: codepoint - 0xFEE0
+    for start, end in ((0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A))
+    for codepoint in range(start, end + 1)
+})
 _CLASS_TABS = {
     "saber": "剑士", "archer": "弓兵", "lancer": "枪兵", "rider": "骑兵",
     "caster": "魔术师", "assassin": "暗杀者", "berserker": "狂战士",
@@ -36,12 +41,13 @@ def _levels(values, count, label):
             for i in range(count)]
 
 
-def _equip(item, slot, resolve_name):
-    equip = item.get(f"equip{slot}")
+def _equip(item, source_slot, resolve_name, target_slot=None):
+    """解析 Chaldea 礼装槽，并映射到 MaaFGO 可见卡面槽位。"""
+    equip = item.get(f"equip{source_slot}")
     if isinstance(equip, dict) and equip.get("id") is not None:
         raw_id = equip["id"]
         limit_break = equip.get("limitBreak", False)
-    elif slot == 1:
+    elif source_slot == 1:
         raw_id = item.get("ceId")
         limit_break = item.get("ceLimitBreak", False)
     else:
@@ -52,16 +58,22 @@ def _equip(item, slot, resolve_name):
     try:
         equip_id = int(raw_id)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"助战第{slot}格礼装 ID 无效: {raw_id!r}") from exc
+        raise ValueError(f"助战第{source_slot}格礼装 ID 无效: {raw_id!r}") from exc
     if equip_id <= 0:
-        raise ValueError(f"助战第{slot}格礼装 ID 无效: {equip_id}")
+        raise ValueError(f"助战第{source_slot}格礼装 ID 无效: {equip_id}")
     name = resolve_name(equip_id)
     if not name:
-        raise ValueError(f"助战第{slot}格礼装 {equip_id} 缺少名称数据")
+        raise ValueError(f"助战第{source_slot}格礼装 {equip_id} 缺少名称数据")
+    # Chaldea 名称库可能使用全角英数字（如“来自ＮＦＦ的爱”），而图片资源
+    # 使用半角文件名。这里只转换英数字，不能用 NFKC 整体归一化；同时把
+    # 名称中的路径分隔符转成全角符号，与可落盘的模板文件名保持一致。
+    normalized_name = (str(name).translate(_FULLWIDTH_ALNUM)
+                       .replace("/", "／").replace("\\", "＼"))
     return {
-        "slot": slot,
+        "slot": target_slot if target_slot is not None else source_slot,
+        "source_slot": source_slot,
         "id": equip_id,
-        "name": f"{name}.png",
+        "name": f"{normalized_name}.png",
         "status": "满破" if limit_break is True else "非满破",
     }
 
@@ -94,7 +106,28 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
     if not class_name:
         raise ValueError(f"助战从者 {servant_id} 的职介无法识别")
     grand = support.get("grandSvt") is True
-    equips = [_equip(support, slot, resolve_name) for slot in (1, 2) if grand or slot == 1]
+    if grand:
+        # Chaldea 冠位槽定义：equip1=普通礼装、equip2=羁绊礼装、
+        # equip3=冠位追加礼装。MaaFGO 的两张卡面模板对应 equip1/equip3；
+        # equip2 只通过羁绊效果图标判断，不匹配礼装卡面。
+        equips = [
+            _equip(support, 1, resolve_name, target_slot=1),
+            _equip(support, 3, resolve_name, target_slot=2),
+        ]
+        bond_equip = support.get("equip2")
+        if isinstance(bond_equip, dict) and bond_equip.get("id") not in (None, "", 0):
+            class_board = support.get("classBoardData")
+            bond_changed = (class_board.get("grandBondEquipSkillChange")
+                            if isinstance(class_board, dict) else None)
+            if isinstance(bond_changed, bool):
+                ce_bond = "50np" if bond_changed else "original"
+            else:
+                ce_bond = "any"
+        else:
+            ce_bond = "any"
+    else:
+        equips = [_equip(support, 1, resolve_name)]
+        ce_bond = "any"
     return {
         "support_type": "grand" if grand else "normal",
         "servant_id": str(servant_id),
@@ -105,5 +138,5 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
         "passive": _levels(support.get("appendLvs"), 5, "追加技能"),
         "np_level": _level(support.get("tdLv"), "宝具等级", 5),
         "level": _level(support.get("lv"), "从者等级", 130),
-        "ce_bond": "any",
+        "ce_bond": ce_bond,
     }
