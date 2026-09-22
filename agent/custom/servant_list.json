@@ -6624,6 +6624,9 @@
     },
     {
       "id": "1002000",
+      "aliases": [
+        "1002100"
+      ],
       "collection_no": 464,
       "name": "芙萝拉",
       "class": "alterEgo",
@@ -11692,6 +11695,9 @@
     },
     {
       "id": "505600",
+      "aliases": [
+        "505700"
+      ],
       "collection_no": 467,
       "name": "普勒拉蒂",
       "class": "caster",

@@ -50,6 +50,7 @@ if _custom_dir not in sys.path:
 
 import mfaalog
 from chaldea import fetch_share_data
+from chaldea.servant_aliases import build_servant_lookup
 from chaldea.support_criteria import build_support_criteria
 
 # ---------------- 路径常量 ----------------
@@ -309,7 +310,7 @@ class SupportAction(CustomAction):
         if cls._servant_map is None:
             with open(SERVANT_LIST_PATH, encoding="utf-8") as fp:
                 data = json.load(fp)
-            cls._servant_map = {s["id"]: s for s in data.get("servants", [])}
+            cls._servant_map = build_servant_lookup(data.get("servants", []))
         return cls._servant_map
 
     # ---------- 参照物定位(消除 YOLO 框偏移) ----------

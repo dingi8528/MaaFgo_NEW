@@ -347,7 +347,7 @@ class ExecuteServantUp(CustomAction):
         servants = data["servants"]
         if servant_id:
             for s in servants:
-                if s["id"] == servant_id:
+                if s["id"] == servant_id or servant_id in (s.get("aliases") or []):
                     return s
             mfaalog.warning(f"[强化从者] 未找到 id={servant_id} 的从者")
         return None
@@ -388,16 +388,24 @@ class ExecuteServantUp(CustomAction):
         #   形象类型：00=标准、30~90=灵衣、01/02/10/51 等=特殊形态（杰基尔海德、玛修剧情形态等）
         #   灵基阶段：0-4；d = 特殊立绘标记（如奥德修斯 ascension1 的 f_4038001d.png）
         # 动态探测形象类型 00~99，覆盖所有可能，os.path.isfile 过滤不存在的
-        prefix = sid[:-2] if len(sid) > 2 else sid
-        faces = []
-        for ct in range(100):
-            ct_s = f"{ct:02d}"
-            for stage in range(5):
-                base = f"{SERVANT_FACE_DIR}/f_{prefix}{ct_s}{stage}"
-                faces.append(f"{base}.png")
-                faces.append(f"{base}d.png")
+        faces = [
+            f"{SERVANT_FACE_DIR}/{name}"
+            for name in servant.get("images") or []
+        ]
+        # images 不完整时仍按规范 ID 和形态别名回填探测；普勒拉蒂的 505600
+        # 与 505700 等多形态从者因此都会加载到同一选择目标中。
+        for identity_id in (sid, *(servant.get("aliases") or [])):
+            prefix = identity_id[:-2] if len(identity_id) > 2 else identity_id
+            for ct in range(100):
+                ct_s = f"{ct:02d}"
+                for stage in range(5):
+                    base = f"{SERVANT_FACE_DIR}/f_{prefix}{ct_s}{stage}"
+                    faces.append(f"{base}.png")
+                    faces.append(f"{base}d.png")
         # 过滤实际存在的头像
-        faces = [f for f in faces if os.path.isfile(self._tpl(f))]
+        faces = list(dict.fromkeys(
+            f for f in faces if os.path.isfile(self._tpl(f))
+        ))
         if not faces:
             mfaalog.error(f"[强化从者] 无头像资源: {sid}")
             return False

@@ -130,7 +130,7 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
         ce_bond = "any"
     return {
         "support_type": "grand" if grand else "normal",
-        "servant_id": str(servant_id),
+        "servant_id": str(servant["id"]),
         "class_name": class_name,
         "images": servant["images"],
         "ce_specs": [equip for equip in equips if equip is not None],
