@@ -13,6 +13,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from formation_test_support import formation as f
 from battle.core.models import Confidence, FormationSlot, InitialFormation
+from chaldea.servant_aliases import build_servant_lookup
+from chaldea.support_criteria import build_support_criteria
 
 
 def image_write(path, array):
@@ -166,6 +168,46 @@ class IdentityTests(unittest.TestCase):
         data["servants"][0]["name"] = "新名字"
         self.catalog.write_text(json.dumps(data), encoding="utf-8")
         self.assertNotEqual(first.records["1000"]["name"], self.reader().records["1000"]["name"])
+
+    def test_alternate_form_id_is_one_canonical_servant(self):
+        data = json.loads(self.catalog.read_text())
+        canonical = data["servants"][0]
+        canonical["aliases"] = ["1100"]
+        canonical["images"].append("f_11000.png")
+        data["servants"].append({
+            "id": "1100", "name": "旧错误记录", "class": "assassin",
+            "images": ["f_11000.png"],
+        })
+        self.catalog.write_text(json.dumps(data), encoding="utf-8")
+        image_write(self.root / "NarrowFigures/f_11000.png", self.other)
+
+        lookup = build_servant_lookup(data["servants"])
+        self.assertIs(lookup["1100"], canonical)
+        reader = self.reader()
+        self.assertNotIn("1100", reader.records)
+        self.assertTrue(any(name.endswith("f_11000.png")
+                            for name, _image in reader.templates["1000"]))
+
+    def test_prelati_chaldea_id_uses_both_form_images(self):
+        action = f.AutoFormationFromChaldea()
+        servant = action._get_servant_info(505700)
+        self.assertEqual(servant["id"], "505600")
+        self.assertIn("f_5056000.png", servant["images"])
+        self.assertIn("f_5057000.png", servant["images"])
+
+        share_data = {"team": {
+            "onFieldSvts": [{"svtId": 505700, "supportType": "none"}],
+            "backupSvts": [],
+        }}
+        expected = action._build_expected(share_data)
+        self.assertEqual(expected[0]["svt_id"], 505600)
+
+        servant_map = build_servant_lookup([servant])
+        share_data["team"]["onFieldSvts"][0]["supportType"] = "friend"
+        criteria = build_support_criteria(share_data, servant_map)
+        self.assertEqual(criteria["servant_id"], "505600")
+        self.assertEqual(criteria["class_name"], "魔术师")
+        self.assertIn("f_5057000.png", criteria["images"])
 
     def test_invalid_calibration_and_contract_are_rejected(self):
         for config in [{"verified": True}, {"identity_margin": -1}, {"class_roi": [0, 0, 200, 20]},

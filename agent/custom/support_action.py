@@ -50,6 +50,7 @@ if _custom_dir not in sys.path:
 
 import mfaalog
 from chaldea import fetch_share_data
+from chaldea.servant_aliases import build_servant_lookup
 from chaldea.support_criteria import build_support_criteria
 
 # ---------------- 路径常量 ----------------
@@ -309,7 +310,7 @@ class SupportAction(CustomAction):
         if cls._servant_map is None:
             with open(SERVANT_LIST_PATH, encoding="utf-8") as fp:
                 data = json.load(fp)
-            cls._servant_map = {s["id"]: s for s in data.get("servants", [])}
+            cls._servant_map = build_servant_lookup(data.get("servants", []))
         return cls._servant_map
 
     # ---------- 参照物定位(消除 YOLO 框偏移) ----------
@@ -776,7 +777,11 @@ class SupportAction(CustomAction):
             if source_mode == "chaldea":
                 for ce_name, _, status in ce_targets:
                     if not os.path.isfile(os.path.join(ce_dir, status, ce_name)):
-                        mfaalog.error(f"[SupportAction] Chaldea 助战礼装模板缺失: {status}/{ce_name}")
+                        display_name = os.path.splitext(ce_name)[0]
+                        mfaalog.error(
+                            f"[SupportAction] 暂时没有 Chaldea 数据中礼装「{display_name}」的"
+                            f"{status}模板图。请联系 MaaFGO 开发者补充模板，或改用“自定义助战”继续任务。"
+                        )
                         return CustomAction.RunResult(success=False)
             np_dir = os.path.join(base_dir, "nplevel")   # 宝具模板按 pkg 动态选择(base/cn)
             skill_dir = os.path.join(base_dir, "skill")   # 视图判断模板(主动/被动), 按 pkg 动态选择

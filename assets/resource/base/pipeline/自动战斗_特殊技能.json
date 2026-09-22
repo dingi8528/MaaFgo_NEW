@@ -319,13 +319,21 @@
         "next": [
             "战斗_技能使用弹窗",
             "战斗_技能无法使用弹窗",
-            "战斗_技能目标子屏",
+            "战斗_马嘶1技能_无敌选择",
+            "战斗_梵高矿工1技能_Arts选择",
+            "战斗_莉莉丝3技能_不赋予选择",
+            "战斗_普雷拉蒂1技能_不换形态选择",
+            "战斗_夏洛特3技能_Arts选择",
+            "战斗_芙萝拉3技能_通常状态选择",
+            "战斗_安哥拉曼纽3技能_50%毅力选择",
+            "战斗_但丁2技能_天国Arts选择",
             "战斗_仇凛2技能_色卡选择",
             "战斗_库库尔坎_暴击星消耗",
             "战斗_玉兔2技能_宝具类型选择",
             "战斗_岸波白野3技能_天之力选择",
             "战斗_静希草十郎3技能_红卡选择",
             "战斗_巴格斯特3技能_全体宝具选择",
+            "战斗_技能目标子屏",
             "战斗_特殊技能_无覆盖层"
         ]
     },
@@ -384,5 +392,258 @@
             "战斗_技能目标子屏",
             "战斗_特殊技能_已回主界面"
         ]
+    },
+    "战斗_马嘶1技能_无敌选择": {
+        "doc": "马嘶 S1 固定默认：无敌（SelectAddInfo index 0）。日服 1280x720 实机截图裁切。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [493, 386, 294, 72],
+                "template": "battle/skill/马嘶技能_1技能_无敌.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_马嘶1技能_毅力选择": {
+        "doc": "马嘶 S1 备选：毅力（SelectAddInfo index 1），未挂入默认入口。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [814, 386, 295, 72],
+                "template": "battle/skill/马嘶技能_1技能_毅力.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_梵高矿工1技能_Quick选择": {
+        "doc": "梵高〔矿工〕S1 备选：Quick（index 0），未挂入默认入口。技能本体要求至少 10 个暴击星。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [416, 386, 223, 72],
+                "template": "battle/skill/梵高矿工技能_1技能_Quick.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_梵高矿工1技能_Arts选择": {
+        "doc": "梵高〔矿工〕S1 固定默认：Arts（SelectAddInfo index 1）。日服 1280x720 实机截图裁切；技能本体要求至少 10 个暴击星。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [658, 386, 223, 72],
+                "template": "battle/skill/梵高矿工技能_1技能_Arts.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_梵高矿工1技能_Buster选择": {
+        "doc": "梵高〔矿工〕S1 备选：Buster（index 2），未挂入默认入口。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [900, 386, 221, 72],
+                "template": "battle/skill/梵高矿工技能_1技能_Buster.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_莉莉丝3技能_不赋予选择": {
+        "doc": "莉莉丝 S3 固定默认：不赋予宝具后自即死状态（SelectAddInfo index 0）。日服实机模板。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [493, 386, 294, 72],
+                "template": "battle/skill/莉莉丝技能_3技能_不赋予.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_莉莉丝3技能_赋予选择": {
+        "doc": "莉莉丝 S3 备选：赋予宝具后自即死状态（index 1），未挂入默认入口。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [813, 386, 296, 72],
+                "template": "battle/skill/莉莉丝技能_3技能_赋予.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_普雷拉蒂1技能_不换形态选择": {
+        "doc": "普勒拉蒂两种灵基（505600/505700）共用 S1；固定默认不换形态（SelectAddInfo index 0）。日服 1280x720 实机截图裁切。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [493, 386, 294, 72],
+                "template": "battle/skill/普勒拉蒂技能_1技能_不更换灵基.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_普雷拉蒂1技能_换形态选择": {
+        "doc": "普勒拉蒂两种灵基（505600/505700）共用 S1 备选：换形态（index 1），未挂入默认入口。日服 1280x720 实机截图裁切。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [813, 386, 296, 72],
+                "template": "battle/skill/普勒拉蒂技能_1技能_更换灵基.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_夏洛特3技能_Arts选择": {
+        "doc": "夏洛特 S3 固定默认：Arts 强化（SelectAddInfo index 0）。本机从者 S3 未解锁，先按 Chaldea 日文按钮 OCR 识别。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [416, 386, 223, 72], "expected": ["Artsアップ"]}
+        },
+        "action": {"type": "Click", "param": {"target": [527, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_夏洛特3技能_暴击威力选择": {
+        "doc": "夏洛特 S3 备选：暴击威力强化（index 1），未挂入默认入口。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [658, 386, 223, 72], "expected": ["クリティカル威力アップ"]}
+        },
+        "action": {"type": "Click", "param": {"target": [770, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_夏洛特3技能_宝具威力选择": {
+        "doc": "夏洛特 S3 备选：宝具威力强化（index 2），未挂入默认入口。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [900, 386, 221, 72], "expected": ["宝具威力アップ"]}
+        },
+        "action": {"type": "Click", "param": {"target": [1010, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_芙萝拉3技能_通常状态选择": {
+        "doc": "芙萝拉两种内部形态共用 S3；固定默认通常状态（SelectAddInfo index 0）。日服实机模板。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [493, 386, 294, 72],
+                "template": "battle/skill/芙萝拉技能_3技能_通常状态.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_芙萝拉3技能_冥界之花园状态选择": {
+        "doc": "芙萝拉 S3 备选：冥界之花园状态（index 1），未挂入默认入口。",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [813, 386, 296, 72],
+                "template": "battle/skill/芙萝拉技能_3技能_冥界之花园状态.png",
+                "threshold": 0.8
+            }
+        },
+        "action": {"type": "Click", "param": {"target": true}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_安哥拉曼纽3技能_无毅力选择": {
+        "doc": "安哥拉曼纽强化后 S3 备选：无毅力（index 0），未挂入默认入口。本机尚未完成对应强化。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [416, 386, 223, 72], "expected": ["ガッツなし"]}
+        },
+        "action": {"type": "Click", "param": {"target": [527, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_安哥拉曼纽3技能_50%毅力选择": {
+        "doc": "安哥拉曼纽强化后 S3 固定默认：50% 回复毅力（SelectAddInfo index 1）。本机尚未完成对应强化，先按 Chaldea 日文按钮 OCR 识别。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [658, 386, 223, 72], "expected": ["ガッツ50%回復"]}
+        },
+        "action": {"type": "Click", "param": {"target": [770, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_安哥拉曼纽3技能_1HP毅力选择": {
+        "doc": "安哥拉曼纽强化后 S3 备选：1 HP 回复毅力（index 2），未挂入默认入口。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [900, 386, 221, 72], "expected": ["ガッツ1回復"]}
+        },
+        "action": {"type": "Click", "param": {"target": [1010, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_但丁2技能_天国Arts选择": {
+        "doc": "但丁 S2 固定默认：天国化（Arts 强化，SelectAddInfo index 0）。本机未持有，先以 Chaldea 日文按钮 OCR 安全识别。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [493, 386, 294, 72], "expected": ["天国化(Arts強化)", "天国化"]}
+        },
+        "action": {"type": "Click", "param": {"target": [640, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_但丁2技能_地狱Buster选择": {
+        "doc": "但丁 S2 备选：地狱化（Buster 强化，index 1），未挂入默认入口。",
+        "recognition": {
+            "type": "OCR",
+            "param": {"roi": [813, 386, 296, 72], "expected": ["地獄化(Buster強化)", "地獄化"]}
+        },
+        "action": {"type": "Click", "param": {"target": [961, 422]}},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
     }
 }

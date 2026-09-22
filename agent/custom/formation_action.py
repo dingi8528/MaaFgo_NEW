@@ -34,6 +34,7 @@ if _AGENT_DIR not in sys.path:
     sys.path.insert(0, _AGENT_DIR)
 
 from chaldea import fetch_share_data
+from chaldea.servant_aliases import build_servant_lookup, canonical_servants, servant_aliases
 import mfaalog
 from battle.core.models import Confidence, FormationSlot
 from battle.runtime.formation_session import context_session, sessions
@@ -484,8 +485,10 @@ class AutoFormationFromChaldea(CustomAction):
                         f"invalid_chaldea_team: 助战槽位{index + 1}没有有效 svtId"
                     )
                     return None
+                servant = self._get_servant_info(svt_id)
+                canonical_id = int(servant["id"]) if servant is not None else svt_id
                 expected.append({
-                    "kind": "SUPPORT", "svt_id": svt_id, "equip_id": equip_id,
+                    "kind": "SUPPORT", "svt_id": canonical_id, "equip_id": equip_id,
                     "equip_limit_break": equip_limit_break, "grand_svt": grand_svt,
                     "slot": index,
                 })
@@ -493,8 +496,10 @@ class AutoFormationFromChaldea(CustomAction):
             if not isinstance(svt_id, int) or svt_id <= 0:
                 self._fail(f"invalid_chaldea_team: 槽位{index + 1}没有有效 svtId")
                 return None
+            servant = self._get_servant_info(svt_id)
+            canonical_id = int(servant["id"]) if servant is not None else svt_id
             expected.append({
-                "kind": "LOCAL", "svt_id": svt_id, "equip_id": equip_id,
+                "kind": "LOCAL", "svt_id": canonical_id, "equip_id": equip_id,
                 "equip_limit_break": equip_limit_break, "grand_svt": grand_svt,
                 "slot": index,
             })
@@ -599,16 +604,24 @@ class AutoFormationFromChaldea(CustomAction):
         return _read_image(self._template_path(relative))
 
     def _load_servant_templates(self, svt_id, directories):
-        sid = str(svt_id)
-        if len(sid) <= 2:
+        servant = self._get_servant_info(svt_id)
+        if servant is None:
             return []
-        prefix = sid[:-2]
-        matcher = re.compile(rf"^f_{re.escape(prefix)}\d{{3}}d?\.png$", re.IGNORECASE)
+        ids = {str(servant["id"]), *servant_aliases(servant)}
+        prefixes = {sid[:-2] for sid in ids if len(sid) > 2}
+        matchers = [
+            re.compile(rf"^f_{re.escape(prefix)}\d{{3}}d?\.png$", re.IGNORECASE)
+            for prefix in prefixes
+        ]
+        explicit_names = set(servant.get("images") or [])
         result, seen = [], set()
         for directory in directories:
             for path in glob.glob(os.path.join(directory, "f_*.png")):
                 name = os.path.basename(path)
-                if name in seen or not matcher.match(name):
+                if name in seen or (
+                    name not in explicit_names
+                    and not any(matcher.match(name) for matcher in matchers)
+                ):
                     continue
                 template = _read_image(path)
                 if template is not None:
@@ -1376,7 +1389,7 @@ class AutoFormationFromChaldea(CustomAction):
         except Exception as exc:
             mfaalog.error(f"[自动编队] 读取 servant_list.json 失败: {exc}")
             return None
-        return next((item for item in servants if str(item.get("id")) == str(svt_id)), None)
+        return build_servant_lookup(servants).get(str(svt_id))
 
     # ---------- 概念礼装选择、筛选、替换 ----------
 
@@ -2340,12 +2353,13 @@ def _cached_identity_index(catalog_path, catalog_mtime, catalog_size, manifest):
     records = {}
     explicit = {}
     prefixes = {}
-    for item in catalog:
+    for item in canonical_servants(catalog):
         sid = str(item["id"])
         if sid in records or not sid.isdigit() or len(sid) <= 2:
             raise ValueError(f"invalid/duplicate servant id: {sid}")
         records[sid] = {"name": item["name"], "class": item["class"]}
-        prefixes.setdefault(sid[:-2], set()).add(sid)
+        for identity_id in {sid, *servant_aliases(item)}:
+            prefixes.setdefault(identity_id[:-2], set()).add(sid)
         for name in item.get("images") or []:
             explicit.setdefault(name, set()).add(sid)
     groups = {sid: [] for sid in records}
