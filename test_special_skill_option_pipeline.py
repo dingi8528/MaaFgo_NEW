@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent
 PIPELINE_PATH = ROOT / "assets/resource/base/pipeline/自动战斗_特殊技能.json"
-JP_IMAGE_ROOT = ROOT / "assets/resource/jp/image"
+IMAGE_ROOT = ROOT / "assets/resource/base/image"
 
 
 class SpecialSkillOptionPipelineTest(unittest.TestCase):
@@ -76,7 +76,7 @@ class SpecialSkillOptionPipelineTest(unittest.TestCase):
             recognition = self.pipeline[name]["recognition"]
             self.assertEqual(recognition["type"], "TemplateMatch")
             template = recognition["param"]["template"]
-            path = JP_IMAGE_ROOT / template
+            path = IMAGE_ROOT / template
             self.assertTrue(path.is_file(), template)
             with path.open("rb") as stream:
                 self.assertEqual(stream.read(8), b"\x89PNG\r\n\x1a\n")
