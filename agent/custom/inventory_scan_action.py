@@ -735,7 +735,6 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
 
     def _scan_pages(self, label, catalog, matrix, variants, matcher, swipe_node, max_swipes):
         observed = {}
-        previous_ids = None
         previous_thumb = None
         previous_content = None
         unchanged = 0
@@ -754,12 +753,17 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             hits, image = matcher(catalog, matrix, variants)
             if image is None:
                 return None, None
-            if page_index == 0 and not hits:
-                # 回顶后首帧偶尔仍是列表过渡画面。先在原位重拍一次，绝不先
-                # 下滑，确保顶部对象不会因为加载延迟而漏记。
+            if not hits:
+                # 任何一屏零命中都先原位重试，不能跳过未识别页后覆盖旧库。
                 time.sleep(0.8)
                 hits, image = matcher(catalog, matrix, variants)
                 if image is None:
+                    return None, None
+                if not hits:
+                    mfaalog.error(
+                        f"[个人库存] {label}第{page_index + 1}屏重复零命中，"
+                        "无法区分空列表和识别失败，保留旧库存"
+                    )
                     return None, None
             for item_id, hit in hits.items():
                 old = observed.get(item_id)
@@ -778,7 +782,6 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             )
             self._focus(f"正在扫描{label}：已识别 {len(observed)}")
 
-            current_ids = tuple(sorted(hits))
             current_thumb = self._scroll_thumb_center(image)
             current_content = self._content_signature(image)
             content_diff = self._content_difference(previous_content, current_content)
@@ -787,16 +790,12 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             stable_page = (
                 current_thumb is not None and previous_thumb is not None and
                 abs(current_thumb - previous_thumb) <= SCROLL_STABLE_DELTA and
-                (
-                    current_thumb >= SCROLL_BOTTOM_CENTER_Y or
-                    (bool(current_ids) and current_ids == previous_ids)
-                )
+                current_thumb >= SCROLL_BOTTOM_CENTER_Y and stable_content
             )
             unchanged = unchanged + 1 if stable_page else 0
             scrollbar_bottom = unchanged >= BOTTOM_STABLE_ROUNDS
-            content_bottom = content_unchanged >= CONTENT_STABLE_ROUNDS
-            if scrollbar_bottom or content_bottom:
-                bottom_detection = "scrollbar" if scrollbar_bottom else "content"
+            if scrollbar_bottom:
+                bottom_detection = "scrollbar"
                 metrics = {
                     "pages_scanned": page_index + 1,
                     "swipes": swipes,
@@ -804,6 +803,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                     "detail_recoveries": self.current_scan_recoveries,
                     "bottom_confirmed": True,
                     "bottom_detection": bottom_detection,
+                    "recognition_valid": True,
                 }
                 mfaalog.info(
                     f"[个人库存] {label}已确认到达列表底部："
@@ -815,9 +815,12 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                     mfaalog.error(f"[个人库存] {label}扫描完成，但仓库页状态异常")
                     return None, None
                 return observed, metrics
-            previous_ids = current_ids
-            previous_thumb = current_thumb
-            previous_content = current_content
+            if content_unchanged >= CONTENT_STABLE_ROUNDS:
+                mfaalog.error(
+                    f"[个人库存] {label}列表连续静止，但没有可靠的底部滚动条证据："
+                    f"滚动条={current_thumb}；停止扫描并保留旧库存"
+                )
+                return None, None
             if page_index >= max_swipes:
                 mfaalog.error(
                     f"[个人库存] {label}达到安全上限 {max_swipes} 次下滑，"
@@ -828,6 +831,8 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                 )
                 self._leave_current_list()
                 return None, None
+            previous_thumb = current_thumb
+            previous_content = current_content
             if not self._run_pipeline(swipe_node):
                 self._leave_current_list()
                 return None, None

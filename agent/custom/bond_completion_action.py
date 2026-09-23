@@ -33,7 +33,9 @@ from bond_matcher import (
 )
 from bond_completion_memory import (
     BondCompletionMemory,
+    OPTIMIZER_VERSION,
     build_task_key as build_memory_task_key,
+    data_fingerprint,
     formation_signature,
 )
 from formation_action import (
@@ -259,7 +261,6 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                 return self._abort_safe(
                     "bond_completion_slot_invalid: 助战身份或替代目标不匹配"
                 )
-            self._prepare_auto_memory()
             self.equip_probe_slots = [
                 i for i, item in enumerate(detected)
                 if item["kind"] not in {"EMPTY", "SUPPORT"}
@@ -332,6 +333,7 @@ class CompleteBondFormation(AutoFormationFromChaldea):
                         str(slot + 1) for slot in sorted(self.empty_protected_equip_slots)
                     )
                 )
+            self._prepare_auto_memory()
             memory_result = self._try_auto_memory_hit(
                 detected,
                 current_servants,
@@ -489,8 +491,20 @@ class CompleteBondFormation(AutoFormationFromChaldea):
             "use_support_substitution": self.use_support_substitution,
             "quest_type": self.quest_type,
             "grand_class": self.grand_class,
+            "max_cost": self.max_cost,
         }
         try:
+            settings["optimizer_version"] = OPTIMIZER_VERSION
+            # 按实际生效模式区分有效本地库与读取失败后的实时回退。
+            for kind in ("servant", "equip"):
+                active = getattr(self, f"local_{kind}_inventory_active", False)
+                settings[f"local_{kind}_inventory"] = (
+                    sorted(getattr(self, f"local_{kind}_ids", set())) if active else None
+                )
+            settings["catalog_fingerprint"] = data_fingerprint({
+                "servants": self.servant_database,
+                "equips": self.equip_database,
+            })
             self.memory_task_key = build_memory_task_key(self.expected, settings)
             self.memory_store = BondCompletionMemory(_BOND_MEMORY_PATH)
             self.remembered_signature = self.memory_store.get(self.memory_task_key)

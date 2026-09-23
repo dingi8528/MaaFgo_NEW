@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MaaFGO imported interface fragment",
+  "description": "复用本仓库 interface.schema.json 的字段契约，不要求导入片段携带主界面必填字段。",
+  "type": "object",
+  "properties": {
+    "$schema": {"type": "string"},
+    "task": {"$ref": "interface.schema.json#/properties/task"},
+    "option": {"$ref": "interface.schema.json#/properties/option"},
+    "preset": {"$ref": "interface.schema.json#/properties/preset"},
+    "import": {"$ref": "interface.schema.json#/properties/import"},
+    "group": {"$ref": "interface.schema.json#/properties/group"},
+    "resource": {"$ref": "interface.schema.json#/properties/resource"},
+    "controller": {"$ref": "interface.schema.json#/properties/controller"},
+    "global_option": {"$ref": "interface.schema.json#/properties/global_option"}
+  },
+  "additionalProperties": false
+}

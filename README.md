@@ -168,6 +168,26 @@ MaaFgo/
 
 提交资源或数据改动前，请先阅读对应的维护文档，并运行相关 JSON 校验与 `git diff --check`。
 
+### 回归验证
+
+使用 Python 3.12 安装测试依赖后，可运行不依赖个人 BBC 安装目录或账号配置的回归：
+
+```powershell
+python -m pip install -r tests/requirements.txt
+python tools/run_tests.py
+python tools/validate_schema.py --schema-dir deps/tools --resource-dirs assets/resource --exclude-dirs assets/resource/announcement --interface-files assets/interface.json --task-dirs assets/tasks assets/options --require-tracked-imports
+git diff --check
+```
+
+`--suite unit` 和 `--suite component` 可分别运行单元与 MaaFramework 组件测试。组件测试
+使用内存控制器，不会连接游戏；默认使用 maafw wheel 自带的动态库，也可通过
+`MAAFW_BINARY_PATH` 指定库目录。Linux 运行原生框架前需安装 `libpipewire-0.3-0`。
+GitHub Actions 已配置这两个测试作业；实机识图与操作仍需单独验证。
+
+发布校验要求主界面的所有导入文件已加入 Git 索引。仅本机使用的开发入口可保存在被忽略的
+`assets/interface.local.json`，由开发启动方式显式加载；正式发布使用 `assets/interface.json`。
+本地副本不会自动跟随主配置更新，不要直接把它复制到打包版覆盖正式入口。
+
 ---
 
 ## 鸣谢

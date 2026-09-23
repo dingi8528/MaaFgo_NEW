@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "tests/fixtures/bbc"
 sys.path[:0] = [str(ROOT / "agent"), str(ROOT / "agent" / "custom")]
 
 from battle.data.chaldea_converter import convert_chaldea_actions_to_battle_plan
@@ -24,7 +25,7 @@ from battle.core.policy import StrategyProfile
 from battle.core.validator import (skip_unusable_servant_skills,
                                    validate_main_action)
 from battle.runtime.runtime import AutoBattleRuntime
-from chaldea.bbc_importer import (BbcImportError, _catalogs, _read_json,
+from chaldea.bbc_importer import (BbcImportError, _read_json,
                                   convert_bbc_config, import_bbc_all,
                                   import_bbc_file)
 import chaldea
@@ -33,10 +34,11 @@ import chaldea
 class BbcToChaldeaTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.catalog, cls.equips = _catalogs(ROOT, "CH")
+        cls.catalog = _read_json(FIXTURES / "servants.json")
+        cls.equips = _read_json(ROOT / "agent/utils/Chaldea/equip_names_CN.json")
 
     def _config(self, filename):
-        return _read_json(ROOT / "BBchannel" / "settings" / filename)
+        return _read_json(FIXTURES / filename)
 
     def test_standard_team_and_plan(self):
         share, warnings = convert_bbc_config(
@@ -180,8 +182,8 @@ class BbcToChaldeaTest(unittest.TestCase):
             root = Path(directory)
             settings = root / "BBchannel" / "settings"
             settings.mkdir(parents=True)
-            shutil.copy2(ROOT / "BBchannel" / "settings" / "爱尔奎特_光狐_光狐.json", settings)
-            shutil.copy2(ROOT / "BBchannel" / "servant_info_CH.json", root / "BBchannel")
+            shutil.copy2(FIXTURES / "爱尔奎特_光狐_光狐.json", settings)
+            shutil.copy2(FIXTURES / "servants.json", root / "BBchannel/servant_info_CH.json")
             data_dir = root / "agent" / "utils" / "Chaldea"
             data_dir.mkdir(parents=True)
             shutil.copy2(ROOT / "agent" / "utils" / "Chaldea" / "equip_names_CN.json", data_dir)
@@ -203,9 +205,9 @@ class BbcToChaldeaTest(unittest.TestCase):
             settings = root / "BBchannel" / "settings"
             settings.mkdir(parents=True)
             (settings / "a_bad.json").write_text("{}", encoding="utf-8")
-            shutil.copy2(ROOT / "BBchannel/settings/爱尔奎特_光狐_光狐.json",
+            shutil.copy2(FIXTURES / "爱尔奎特_光狐_光狐.json",
                          settings / "z_good.json")
-            shutil.copy2(ROOT / "BBchannel/servant_info_CH.json", root / "BBchannel")
+            shutil.copy2(FIXTURES / "servants.json", root / "BBchannel/servant_info_CH.json")
             data_dir = root / "agent/utils/Chaldea"
             data_dir.mkdir(parents=True)
             shutil.copy2(ROOT / "agent/utils/Chaldea/equip_names_CN.json", data_dir)

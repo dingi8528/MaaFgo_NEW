@@ -1,0 +1,129 @@
+"""Exercise the actual settlement next graph without device input."""
+import copy
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import time
+import unittest
+
+import maa
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_formation_framework import MemoryController
+from maa.custom_action import CustomAction
+from maa.custom_recognition import CustomRecognition
+from maa.library import Library
+from maa.resource import Resource
+from maa.tasker import Tasker
+from maa.define import LoggingLevelEnum
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class SettlementTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Library.open(Path(os.environ.get("MAAFW_BINARY_PATH", Path(maa.__file__).parent / "bin")))
+        Tasker.set_log_dir("")
+        Tasker.set_stdout_level(LoggingLevelEnum.Off)
+        cls.source = {}
+        for name in ("原生自动战斗调度", "战斗完成", "跳过剧情", "Dummy"):
+            cls.source.update(json.loads((ROOT / f"assets/resource/base/pipeline/{name}.json").read_text("utf-8")))
+
+    def run_scenario(self, entry, screens, *, succeeds=True, blind_limit=None):
+        # Include only the reachable graph, retaining production next ordering,
+        # JumpBack edges and max_hit. Replace visual algorithms and clicks only.
+        nodes = {}
+        def include(name):
+            name = name.removeprefix("[JumpBack]")
+            if name in nodes:
+                return
+            node = copy.deepcopy(self.source[name])
+            nodes[name] = node
+            for raw in node.get("next", []) + node.get("on_error", []):
+                include(raw)
+        include(entry)
+        state = {"index": 0, "seen": []}
+        class Screen(CustomRecognition):
+            def analyze(self, context, argv):
+                index = state["index"]
+                return (0, 0, 1, 1) if index < len(screens) and argv.node_name in screens[index] else None
+        class Record(CustomAction):
+            def run(self, context, argv):
+                state["seen"].append(argv.node_name)
+                if state["index"] < len(screens) and argv.node_name in screens[state["index"]]:
+                    state["index"] += 1
+                return True
+        for name, node in nodes.items():
+            node.pop("focus", None)
+            node.pop("post_wait_freezes", None)
+            node.pop("pre_wait_freezes", None)
+            node.update(pre_delay=0, post_delay=0, timeout=150, rate_limit=1)
+            if node.get("recognition", {}).get("type", "DirectHit") != "DirectHit":
+                node["recognition"] = {"type": "Custom", "param": {"custom_recognition": "screen"}}
+                node.pop("inverse", None)
+            node["action"] = {"type": "Custom", "param": {"custom_action": "record"}}
+            if blind_limit is not None and name.startswith("结算推进_点击右上角"):
+                node["max_hit"] = blind_limit
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "pipeline"
+            path.mkdir()
+            (path / "test.json").write_text(json.dumps(nodes, ensure_ascii=False), encoding="utf-8")
+            resource = Resource()
+            resource.use_cpu()
+            self.assertTrue(resource.post_bundle(temp).wait().succeeded)
+            resource.register_custom_recognition("screen", Screen())
+            resource.register_custom_action("record", Record())
+            controller = MemoryController(np.zeros((720, 1280, 3), dtype=np.uint8))
+            self.assertTrue(controller.post_connection().wait().succeeded)
+            tasker = Tasker()
+            self.assertTrue(tasker.bind(resource, controller))
+            job = tasker.post_task(entry)
+            deadline = time.monotonic() + 10
+            try:
+                while not job.status.done and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(job.status.done, "unbounded settlement loop")
+                self.assertEqual(job.status.succeeded, succeeds)
+            finally:
+                tasker.post_stop().wait()
+            self.assertEqual(controller.inputs, 0)
+        return state["seen"]
+
+    def test_defeat_enters_retreat_without_blind_clicks(self):
+        seen = self.run_scenario("结束战斗_不回主界面", [
+            {"战斗失败_不回主界面"}, {"失败2_不回主界面"}, {"战斗结束关闭_不回主界面"},
+        ])
+        self.assertIn("失败2_不回主界面", seen)
+        self.assertNotIn("结算推进_点击右上角", seen)
+
+    def test_final_friend_request_never_clicks_continue(self):
+        seen = self.run_scenario("结束战斗_不回主界面", [
+            {"好友申请界面_不回主界面"}, {"连续出击_继续", "战斗结束关闭_不回主界面"},
+        ])
+        self.assertNotIn("连续出击_继续", seen)
+        self.assertIn("战斗结束关闭_不回主界面", seen)
+
+    def test_continue_friend_request_does_click_continue(self):
+        seen = self.run_scenario("结束战斗_连续出击继续", [
+            {"好友申请界面_连续出击继续"}, {"连续出击_继续"},
+        ])
+        self.assertIn("连续出击_继续", seen)
+
+    def test_story_returns_to_settlement_then_continues(self):
+        seen = self.run_scenario("结束战斗_连续出击继续", [
+            {"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"}, {"连续出击_继续"},
+        ])
+        self.assertIn("跳过剧情-确认跳过", seen)
+        self.assertIn("连续出击_继续", seen)
+
+    def test_unknown_screen_exhausts_blind_limit(self):
+        seen = self.run_scenario("结束战斗_不回主界面", [], succeeds=False, blind_limit=3)
+        self.assertEqual(seen.count("结算推进_点击右上角"), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

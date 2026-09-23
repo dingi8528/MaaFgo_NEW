@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import argparse
+import subprocess
 from pathlib import Path
 from jsonschema import Draft7Validator, Draft202012Validator
 from jsonschema.exceptions import ValidationError
@@ -84,7 +85,7 @@ def load_jsonc(file_path):
         print(f"JSON decode error in {file_path}: {e}")
         # 调试：保存清理后的内容
         debug_file = Path(tempfile.gettempdir()) / f"debug_{Path(file_path).name}"
-        with open(debug_file, "w") as f:
+        with open(debug_file, "w", encoding="utf-8") as f:
             f.write(clean_content)
         print(f"Cleaned content saved to {debug_file}")
         raise
@@ -207,7 +208,64 @@ def create_validator(schema, schema_store):
         return ValidatorClass(schema, resolver=resolver)
 
 
+def validate_interface_references(interface_path, require_tracked=False):
+    """验证导入文件与任务入口，发布校验可额外拒绝本机未跟踪依赖。"""
+    interface_path = Path(interface_path).resolve()
+    documents, visiting = {}, set()
+
+    def visit(path):
+        path = path.resolve()
+        if path in visiting:
+            raise ValueError(f"Import cycle: {path}")
+        if path in documents:
+            return
+        if not path.is_file():
+            raise ValueError(f"Missing import: {path}")
+        if require_tracked and path != interface_path:
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", "--", path.name],
+                cwd=path.parent, capture_output=True,
+            )
+            if result.returncode:
+                raise ValueError(f"Untracked import: {path}")
+        visiting.add(path)
+        document = load_jsonc(path)
+        if not isinstance(document, dict):
+            raise ValueError(f"Interface import must be an object: {path}")
+        imports = document.get("import", [])
+        if not isinstance(imports, list) or any(not isinstance(item, str) for item in imports):
+            raise ValueError(f"Import must be a list of paths: {path}")
+        for imported in imports:
+            visit(path.parent / imported)
+        visiting.remove(path)
+        documents[path] = document
+
+    try:
+        visit(interface_path)
+        resources = [r for d in documents.values() for r in d.get("resource", [])]
+        nodes = set()
+        for resource in resources:
+            for relative in resource.get("path", []):
+                bundle = interface_path.parent / relative
+                for pattern in ("*.json", "*.jsonc"):
+                    for path in (bundle / "pipeline").rglob(pattern):
+                        if not path.name.endswith(".mpe.json"):
+                            nodes.update(load_jsonc(path))
+        for document in documents.values():
+            for task in document.get("task", []):
+                if task.get("entry") and task["entry"] not in nodes:
+                    raise ValueError(f"Missing task entry: {task['entry']}")
+        return True
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"::error file={interface_path},title=Interface reference error::{exc}")
+        return False
+
+
 def main():
+    # Windows 管道默认可能为 GBK，状态符号也不能令整个校验器崩溃。
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(
         description="Validate JSON/JSONC files against JSON Schema"
     )
@@ -246,12 +304,20 @@ def main():
         help="Directories containing task files to validate against interface_import.schema.json (default: none)",
     )
 
+    parser.add_argument("--require-tracked-imports", action="store_true",
+                        help="Reject imported files absent from Git's index")
     args = parser.parse_args()
 
     all_valid = True
 
     # 加载所有 schema 文件
     schema_dir = Path(args.schema_dir).resolve()
+    required = ["pipeline.schema.json", "interface.schema.json"]
+    if args.task_dirs:
+        required.append("interface_import.schema.json")
+    missing = [name for name in required if not (schema_dir / name).is_file()]
+    if missing:
+        parser.error("Missing required schemas: " + ", ".join(missing))
     schema_store = {}
 
     print("Loading schemas...")
@@ -264,6 +330,7 @@ def main():
             absolute_path = f"/{schema_file.name}"
 
             schema_store[file_uri] = schema
+            schema_store[schema_file.name] = schema
             schema_store[relative_path] = schema
             schema_store[absolute_path] = schema
         except Exception as e:
@@ -297,8 +364,9 @@ def main():
         resource_path = Path(resource_dir)
         if not resource_path.exists():
             print(
-                f"Warning: Resource directory {resource_dir} does not exist, skipping..."
+                f"Error: Resource directory {resource_dir} does not exist"
             )
+            all_valid = False
             continue
 
         for file_path in resource_path.rglob("*.json"):
@@ -331,10 +399,13 @@ def main():
             if interface_path.exists():
                 if not validate_file(interface_path, interface_validator):
                     all_valid = False
+                elif not validate_interface_references(interface_path, args.require_tracked_imports):
+                    all_valid = False
             else:
                 print(
-                    f"Warning: Interface file {interface_file} does not exist, skipping..."
+                    f"Error: Interface file {interface_file} does not exist"
                 )
+                all_valid = False
 
     # 验证 task 文件
     if args.task_dirs:
@@ -351,8 +422,9 @@ def main():
                 task_path = Path(task_dir)
                 if not task_path.exists():
                     print(
-                        f"Warning: Task directory {task_dir} does not exist, skipping..."
+                        f"Error: Task directory {task_dir} does not exist"
                     )
+                    all_valid = False
                     continue
 
                 for file_path in task_path.rglob("*.json"):
@@ -364,8 +436,9 @@ def main():
                         all_valid = False
         else:
             print(
-                f"Warning: Task schema {task_schema_path} does not exist, skipping task validation..."
+                f"Error: Task schema {task_schema_path} does not exist"
             )
+            all_valid = False
 
     if all_valid:
         print("\n✅ All validations passed!")

@@ -1,0 +1,109 @@
+{
+  "team": {
+    "onFieldSvts": [
+      {
+        "svtId": 404300,
+        "skillLvs": [
+          10,
+          10,
+          10
+        ],
+        "appendLvs": [
+          0,
+          10,
+          0,
+          0,
+          0
+        ],
+        "tdLv": 2,
+        "lv": 100,
+        "equip1": {
+          "id": 9408220,
+          "limitBreak": true,
+          "lv": 100
+        },
+        "equip2": {
+          "id": 9306260,
+          "limitBreak": false,
+          "lv": 1
+        },
+        "equip3": {
+          "id": 9408800,
+          "limitBreak": true,
+          "lv": 100
+        },
+        "supportType": "friend",
+        "grandSvt": true,
+        "classBoardData": {
+          "grandBondEquipSkillChange": false
+        }
+      },
+      {
+        "svtId": 401300,
+        "skillLvs": [
+          10,
+          10,
+          10
+        ],
+        "appendLvs": [
+          0,
+          10,
+          0,
+          0,
+          0
+        ],
+        "tdLv": 1,
+        "lv": 100,
+        "equip1": {
+          "id": 9408220,
+          "limitBreak": true,
+          "lv": 100
+        },
+        "equip2": {
+          "id": 9300930,
+          "limitBreak": false,
+          "lv": 1
+        },
+        "equip3": {
+          "id": 9408800,
+          "limitBreak": true,
+          "lv": 100
+        },
+        "supportType": "none",
+        "grandSvt": true,
+        "classBoardData": {
+          "grandBondEquipSkillChange": true
+        }
+      },
+      {
+        "svtId": 403700,
+        "skillLvs": [
+          10,
+          10,
+          10
+        ],
+        "appendLvs": [
+          0,
+          10,
+          0,
+          0,
+          0
+        ],
+        "tdLv": 1,
+        "lv": 90,
+        "equip1": {
+          "id": null,
+          "limitBreak": true,
+          "lv": 100
+        },
+        "supportType": "none",
+        "grandSvt": false
+      }
+    ],
+    "backupSvts": [
+      null,
+      null,
+      null
+    ]
+  }
+}

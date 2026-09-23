@@ -7,6 +7,7 @@
 原生初始编队入口只复用识别方法，不调用上述编成操作。
 """
 
+import copy
 import glob
 import json
 import os
@@ -41,6 +42,14 @@ from battle.runtime.formation_session import context_session, sessions
 
 
 BASE_W, BASE_H = 1280, 720
+
+
+@lru_cache(maxsize=4)
+def _cached_servant_lookup(path, mtime_ns, size):
+    """目录未变化时共享解析和别名校验结果，原子替换/修改后自动失效。"""
+    with open(path, encoding="utf-8-sig") as stream:
+        return build_servant_lookup(json.load(stream).get("servants", []))
+
 
 # 用户提供的六个编队槽位（1280 x 720 基准坐标）。
 SLOT_ROIS = (
@@ -1384,12 +1393,13 @@ class AutoFormationFromChaldea(CustomAction):
     def _get_servant_info(self, svt_id):
         path = os.path.join(_CUSTOM_DIR, "servant_list.json")
         try:
-            with open(path, encoding="utf-8") as file:
-                servants = json.load(file).get("servants", [])
+            stat = os.stat(path)
+            # 返回副本，避免调用方添加 slot/cost 等运行时字段污染共享目录。
+            servant = _cached_servant_lookup(path, stat.st_mtime_ns, stat.st_size).get(str(svt_id))
+            return copy.deepcopy(servant) if servant is not None else None
         except Exception as exc:
             mfaalog.error(f"[自动编队] 读取 servant_list.json 失败: {exc}")
             return None
-        return build_servant_lookup(servants).get(str(svt_id))
 
     # ---------- 概念礼装选择、筛选、替换 ----------
 

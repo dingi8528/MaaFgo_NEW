@@ -169,6 +169,22 @@ class IdentityTests(unittest.TestCase):
         self.catalog.write_text(json.dumps(data), encoding="utf-8")
         self.assertNotEqual(first.records["1000"]["name"], self.reader().records["1000"]["name"])
 
+    def test_servant_lookup_reuses_parse_and_refreshes_without_shared_mutations(self):
+        catalog = self.root / "servant_list.json"
+        catalog.write_bytes(self.catalog.read_bytes())
+        f._cached_servant_lookup.cache_clear()
+        action = f.AutoFormationFromChaldea()
+        with patch.object(f, "_CUSTOM_DIR", str(self.root)):
+            first = action._get_servant_info(1000)
+            first["images"].clear()
+            self.assertTrue(action._get_servant_info(1000)["images"])
+            self.assertEqual(f._cached_servant_lookup.cache_info().misses, 1)
+            data = json.loads(catalog.read_text("utf-8"))
+            data["servants"][0]["name"] = "新目录条目"
+            catalog.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(action._get_servant_info(1000)["name"], "新目录条目")
+            self.assertEqual(f._cached_servant_lookup.cache_info().misses, 2)
+
     def test_alternate_form_id_is_one_canonical_servant(self):
         data = json.loads(self.catalog.read_text())
         canonical = data["servants"][0]
