@@ -1,0 +1,59 @@
+{
+  "team": {
+    "onFieldSvts": [
+      {
+        "svtId": 505300,
+        "skillLvs": [
+          10,
+          10,
+          10
+        ],
+        "appendLvs": [
+          0,
+          10,
+          0
+        ],
+        "tdLv": 1,
+        "lv": 90,
+        "supportType": "friend"
+      },
+      {
+        "svtId": 2500900,
+        "skillLvs": [
+          10,
+          10,
+          1
+        ],
+        "appendLvs": [
+          0,
+          1,
+          0
+        ],
+        "tdLv": 1,
+        "lv": 90,
+        "supportType": "none"
+      },
+      {
+        "svtId": 402700,
+        "skillLvs": [
+          10,
+          1,
+          10
+        ],
+        "appendLvs": [
+          0,
+          1,
+          0
+        ],
+        "tdLv": 1,
+        "lv": 90,
+        "supportType": "none"
+      }
+    ],
+    "backupSvts": [
+      null,
+      null,
+      null
+    ]
+  }
+}

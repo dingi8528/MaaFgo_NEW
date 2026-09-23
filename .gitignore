@@ -468,6 +468,7 @@ debug
 
 venv/
 assets/config.json
+assets/interface.local.json
 bbcdll/*
 .claude/*
 .codex/*
@@ -498,3 +499,6 @@ skills/fgo-equip-icon-pipeline/
 
 # 本地从者图标 Skill（不提交）
 skills/fgo-servant-icon-pipeline/
+
+# 可提交的离线回归测试由 tests/.gitignore 限定，覆盖本机 /tests/ 排除规则。
+!tests/

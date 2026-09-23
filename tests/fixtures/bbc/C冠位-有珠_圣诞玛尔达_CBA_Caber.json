@@ -1,0 +1,96 @@
+{
+  "servant_0_name": "久远寺有珠",
+  "servant_1_name": "玛尔达〔圣诞〕",
+  "servant_2_name": "斯卡哈·斯卡蒂",
+  "servant_3_name": "阿尔托莉雅·Caster",
+  "servant_4_name": null,
+  "servant_5_name": null,
+  "server": "JP",
+  "assistIdx": 3,
+  "assistEquip": [
+    [],
+    null,
+    []
+  ],
+  "master_equip": 17,
+  "round1_extraStrategy": null,
+  "round1_extraSkill": [],
+  "round2_extraStrategy": null,
+  "round2_extraSkill": [],
+  "round3_extraStrategy": null,
+  "round3_extraSkill": [],
+  "fullEquip": 0,
+  "NPlevel": 2,
+  "servantLevel": 100,
+  "skillsLevel": [
+    10,
+    10,
+    10,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "assistMode": "冠位助战",
+  "round1_turn0_skill": [
+    1,
+    2,
+    [
+      4,
+      1
+    ],
+    5,
+    [
+      6,
+      1
+    ],
+    [
+      12,
+      2,
+      4
+    ],
+    10,
+    4,
+    [
+      5,
+      3
+    ],
+    [
+      6,
+      1
+    ],
+    [
+      7,
+      1
+    ],
+    8,
+    [
+      9,
+      3
+    ]
+  ],
+  "round1_turn0_np": [
+    3,
+    1
+  ],
+  "round1_turn0_strategy": null,
+  "round1_turn0_condition": null,
+  "round1_turns": 1,
+  "round2_turns": 1,
+  "round2_turn0_skill": [
+    3
+  ],
+  "round2_turn0_np": [
+    1
+  ],
+  "round2_turn0_strategy": null,
+  "round2_turn0_condition": null,
+  "round3_turns": 1,
+  "round3_turn0_skill": [],
+  "round3_turn0_np": [
+    1
+  ],
+  "round3_turn0_strategy": null,
+  "round3_turn0_condition": null
+}

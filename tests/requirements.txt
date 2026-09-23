@@ -1,0 +1,5 @@
+maafw==5.10.4
+opencv-python-headless
+numpy
+jsonschema==4.26.0
+referencing==0.37.0

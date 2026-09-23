@@ -1,0 +1,93 @@
+{
+  "servant_0_name": "BB迪拜",
+  "servant_1_name": "阿尔托莉雅·潘德拉贡",
+  "servant_2_name": "阿尔托莉雅·Caster",
+  "servant_3_name": "尼禄·克劳狄乌斯〔新娘〕",
+  "servant_4_name": null,
+  "servant_5_name": null,
+  "assistIdx": 2,
+  "assistEquip": "迦勒底午茶时光",
+  "master_equip": 6,
+  "round1_turns": 1,
+  "round1_extraStrategy": null,
+  "round1_extraSkill": [],
+  "round1_turn0_skill": [
+    1,
+    4,
+    5,
+    6,
+    7,
+    [
+      9,
+      1
+    ],
+    [
+      8,
+      1
+    ]
+  ],
+  "round1_turn0_np": [
+    2
+  ],
+  "round1_turn0_strategy": null,
+  "round1_turn0_condition": null,
+  "round2_turns": 1,
+  "round2_extraStrategy": null,
+  "round2_extraSkill": [],
+  "round2_turn0_skill": [
+    [
+      12,
+      4,
+      3
+    ],
+    [
+      7,
+      1
+    ],
+    [
+      8,
+      1
+    ],
+    [
+      9,
+      1
+    ]
+  ],
+  "round2_turn0_np": [
+    1
+  ],
+  "round2_turn0_strategy": null,
+  "round2_turn0_condition": null,
+  "round3_turns": 1,
+  "round3_extraStrategy": null,
+  "round3_extraSkill": [],
+  "round3_turn0_skill": [
+    2,
+    [
+      "BBDubai",
+      3,
+      0
+    ],
+    10
+  ],
+  "round3_turn0_np": [
+    1
+  ],
+  "round3_turn0_strategy": null,
+  "round3_turn0_condition": null,
+  "fullEquip": 0,
+  "NPlevel": 1,
+  "servantLevel": 1,
+  "server": "JP",
+  "skillsLevel": [
+    10,
+    10,
+    10,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "assistMode": "仅从者"
+}

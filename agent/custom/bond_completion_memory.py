@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 
 SCHEMA_VERSION = 1
 MAX_ENTRIES = 64
+OPTIMIZER_VERSION = 2
+MAX_AGE_SECONDS = 24 * 60 * 60
 
 
 def _canonical_json(value) -> str:
@@ -20,6 +22,10 @@ def _canonical_json(value) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
+
+
+def data_fingerprint(value) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def build_task_key(expected, settings) -> str:
@@ -91,7 +97,17 @@ class BondCompletionMemory:
 
     def get(self, task_key):
         entry = self._read()["entries"].get(str(task_key))
-        return entry.get("formation") if entry is not None else None
+        if entry is None:
+            return None
+        try:
+            updated = datetime.fromisoformat(entry["updated_at"])
+            age = (datetime.now(timezone.utc) - updated).total_seconds()
+        except (KeyError, TypeError, ValueError):
+            return None
+        # 实时模式无法廉价获得完整持有集合，限制记忆有效期避免长期冻结方案。
+        if not 0 <= age <= MAX_AGE_SECONDS:
+            return None
+        return entry.get("formation")
 
     def put(self, task_key, signature):
         # 先经过统一校验和归一化，避免把部分识别结果写入缓存。
@@ -124,4 +140,3 @@ class BondCompletionMemory:
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)
-

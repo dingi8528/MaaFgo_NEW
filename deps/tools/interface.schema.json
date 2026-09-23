@@ -100,6 +100,13 @@
                     "$ref": "#/definitions/i18nString",
                     "title": "校验错误信息",
                     "description": "正则校验用户输入错误时显示的信息"
+                },
+                "input_type": {
+                    "type": "string",
+                    "enum": [
+                        "file"
+                    ],
+                    "description": "MaaFGO MXU 文件选择输入"
                 }
             },
             "required": [
@@ -331,6 +338,11 @@
                             "type": "string",
                             "title": "默认选项",
                             "description": "默认选项名称"
+                        },
+                        "default": {
+                            "type": "string",
+                            "title": "默认选项",
+                            "description": "MaaFGO MXU 兼容字段，语义同 default_case"
                         }
                     },
                     "required": [
@@ -390,6 +402,14 @@
                             "type": "array",
                             "title": "默认选中项",
                             "description": "💡 v2.3.0 默认选中的选项名称数组，Client 使用该值作为多选框的初始选中值",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "default": {
+                            "type": "array",
+                            "title": "默认选中项",
+                            "description": "MaaFGO MXU 兼容字段，语义同 default_case",
                             "items": {
                                 "type": "string"
                             }
@@ -454,12 +474,91 @@
                             "type": "string",
                             "title": "默认选项",
                             "description": "默认选项名称，应为 Yes 或 No"
+                        },
+                        "default": {
+                            "type": "string",
+                            "title": "默认选项",
+                            "description": "MaaFGO MXU 兼容字段，语义同 default_case"
                         }
                     },
                     "required": [
                         "cases"
                     ],
                     "additionalProperties": false
+                },
+                {
+                    "title": "scanSelectOption",
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "scan_select"
+                        },
+                        "label": {
+                            "$ref": "#/definitions/i18nString",
+                            "title": "显示标签",
+                            "description": "用于在用户界面中展示，支持国际化"
+                        },
+                        "description": {
+                            "$ref": "#/definitions/i18nString",
+                            "title": "详细描述",
+                            "description": "帮助用户理解配置项的作用。支持文件路径、URL 或直接文本，内容支持 Markdown 格式"
+                        },
+                        "icon": {
+                            "$ref": "#/definitions/i18nString",
+                            "title": "图标路径",
+                            "description": "配置项图标文件路径，相对于项目根目录"
+                        },
+                        "controller": {
+                            "type": "array",
+                            "title": "适用的控制器",
+                            "description": "💡 v2.3.0 可选。指定该配置项适用的控制器类型列表",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "resource": {
+                            "type": "array",
+                            "title": "适用的资源包",
+                            "description": "💡 v2.3.0 可选。指定该配置项适用的资源包列表",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "cases": {
+                            "type": "array",
+                            "title": "可选项列表",
+                            "items": {
+                                "$ref": "#/definitions/caseItem"
+                            }
+                        },
+                        "default_case": {
+                            "type": "string",
+                            "title": "默认选项",
+                            "description": "默认选项名称"
+                        },
+                        "default": {
+                            "type": "string",
+                            "title": "默认选项",
+                            "description": "MaaFGO MXU 兼容字段，语义同 default_case"
+                        },
+                        "scan_dir": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "scan_filter": {
+                            "type": "string"
+                        },
+                        "pipeline_override": {
+                            "$ref": "#/definitions/pipelineOverride"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "scan_dir",
+                        "cases"
+                    ],
+                    "additionalProperties": false,
+                    "description": "MaaFGO MXU 扫描本地文件目录生成选项"
                 }
             ]
         },
