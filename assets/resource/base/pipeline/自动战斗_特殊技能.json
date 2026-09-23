@@ -223,8 +223,7 @@
                 ]
             }
         },
-        "post_wait_freezes": 500,
-        "post_delay": 500
+        "post_delay": 1000
     },
     "战斗_技能无法使用弹窗": {
         "recognition": {
@@ -240,8 +239,7 @@
                 "target": true
             }
         },
-        "post_wait_freezes": 500,
-        "post_delay": 500
+        "post_delay": 1000
     },
     "战斗_技能目标子屏": {
         "recognition": {
