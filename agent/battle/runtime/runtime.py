@@ -36,6 +36,8 @@ _UNKNOWN_TIMEOUT_S = 30.0
 _POLL_FREEZE_MS = 2000
 # 每次选卡后的固定间隔，等待卡牌选中态渲染
 _PICK_DELAY_S = 0.3
+# 主战斗界面首次出现后，等待技能 CD 数字渲染完成再重新截图感知。
+_MAIN_BATTLE_SETTLE_S = 1.0
 
 # —— 等待超时（秒）：均为真机验证过的正常时序；异常才用这些上限判定卡死 ——
 _OPEN_CARDS_TIMEOUT_S = 5.0         # 点击攻击后确认进入选卡界面
@@ -97,7 +99,7 @@ class AutoBattleRuntime:
         turns = 0
         while turns < self.profile.max_turns:
             self._turn_index = turns
-            state = self._observe()
+            state = self._observe(settle_main=True)
             scene = state.scene
             mfaalog.info(f"[AutoBattle] Turn {turns+1} | scene={scene.name} | unknown={state.unknown_fields}")
 
@@ -259,9 +261,16 @@ class AutoBattleRuntime:
 
     # ---- 内部 ----
 
-    def _observe(self):
+    def _observe(self, *, settle_main: bool = False):
         mfaalog.info("[AutoBattle] _observe() -> post_screencap")
         img = self.controller.post_screencap().wait().get()
+        if settle_main and perception.detect_scene(self.ctx, img) is Scene.MAIN_BATTLE:
+            mfaalog.info(
+                f"[AutoBattle] MAIN_BATTLE detected; waiting {_MAIN_BATTLE_SETTLE_S}s "
+                "before skill CD recognition"
+            )
+            time.sleep(_MAIN_BATTLE_SETTLE_S)
+            img = self.controller.post_screencap().wait().get()
         result = perception.build(self.ctx, img)
 
         # 有 Chaldea 计划时：技能 CD 检测无意义（计划已精确指定何时放技能），

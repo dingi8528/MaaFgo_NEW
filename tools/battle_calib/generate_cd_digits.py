@@ -2,7 +2,7 @@
 
 用法：python tools/battle_calib/generate_cd_digits.py --font <字体文件> [--region base|cn]
 
-base 参数按日服 1280x720 截图中的 CD 5、6、9 校准。
+base 参数按日服 1280x720 截图中的 CD 2、5、6、9 校准。
 cn 参数按国服截图中的 0–8 校准，其中 1、3、5 使用本目录的截图字形参考。
 纯绿色区域由 MaaFramework 的 green_mask 排除；输出路径对应
 自动战斗_感知.json 的 battle/digits/0.png ... 9.png。
@@ -35,6 +35,7 @@ class DigitStyle:
 
 BASE_STYLE = DigitStyle(27)
 BASE_OVERRIDES = {
+    2: DigitStyle(26, 1.05, 1.1, 1),
     9: DigitStyle(29, 0.95, 1.0, 1),
 }
 CN_STYLE = DigitStyle(30, 1.1)
