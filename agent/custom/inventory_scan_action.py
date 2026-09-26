@@ -51,9 +51,9 @@ BOTTOM_STABLE_ROUNDS = 3
 CONTENT_STABLE_ROUNDS = 3
 CONTENT_DIFF_THRESHOLD = 0.012
 SCROLL_THUMB_WIDTH_RANGE = (18, 30)
-# 1280x720 小图标列表里的滑块实测高 58–60px。旧上限 50px 会导致每一屏
-# 都返回 None，使本应最可靠的到底判定完全失效。
-SCROLL_THUMB_HEIGHT_RANGE = (30, 70)
+# 1280x720 小图标列表中的滑块高度随列表长度变化；实机从者列表曾达到
+# 117px。高度上限过小会令滑块始终返回 None，无法确认到达底部。
+SCROLL_THUMB_HEIGHT_RANGE = (30, 160)
 SCROLL_BOTTOM_CENTER_Y = 650
 SCROLL_STABLE_DELTA = 1
 INVENTORY_ICON_LAYOUT_NODES = {
@@ -75,6 +75,8 @@ RARITY_SEARCH_BOTTOM = 708
 RARITY_TO_CARD_TOP = 101
 RARITY_THRESHOLD = 0.90
 RARITY_MIN_COLUMNS = 4
+INVENTORY_GRID_MAX_CANDIDATES = 6
+INVENTORY_GRID_PHASE_SEPARATION = 8
 
 # 从者身份模板在内存中按 0.75 倍 Bilinear 缩小。完整行优先使用更高的
 # 眼部/面部特征区；页面底部第 4 行只露出上半张卡时，再使用短裁剪区。
@@ -322,6 +324,24 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         计算纵向分数，再选择能形成至少两行、间距固定为 149px 的整页相位。
         最后按相位外推底部星级条尚未露出的第 4 行。
         """
+        candidates = self._small_icon_row_candidates(image)
+        if not candidates:
+            mfaalog.warning("[个人库存] 星级网格未形成至少两行稳定相位")
+            return []
+        # 保留仅靠星级条的兼容入口；正式从者/礼装扫描会按身份命中复核相位。
+        best = max(
+            candidates,
+            key=lambda candidate: (
+                len(candidate["rows"]),
+                candidate["support"],
+                candidate["score_sum"],
+            ),
+        )
+        self.last_rarity_grid = best["diagnostic"]
+        return best["origins"]
+
+    def _small_icon_row_candidates(self, image):
+        """枚举星级网格候选；避免仅凭疑似多一行就锁定错误相位。"""
         base = self._to_base(image)
         if base is None:
             return []
@@ -348,7 +368,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             curves.append(result.max(axis=1))
 
         last_star_y = RARITY_SEARCH_BOTTOM - template_height
-        best = None
+        candidates = []
         for phase in range(INVENTORY_ROW_PITCH):
             first_star_y = RARITY_SEARCH_TOP + (
                 (phase - RARITY_SEARCH_TOP) % INVENTORY_ROW_PITCH
@@ -362,31 +382,25 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                 support = sum(score >= RARITY_THRESHOLD for score in scores)
                 if support >= RARITY_MIN_COLUMNS:
                     rows.append((star_y, support, float(np.mean(scores))))
-            candidate = (
-                len(rows),
-                sum(row[1] for row in rows),
-                sum(row[2] for row in rows),
-                rows,
-                phase,
-            )
-            if best is None or candidate[:3] > best[:3]:
-                best = candidate
-        if best is None or best[0] < 2:
-            mfaalog.warning("[个人库存] 星级网格未形成至少两行稳定相位")
-            return []
-
-        rows = best[3]
-        anchor_top = rows[0][0] - RARITY_TO_CARD_TOP
-        card_phase = anchor_top % INVENTORY_ROW_PITCH
-        origins = list(range(card_phase, BASE_H, INVENTORY_ROW_PITCH))
-        self.last_rarity_grid = {
-            "phase": best[4],
-            "detected_rows": [row[0] for row in rows],
-            "supports": [row[1] for row in rows],
-            "means": [round(row[2], 4) for row in rows],
-            "card_origins": origins,
-        }
-        return origins
+            if len(rows) < 2:
+                continue
+            card_phase = (rows[0][0] - RARITY_TO_CARD_TOP) % INVENTORY_ROW_PITCH
+            origins = list(range(card_phase, BASE_H, INVENTORY_ROW_PITCH))
+            candidates.append({
+                "phase": card_phase,
+                "rows": rows,
+                "support": sum(row[1] for row in rows),
+                "score_sum": sum(row[2] for row in rows),
+                "origins": origins,
+                "diagnostic": {
+                    "phase": phase,
+                    "detected_rows": [row[0] for row in rows],
+                    "supports": [row[1] for row in rows],
+                    "means": [round(row[2], 4) for row in rows],
+                    "card_origins": origins,
+                },
+            })
+        return candidates
 
     # ---------- 从者 ----------
 
@@ -475,12 +489,14 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                 missing.append(str(item.get("id")))
         return (np.stack(vectors) if vectors else None), variants, covered, missing
 
-    def _visible_servant_features(self, image):
+    def _visible_servant_features(self, image, row_origins=None):
         base = self._to_base(image)
         if base is None:
             return [], []
         features, centers = [], []
-        for base_y in self._small_icon_row_origins(base):
+        if row_origins is None:
+            row_origins = self._small_icon_row_origins(base)
+        for base_y in row_origins:
             for base_x in SERVANT_FACE_X:
                 center = self._scaled_center(
                     base_x, base_y, SERVANT_CARD_WIDTH, SERVANT_CARD_WIDTH
@@ -508,7 +524,67 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         return self._stable_hits(
             catalog, matrix, variants, self._visible_servant_features,
             SERVANT_THRESHOLD, SERVANT_MARGIN,
+            match_image=lambda image: self._match_servant_image(image, matrix, variants),
         )
+
+    def _match_servant_image(self, image, matrix, variants):
+        candidates = self._small_icon_row_candidates(image)
+        if not candidates:
+            mfaalog.warning("[个人库存] 从者页星级网格未形成至少两行稳定相位")
+            return {}
+
+        # 星级总支持数优先，但相近像素相位只取最强代表，避免把预算
+        # 浪费在同一行位置的 1px 抖动上。最终仍由真实头像的唯一命中数决定。
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate["support"],
+                candidate["score_sum"] / len(candidate["rows"]),
+                len(candidate["rows"]),
+            ),
+            reverse=True,
+        )
+        distinct = []
+        for candidate in ranked:
+            if all(
+                min(
+                    abs(candidate["phase"] - selected["phase"]),
+                    INVENTORY_ROW_PITCH - abs(candidate["phase"] - selected["phase"]),
+                ) >= INVENTORY_GRID_PHASE_SEPARATION
+                for selected in distinct
+            ):
+                distinct.append(candidate)
+            if len(distinct) >= INVENTORY_GRID_MAX_CANDIDATES:
+                break
+
+        evaluated = []
+        for candidate in distinct:
+            origins = candidate["origins"]
+            hits = self._match_cells(
+                image, matrix, variants,
+                lambda frame, origins=origins: self._visible_servant_features(frame, origins),
+                SERVANT_THRESHOLD, SERVANT_MARGIN,
+            )
+            evaluated.append((candidate, hits))
+        selected, hits = max(
+            evaluated,
+            key=lambda entry: (
+                len(entry[1]),
+                sum(hit[0] for hit in entry[1].values()),
+                entry[0]["support"],
+            ),
+        )
+        self.last_rarity_grid = selected["diagnostic"]
+        mfaalog.info(
+            "[个人库存] 从者网格相位："
+            + "，".join(
+                f"{candidate['phase']}({len(candidate['rows'])}行/"
+                f"{candidate['support']}列支持/{len(candidate_hits)}命中)"
+                for candidate, candidate_hits in evaluated
+            )
+            + f"；选择={selected['phase']}"
+        )
+        return hits
 
     def _enter_servant_list(self):
         if not self._run_pipeline("个人库存-切换从者仓库"):
@@ -582,14 +658,16 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             covered += 1
         return (np.stack(vectors) if vectors else None), variants, covered, missing
 
-    def _visible_equip_features(self, image):
+    def _visible_equip_features(self, image, row_origins=None):
         base = self._to_base(image)
         if base is None:
             return [], []
         features, centers = [], []
         template_width, template_height = EQUIP_TEMPLATE_SIZE
         feature_height = template_height - EQUIP_TEMPLATE_CUT_TOP
-        for base_y in self._small_icon_row_origins(base):
+        if row_origins is None:
+            row_origins = self._small_icon_row_origins(base)
+        for base_y in row_origins:
             for base_x in EQUIP_FACE_X:
                 template_top = base_y + EQUIP_TEMPLATE_TOP_OFFSET
                 feature_y = template_top + EQUIP_TEMPLATE_CUT_TOP
@@ -616,8 +694,69 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         hits, image = self._stable_hits(
             catalog, matrix, variants, self._visible_equip_features,
             EQUIP_THRESHOLD, EQUIP_MARGIN,
+            match_image=lambda frame: self._match_equip_image(frame, matrix, variants),
         )
-        return self._direct_equip_hits(hits, image), image
+        return hits, image
+
+    def _match_equip_image(self, image, matrix, variants):
+        candidates = self._small_icon_row_candidates(image)
+        if not candidates:
+            mfaalog.warning("[个人库存] 礼装页星级网格未形成至少两行稳定相位")
+            return {}
+
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate["support"],
+                candidate["score_sum"] / len(candidate["rows"]),
+                len(candidate["rows"]),
+            ),
+            reverse=True,
+        )
+        distinct = []
+        for candidate in ranked:
+            if all(
+                min(
+                    abs(candidate["phase"] - selected["phase"]),
+                    INVENTORY_ROW_PITCH - abs(candidate["phase"] - selected["phase"]),
+                ) >= INVENTORY_GRID_PHASE_SEPARATION
+                for selected in distinct
+            ):
+                distinct.append(candidate)
+            if len(distinct) >= INVENTORY_GRID_MAX_CANDIDATES:
+                break
+
+        evaluated = []
+        for candidate in distinct:
+            origins = candidate["origins"]
+            coarse = self._match_cells(
+                image, matrix, variants,
+                lambda frame, origins=origins: self._visible_equip_features(frame, origins),
+                EQUIP_THRESHOLD, EQUIP_MARGIN,
+            )
+            direct = self._direct_equip_hits(coarse, image)
+            evaluated.append((candidate, coarse, direct))
+        selected, _coarse, hits = max(
+            evaluated,
+            key=lambda entry: (
+                len(entry[2]),
+                sum(hit[0] for hit in entry[2].values()),
+                len(entry[1]),
+                entry[0]["support"],
+            ),
+        )
+        self.last_rarity_grid = selected["diagnostic"]
+        mfaalog.info(
+            "[个人库存] 礼装网格相位："
+            + "，".join(
+                f"{candidate['phase']}({len(candidate['rows'])}行/"
+                f"{candidate['support']}列支持/{len(coarse)}初筛/"
+                f"{len(direct)}复核)"
+                for candidate, coarse, direct in evaluated
+            )
+            + f"；选择={selected['phase']}"
+        )
+        return hits
 
     def _direct_equip_hits(self, hits, image):
         """用完整 ``EquipFaces/list`` 原图复核快速候选。
@@ -675,7 +814,8 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
 
     # ---------- 批量匹配、终止判定与输出 ----------
 
-    def _stable_hits(self, catalog, matrix, variants, extractor, threshold, margin):
+    def _stable_hits(self, catalog, matrix, variants, extractor, threshold, margin,
+                     match_image=None):
         # 控制器截图作业是异步的，``_shot`` 为避免底层状态查询挂起会直接读取
         # cached_image。列表刚滑动后缓存可能仍慢一帧，因此先主动触发一帧并
         # 丢弃，再用后两帧做稳定校验；否则会错误比较“上一屏 vs 当前屏”。
@@ -684,8 +824,12 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         first_image = self._shot()
         time.sleep(MATCH_STABILITY_SECONDS)
         second_image = self._shot()
-        first = self._match_cells(first_image, matrix, variants, extractor, threshold, margin)
-        second = self._match_cells(second_image, matrix, variants, extractor, threshold, margin)
+        if match_image is None:
+            match_image = lambda frame: self._match_cells(
+                frame, matrix, variants, extractor, threshold, margin
+            )
+        first = match_image(first_image)
+        second = match_image(second_image)
         stable = {}
         for item_id, one in first.items():
             two = second.get(item_id)
@@ -771,10 +915,18 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
                     observed[item_id] = hit
 
             if label == "从者":
-                _visible_features, visible_centers = self._visible_servant_features(image)
+                selected_rows = (getattr(self, "last_rarity_grid", None) or {}).get(
+                    "card_origins"
+                )
+                _visible_features, visible_centers = self._visible_servant_features(
+                    image, selected_rows
+                )
                 visible_count = len(set(visible_centers))
             else:
-                visible_count = len(self._visible_equip_features(image)[0])
+                selected_rows = (getattr(self, "last_rarity_grid", None) or {}).get(
+                    "card_origins"
+                )
+                visible_count = len(self._visible_equip_features(image, selected_rows)[0])
             unmatched_cells += max(0, visible_count - len(hits))
             mfaalog.info(
                 f"[个人库存] {label}第{page_index + 1}屏："
