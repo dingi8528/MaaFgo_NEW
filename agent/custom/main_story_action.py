@@ -61,6 +61,7 @@ class StoryRunner:
         if not 1 <= self.limit <= 999 or self.mode not in ("native", "bbc") or not 10 <= self.timeout <= 600:
             raise ValueError("主线参数无效")
         self.completed = self.battles = 0
+        self.skip_confirm_until = self.skip_settle_until = 0
 
     def check_stop(self):
         if self.tasker.stopping:
@@ -124,20 +125,33 @@ class StoryRunner:
             raise StoryStopped("战斗失败，需要人工处理")
 
     def interrupt(self, image, *, entering=False):
-        """已识别事件才操作。剧情复用现有跳过链，未知画面不盲点。"""
+        """已识别事件才操作；剧情跳过分帧确认，避免切换中重复点击。"""
         if entering and self.reco("全局-战前吃体力", image):
             entry = self.ctx.get_node_data("全局-战前吃体力") or {}
             if next_names(entry) == ["全局-体力不足"]:
                 raise StoryStopped("AP 不足，当前设置不补充体力")
             self.task("全局-战前吃体力")
             return True
-        if self.reco("跳过剧情-点击跳过", image):
+        now = self.clock()
+        if self.skip_confirm_until:
+            result = self.reco("跳过剧情-确认跳过", image)
+            if result:
+                self.action("跳过剧情-确认跳过", result)
+                self.skip_confirm_until = 0
+                self.skip_settle_until = self.clock() + 4
+                return True
+            if now < self.skip_confirm_until:
+                return False
+            self.skip_confirm_until = 0
+        if now >= self.skip_settle_until and (result := self.reco("跳过剧情-点击跳过", image)):
             self.ctx.clear_hit_count("跳过剧情-点击跳过")
-            self.task("跳过剧情-点击跳过")
+            self.action("跳过剧情-点击跳过", result)
+            self.skip_confirm_until = self.clock() + 4
             return True
         names = ["进本-关闭告知弹窗"]
         if entering:
-            names = ["进本-编队提示-点击开始", "进本-点击任务开始"] + names
+            names = ["主线-纯剧情任务开始", "进本-编队提示-点击开始",
+                     "进本-点击任务开始"] + names
         for name in names:
             result = self.reco(name, image)
             if result:
@@ -217,6 +231,10 @@ class StoryRunner:
 
     def enter(self, result):
         self.action("主线-列表NEXT", result)
+        return self.wait_after_quest_click()
+
+    def wait_after_quest_click(self):
+        """关卡点击后处理弹窗/剧情；独立入口便于从已打开的现场继续验证。"""
         deadline = self.clock() + self.timeout
         departed, story_seen = False, False
         stable_return = 0
@@ -233,6 +251,11 @@ class StoryRunner:
                 story_seen |= is_story
                 departed |= is_story
                 stable_return = 0
+                continue
+            if story_seen and (reward := self.reco("主线-任务完成报酬", image)):
+                self.action("主线-任务完成报酬", reward)
+                stable_return = 0
+                self.pause(1)
                 continue
             panel = self.panel(image)
             on_map = not panel and self.on_map(image)

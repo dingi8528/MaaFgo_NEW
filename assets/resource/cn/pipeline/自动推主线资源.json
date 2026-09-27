@@ -13,5 +13,12 @@
         "threshold": 0.8
       }
     }
+  },
+  "主线-纯剧情任务开始": {
+    "recognition": {
+      "param": {
+        "template": "main_story/story_start.png"
+      }
+    }
   }
 }

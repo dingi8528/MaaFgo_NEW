@@ -127,9 +127,46 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(len(c.actions), 3)
 
     def test_pure_story_returns_without_battle(self):
-        r, c = runner([{"跳过剧情-点击跳过"}, PANEL, PANEL])
+        r, c = runner([{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"}, PANEL, PANEL])
         self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "story")
-        self.assertEqual(c.tasks[0][0], "跳过剧情-点击跳过")
+        self.assertEqual([n for n, _ in c.actions],
+                         ["主线-列表NEXT", "跳过剧情-点击跳过", "跳过剧情-确认跳过"])
+
+    def test_pure_story_start_popup_uses_positive_match_before_skip(self):
+        r, c = runner([{"主线-纯剧情任务开始"}, {"跳过剧情-点击跳过"},
+                       {"跳过剧情-确认跳过"}, {"跳过剧情-点击跳过"}, PANEL, PANEL])
+        self.assertEqual(r.wait_after_quest_click(), "story")
+        self.assertEqual([n for n, _ in c.actions],
+                         ["主线-纯剧情任务开始", "跳过剧情-点击跳过", "跳过剧情-确认跳过"])
+        self.assertEqual(c.tasks, [])
+
+    def test_story_skip_retries_when_confirmation_never_opens(self):
+        r, c = runner([{"跳过剧情-点击跳过"}])
+        self.assertTrue(r.interrupt({"跳过剧情-点击跳过"}, entering=True))
+        self.assertFalse(r.interrupt({"跳过剧情-点击跳过"}, entering=True))
+        r.pause(4)
+        self.assertTrue(r.interrupt({"跳过剧情-点击跳过"}, entering=True))
+        self.assertEqual([n for n, _ in c.actions],
+                         ["跳过剧情-点击跳过", "跳过剧情-点击跳过"])
+
+    def test_pure_story_reward_uses_existing_recognized_click(self):
+        r, c = runner([{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"},
+                       {"主线-任务完成报酬"}, PANEL, PANEL])
+        self.assertEqual(r.wait_after_quest_click(), "story")
+        self.assertEqual([n for n, _ in c.actions],
+                         ["跳过剧情-点击跳过", "跳过剧情-确认跳过", "主线-任务完成报酬"])
+
+    def test_two_story_segments_with_animation_before_battle(self):
+        frames = ([{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"}]
+                  + [set()] * 9
+                  + [{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"},
+                     {"主线-助战界面"}])
+        r, c = runner(frames)
+        self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "battle")
+        self.assertEqual([n for n, _ in c.actions],
+                         ["主线-列表NEXT", "跳过剧情-点击跳过",
+                          "跳过剧情-确认跳过", "跳过剧情-点击跳过",
+                          "跳过剧情-确认跳过"])
 
     def test_unknown_flash_is_not_story_completion(self):
         r, c = runner([set(), MAP], {"transition_timeout": 10})
