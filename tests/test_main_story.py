@@ -168,6 +168,51 @@ class RoutingTests(unittest.TestCase):
                           "跳过剧情-确认跳过", "跳过剧情-点击跳过",
                           "跳过剧情-确认跳过"])
 
+    def test_story_returns_to_map_or_list_after_skip(self):
+        for screen in (MAP, PANEL):
+            with self.subTest(screen=screen):
+                r, c = runner([{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"}, screen])
+                self.assertEqual(r.wait_after_quest_click(), "story")
+                self.assertEqual([n for n, _ in c.actions],
+                                 ["跳过剧情-点击跳过", "跳过剧情-确认跳过"])
+
+    def test_brief_list_between_two_stories_is_not_completion(self):
+        frames = ([{"跳过剧情-点击跳过"}, {"跳过剧情-确认跳过"}]
+                  + [PANEL] * 2 + [{"跳过剧情-点击跳过"}] * 9
+                  + [{"跳过剧情-确认跳过"}, MAP])
+        r, c = runner(frames)
+        self.assertEqual(r.wait_after_quest_click(), "story")
+        self.assertEqual([n for n, _ in c.actions],
+                         ["跳过剧情-点击跳过", "跳过剧情-确认跳过",
+                          "跳过剧情-点击跳过", "跳过剧情-确认跳过"])
+
+    def test_special_formation_popup_stops_before_generic_battle_flow(self):
+        r, c = runner([{"进本-选择助战"},
+                       {"主线-编制限制", "进本-队伍确认"}])
+        with self.assertRaisesRegex(StoryStopped, "编制限制"):
+            r.fight()
+        self.assertEqual([n for n, _ in c.actions], ["进本-选择助战"])
+        self.assertEqual(c.tasks, [])
+
+    def test_normal_support_reaches_formation_then_reuses_entry_flow(self):
+        for support_name in ("进本-选择助战", "助战action", "Chaldea助战action"):
+            with self.subTest(support_name=support_name):
+                r, c = runner([{support_name}, {"进本-队伍确认"},
+                               {"进本-队伍确认"}, {"进本-队伍确认"},
+                               {"进本-战斗主界面已出现"}])
+                c.nodes["进本流程"]["next"] = [support_name, "进本-队伍确认"]
+                r.fight()
+                self.assertEqual([n for n, _ in c.actions], [support_name])
+                self.assertEqual([n for n, _ in c.tasks],
+                                 ["进本流程", "原生自动战斗入口"])
+
+    def test_ambiguous_support_configuration_stops_before_click(self):
+        r, c = runner([{"进本-选择助战", "助战action"}])
+        c.nodes["进本流程"]["next"] = ["进本-选择助战", "助战action"]
+        with self.assertRaisesRegex(StoryStopped, "无法确定当前助战方式"):
+            r.fight()
+        self.assertEqual(c.actions, [])
+
     def test_unknown_flash_is_not_story_completion(self):
         r, c = runner([set(), MAP], {"transition_timeout": 10})
         with self.assertRaisesRegex(StoryStopped, "进本超时"):
