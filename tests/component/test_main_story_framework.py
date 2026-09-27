@@ -70,7 +70,10 @@ class FrameworkTests(unittest.TestCase):
         class Probe(CustomAction):
             def run(self, ctx, argv):
                 try:
+                    ctx.override_pipeline({"进本流程": {"next": ["助战action", "进本-队伍确认"]}})
                     local = ctx.clone()
+                    checks.append(next_names(local.get_node_data("进本流程")) ==
+                                  ["助战action", "进本-队伍确认"])
                     local.override_pipeline({"主线-配置": {"attach": {"quest_limit": 1}}})
                     checks.append(ctx.get_node_data("主线-配置")["attach"]["quest_limit"] == 10)
                     runner = StoryRunner(local)
@@ -92,7 +95,7 @@ class FrameworkTests(unittest.TestCase):
             "action": {"type":"Custom","param":{"custom_action":"story_probe"}}
         }}).wait()
         self.assertTrue(status.succeeded, errors)
-        self.assertEqual(checks, [True, True])
+        self.assertEqual(checks, [True, True, True])
         self.assertEqual(len(controller.swipes), 1)
         self.assertEqual(controller.clicks, [])
 

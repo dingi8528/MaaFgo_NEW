@@ -17,6 +17,7 @@ _BATTLE_RESET = (
     "羁绊补齐-从者删除活动筛选点击", "羁绊补齐-礼装删除活动筛选点击",
     "羁绊补齐-礼装筛上滑找满破", "羁绊补齐-礼装筛找满破",
 )
+_SUPPORT_NODES = ("进本-选择助战", "助战action", "Chaldea助战action")
 
 
 class StoryStopped(RuntimeError):
@@ -61,6 +62,7 @@ class StoryRunner:
         if not 1 <= self.limit <= 999 or self.mode not in ("native", "bbc") or not 10 <= self.timeout <= 600:
             raise ValueError("主线参数无效")
         self.completed = self.battles = 0
+        self.skip_confirm_until = self.skip_settle_until = 0
 
     def check_stop(self):
         if self.tasker.stopping:
@@ -124,20 +126,33 @@ class StoryRunner:
             raise StoryStopped("战斗失败，需要人工处理")
 
     def interrupt(self, image, *, entering=False):
-        """已识别事件才操作。剧情复用现有跳过链，未知画面不盲点。"""
+        """已识别事件才操作；剧情跳过分帧确认，避免切换中重复点击。"""
         if entering and self.reco("全局-战前吃体力", image):
             entry = self.ctx.get_node_data("全局-战前吃体力") or {}
             if next_names(entry) == ["全局-体力不足"]:
                 raise StoryStopped("AP 不足，当前设置不补充体力")
             self.task("全局-战前吃体力")
             return True
-        if self.reco("跳过剧情-点击跳过", image):
+        now = self.clock()
+        if self.skip_confirm_until:
+            result = self.reco("跳过剧情-确认跳过", image)
+            if result:
+                self.action("跳过剧情-确认跳过", result)
+                self.skip_confirm_until = 0
+                self.skip_settle_until = self.clock() + 4
+                return True
+            if now < self.skip_confirm_until:
+                return False
+            self.skip_confirm_until = 0
+        if now >= self.skip_settle_until and (result := self.reco("跳过剧情-点击跳过", image)):
             self.ctx.clear_hit_count("跳过剧情-点击跳过")
-            self.task("跳过剧情-点击跳过")
+            self.action("跳过剧情-点击跳过", result)
+            self.skip_confirm_until = self.clock() + 4
             return True
         names = ["进本-关闭告知弹窗"]
         if entering:
-            names = ["进本-编队提示-点击开始", "进本-点击任务开始"] + names
+            names = ["主线-纯剧情任务开始", "进本-编队提示-点击开始",
+                     "进本-点击任务开始"] + names
         for name in names:
             result = self.reco(name, image)
             if result:
@@ -217,9 +232,13 @@ class StoryRunner:
 
     def enter(self, result):
         self.action("主线-列表NEXT", result)
+        return self.wait_after_quest_click()
+
+    def wait_after_quest_click(self):
+        """关卡点击后处理弹窗/剧情；独立入口便于从已打开的现场继续验证。"""
         deadline = self.clock() + self.timeout
         departed, story_seen = False, False
-        stable_return = 0
+        return_since = None
         clicks, last_click = 1, self.clock()
         while self.clock() < deadline:
             self.pause()
@@ -232,13 +251,20 @@ class StoryRunner:
             if self.interrupt(image, entering=True):
                 story_seen |= is_story
                 departed |= is_story
-                stable_return = 0
+                return_since = None
+                continue
+            if story_seen and (reward := self.reco("主线-任务完成报酬", image)):
+                self.action("主线-任务完成报酬", reward)
+                return_since = None
+                self.pause(1)
                 continue
             panel = self.panel(image)
             on_map = not panel and self.on_map(image)
             if (panel or on_map) and departed and story_seen:
-                stable_return += 1
-                if stable_return >= 2:
+                if return_since is None:
+                    return_since = self.clock()
+                # 剧情间可能短暂露出列表/地图；等待页面稳定和跳过后的切换窗口。
+                if self.clock() - return_since >= 3 and self.clock() >= self.skip_settle_until:
                     return "story"
             elif panel and not departed and self.clock() - last_click > 5:
                 if clicks >= 3:
@@ -250,14 +276,54 @@ class StoryRunner:
                     last_click = self.clock()
             elif not panel and not on_map:
                 departed = True
-                stable_return = 0
+                return_since = None
         raise StoryStopped("进本超时：未到达助战/战斗，或纯剧情返回尚未确认")
+
+    def reach_formation(self):
+        """从助战交接到编队；特殊编制限制保留现场，避免通用进本反复关弹窗。"""
+        entry = self.ctx.get_node_data("进本流程") or {}
+        support_nodes = [name for name in next_names(entry) if name in _SUPPORT_NODES]
+        if len(support_nodes) != 1:
+            raise StoryStopped("无法确定当前助战方式，请检查进本流程配置")
+        support_name = support_nodes[0]
+        deadline = self.clock() + self.timeout
+        support_clicks = 0
+        formation_since = None
+        while self.clock() < deadline:
+            image = self.frame()
+            if self.reco("主线-编制限制", image):
+                raise StoryStopped("已进入编队，但关卡要求指定首发队员；请按编制限制弹窗手动调整")
+            if self.interrupt(image):
+                formation_since = None
+                self.pause()
+                continue
+            if self.reco("进本-战斗主界面已出现", image):
+                return
+            if self.reco("进本-队伍确认", image):
+                if formation_since is None:
+                    formation_since = self.clock()
+                if self.clock() - formation_since >= 1:
+                    return
+                self.pause()
+                continue
+            formation_since = None
+            support = self.reco(support_name, image)
+            if support:
+                if support_clicks >= 2:
+                    raise StoryStopped("选择助战后仍停留在助战页")
+                self.action(support_name, support)
+                support_clicks += 1
+                self.pause(1.5)
+                continue
+            self.pause()
+        raise StoryStopped("助战后未确认进入编队或战斗画面")
 
     def fight(self):
         # 不复用上一场的编队快照。仅当前单场持有会话，finally 负责清理。
         if self.mode == "bbc":
             self.task("bbc战斗", {"执行BBC任务": {"attach": {"run_count": 1, "battle_type": 0}}})
             return
+        self.reach_formation()
         root = self.ctx.get_task_job().job_id
         token = sessions.begin(root)
         try:

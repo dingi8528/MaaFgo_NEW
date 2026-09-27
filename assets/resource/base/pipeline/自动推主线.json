@@ -103,6 +103,32 @@
       }
     }
   },
+  "主线-编制限制": {
+    "doc": "进本流程.json 的 进本-关闭告知弹窗 会关闭普通告知；编制限制要求指定成员进入首发，不能只关闭后反复点击开始。自动推主线在助战交接时先识别本弹窗并保留现场，待人工调整或后续专门编队策略。",
+    "recognition": {
+      "type": "OCR",
+      "param": {
+        "roi": [520, 65, 240, 70],
+        "expected": ["编制限制", "編成制限"],
+        "threshold": 0.8
+      }
+    }
+  },
+  "主线-纯剧情任务开始": {
+    "doc": "主线无战斗关卡点击后可能弹“该任务没有战斗／是否开始任务？”确认框。复用 进本流程.json 的 进本-点击任务开始 的识别后点击方式；国服 2026-09-27 现场的按钮样式与 cn/image/dungeon_enter.png 不同（最高 0.398），由 cn/pipeline/自动推主线资源.json 覆盖为现场裁图。限定右下确认按钮区域，命中后只点击本按钮，随后由 enter 复核剧情跳过与返回。",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "dungeon_enter.png",
+        "roi": [700, 520, 300, 90],
+        "threshold": 0.85
+      }
+    },
+    "action": {
+      "type": "Click"
+    },
+    "post_delay": 1000
+  },
   "主线-结算界面": {
     "recognition": {
       "type": "TemplateMatch",
