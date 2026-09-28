@@ -36,7 +36,13 @@ class ImportBbcToChaldea(CustomAction):
                     "结果位于 config/Battle"
                 )
                 return CustomAction.RunResult(success=bool(converted))
-            source = str(attach.get("bbc_source_config") or "").strip()
+            # MXU 的 scan_select 只向同名 attach 键注入选中的文件名。
+            # 保留旧键，以兼容直接调用此节点的现有覆盖参数。
+            source = str(
+                attach.get("BBC转换来源配置") or attach.get("bbc_source_config") or ""
+            ).strip()
+            if source == "{BBC转换来源配置}":
+                raise BbcImportError("BBC 队伍配置未正确传入，请重新选择配置并重启客户端")
             output, warnings = import_bbc_file(source)
             for warning in warnings:
                 mfaalog.warning(f"[BBC→Chaldea] {warning}")

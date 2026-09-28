@@ -28,6 +28,7 @@ from battle.runtime.runtime import AutoBattleRuntime
 from chaldea.bbc_importer import (BbcImportError, _read_json,
                                   convert_bbc_config, import_bbc_all,
                                   import_bbc_file)
+from bbc_to_chaldea_action import ImportBbcToChaldea
 import chaldea
 
 
@@ -39,6 +40,41 @@ class BbcToChaldeaTest(unittest.TestCase):
 
     def _config(self, filename):
         return _read_json(FIXTURES / filename)
+
+    def test_scan_select_passes_selected_file_to_action(self):
+        options = _read_json(ROOT / "assets/options/BBC配置转Chaldea本地队伍.json")
+        override = options["option"]["BBC转换来源配置"]["pipeline_override"]
+        attach = override["BBC配置转Chaldea本地队伍"]["attach"]
+        self.assertEqual(attach, {"BBC转换来源配置": ""})
+
+        selected = "EX1-上杉谦信_吉娜可_贞德_贞德.json"
+        context = SimpleNamespace(get_node_data=lambda _: {
+            "attach": {"BBC转换来源配置": selected, "bbc_import_all": False}
+        })
+        argv = SimpleNamespace(node_name="BBC配置转Chaldea本地队伍")
+        with patch("bbc_to_chaldea_action.import_bbc_file",
+                   return_value=(Path("config/Battle/result.json"), [])) as importer:
+            self.assertTrue(ImportBbcToChaldea().run(context, argv).success)
+        importer.assert_called_once_with(selected)
+
+    def test_bbc_import_action_keeps_legacy_override(self):
+        context = SimpleNamespace(get_node_data=lambda _: {
+            "attach": {"bbc_source_config": "legacy.json", "bbc_import_all": False}
+        })
+        argv = SimpleNamespace(node_name="BBC配置转Chaldea本地队伍")
+        with patch("bbc_to_chaldea_action.import_bbc_file",
+                   return_value=(Path("config/Battle/result.json"), [])) as importer:
+            self.assertTrue(ImportBbcToChaldea().run(context, argv).success)
+        importer.assert_called_once_with("legacy.json")
+
+    def test_bbc_import_action_reports_unexpanded_option(self):
+        context = SimpleNamespace(get_node_data=lambda _: {
+            "attach": {"bbc_source_config": "{BBC转换来源配置}", "bbc_import_all": False}
+        })
+        argv = SimpleNamespace(node_name="BBC配置转Chaldea本地队伍")
+        with patch("bbc_to_chaldea_action.import_bbc_file") as importer:
+            self.assertFalse(ImportBbcToChaldea().run(context, argv).success)
+        importer.assert_not_called()
 
     def test_standard_team_and_plan(self):
         share, warnings = convert_bbc_config(
