@@ -42,7 +42,7 @@
       "pipeline_override": {
         "BBC配置转Chaldea本地队伍": {
           "attach": {
-            "bbc_source_config": "{BBC转换来源配置}"
+            "BBC转换来源配置": ""
           }
         }
       }
