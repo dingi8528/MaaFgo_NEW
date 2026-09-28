@@ -36,6 +36,66 @@
                     }
                 },
                 {
+                    "name": "9游服",
+                    "label": "9游服",
+                    "pipeline_override": {
+                        "打开游戏": {
+                            "action": {
+                                "type": "StartApp",
+                                "param": {
+                                    "package": "com.bilibili.fga.uc"
+                                }
+                            }
+                        },
+                        "关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.fga.uc"
+                                }
+                            }
+                        },
+                        "登录-关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.fga.uc"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "迁移服",
+                    "label": "迁移服",
+                    "pipeline_override": {
+                        "打开游戏": {
+                            "action": {
+                                "type": "StartApp",
+                                "param": {
+                                    "package": "com.bilibili.uo.fatego"
+                                }
+                            }
+                        },
+                        "关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.uo.fatego"
+                                }
+                            }
+                        },
+                        "登录-关闭游戏": {
+                            "action": {
+                                "type": "StopApp",
+                                "param": {
+                                    "package": "com.bilibili.uo.fatego"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "4399服",
                     "label": "4399服",
                     "pipeline_override": {

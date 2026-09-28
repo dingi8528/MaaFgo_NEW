@@ -17,6 +17,28 @@
           }
         },
         {
+          "name": "9游服",
+          "label": "9游服",
+          "pipeline_override": {
+            "启动bbc": {
+              "attach": {
+                "mumu_pkg": "com.bilibili.fga.uc"
+              }
+            }
+          }
+        },
+        {
+          "name": "迁移服",
+          "label": "迁移服",
+          "pipeline_override": {
+            "启动bbc": {
+              "attach": {
+                "mumu_pkg": "com.bilibili.uo.fatego"
+              }
+            }
+          }
+        },
+        {
           "name": "4399服",
           "label": "4399服",
           "pipeline_override": {
