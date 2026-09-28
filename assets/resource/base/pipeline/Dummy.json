@@ -236,7 +236,8 @@
         },
         "action": {
             "type": "Click"
-        }
+        },
+        "post_delay": 5000
     },
     "全局-体力不足": {
         "action": {
