@@ -54,6 +54,7 @@
         ]
     },
     "举世之飞将军-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -66,6 +67,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "举世之飞将军-2"
         ]
@@ -99,6 +101,7 @@
         ]
     },
     "久远的微笑-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -111,6 +114,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "归位2"
         ]
@@ -144,6 +148,7 @@
         ]
     },
     "于荒野萌芽的王之花-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -156,6 +161,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "于荒野萌芽的王之花-2"
         ]
@@ -208,6 +214,7 @@
         ]
     },
     "光之丝线引导的迷宫-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -220,6 +227,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "归位1"
         ]
@@ -253,6 +261,7 @@
         ]
     },
     "冻土的试炼-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -265,6 +274,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "冻土的试炼-2"
         ]
@@ -298,6 +308,7 @@
         ]
     },
     "噩梦的南瓜-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -310,6 +321,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "噩梦的南瓜-2"
         ]
@@ -357,6 +369,7 @@
         ]
     },
     "复活的黄金都市-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -369,6 +382,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "复活的黄金都市-2"
         ]
@@ -402,6 +416,7 @@
         ]
     },
     "复苏的远古浪漫-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -415,6 +430,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "复苏的远古浪漫-2"
         ]
@@ -457,6 +473,7 @@
         ]
     },
     "大堡礁之卵-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -470,6 +487,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "大堡礁之卵-2"
         ]
@@ -536,6 +554,7 @@
         ]
     },
     "寻求女神像-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -549,6 +568,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "寻求女神像-2"
         ]
@@ -591,6 +611,7 @@
         ]
     },
     "常夏展销会场-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -604,6 +625,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "常夏展销会场-2"
         ]
@@ -646,6 +668,7 @@
         ]
     },
     "常夏的休假-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -659,6 +682,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "常夏的休假-2"
         ]
@@ -875,6 +899,7 @@
         ]
     },
     "月光矿区-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -887,6 +912,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "归位4"
         ]
@@ -920,6 +946,7 @@
         ]
     },
     "残留的神话-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -932,6 +959,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "残留的神话-2"
         ]
@@ -965,6 +993,7 @@
         ]
     },
     "神秘主义者与魂之故乡-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -977,6 +1006,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "神秘主义者与魂之故乡-2"
         ]
@@ -1010,6 +1040,7 @@
         ]
     },
     "荒野的欢乐-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -1023,6 +1054,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "荒野的欢乐-2"
         ]
@@ -1065,6 +1097,7 @@
         ]
     },
     "蛇龙的恶作剧-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -1078,6 +1111,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "龙蛇-1-5"
         ]
@@ -1120,6 +1154,7 @@
         ]
     },
     "赏金猎人数光年-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "Click",
             "param": {
@@ -1132,6 +1167,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "归位3"
         ]
@@ -1181,6 +1217,7 @@
         ]
     },
     "高贵的海盗-1": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -1194,6 +1231,7 @@
             }
         },
         "post_wait_freezes": 2000,
+        "post_delay": 1000,
         "next": [
             "高贵的海盗-2"
         ]
@@ -1231,6 +1269,7 @@
         ]
     },
     "龙蛇-1-5": {
+        "pre_delay": 1000,
         "action": {
             "type": "LongPress",
             "param": {
@@ -1244,6 +1283,7 @@
             }
         },
         "post_wait_freezes": 1000,
+        "post_delay": 1000,
         "next": [
             "蛇龙的恶作剧-2"
         ]
