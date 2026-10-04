@@ -17,7 +17,8 @@ _BATTLE_RESET = (
     "羁绊补齐-从者删除活动筛选点击", "羁绊补齐-礼装删除活动筛选点击",
     "羁绊补齐-礼装筛上滑找满破", "羁绊补齐-礼装筛找满破",
 )
-_SUPPORT_NODES = ("进本-选择助战", "助战action", "Chaldea助战action")
+_CUSTOM_SUPPORT_NODES = ("助战action", "Chaldea助战action")
+_SUPPORT_NODES = ("进本-选择助战", *_CUSTOM_SUPPORT_NODES)
 
 
 class StoryStopped(RuntimeError):
@@ -311,7 +312,12 @@ class StoryRunner:
             if support:
                 if support_clicks >= 2:
                     raise StoryStopped("选择助战后仍停留在助战页")
-                self.action(support_name, support)
+                if support_name in _CUSTOM_SUPPORT_NODES:
+                    # run_action 单独执行 Custom 节点时 reco_id=0，Agent 无法读取识别详情。
+                    # 单节点任务重新识别并执行动作；清空 next，避免进入通用进本流程。
+                    self.task(support_name, {support_name: {"next": [], "on_error": []}})
+                else:
+                    self.action(support_name, support)
                 support_clicks += 1
                 self.pause(1.5)
                 continue

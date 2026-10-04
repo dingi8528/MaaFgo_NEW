@@ -1,6 +1,6 @@
 {
   "自动推主线调度": {
-    "doc": "从主线地图或副本列表启动；外层独立循环，不进入通用战斗调度。",
+    "doc": "从主线地图或副本列表启动；外层独立循环，不进入通用战斗调度。助战交接复用 进本流程.json 的 助战action / Chaldea助战action，以清空 next / on_error 的单节点 run_task 完成识别与动作，保留有效 reco_id 并避免提前进入通用进本；不要拆成 run_recognition + run_action，Python Custom Action 入口会拒绝 reco_id=0。2026-10-04 日服 MaaMCP 实测自定义助战可进入编队，再由主线调度检查编制限制。",
     "action": {
       "type": "Custom",
       "param": {
