@@ -99,6 +99,50 @@ class FrameworkTests(unittest.TestCase):
         self.assertEqual(len(controller.swipes), 1)
         self.assertEqual(controller.clicks, [])
 
+    def test_custom_support_runs_with_recognition_detail(self):
+        resource = self.resource("cn")
+        controller = ScreenController(np.zeros((720, 1280, 3), np.uint8))
+        self.assertTrue(controller.post_connection().wait().succeeded)
+        seen, errors = [], []
+
+        class Inner(CustomAction):
+            def run(self, ctx, argv):
+                seen.append((argv.node_name, argv.reco_detail.reco_id))
+                return True
+
+        class Outer(CustomAction):
+            def run(self, ctx, argv):
+                try:
+                    runner = StoryRunner(ctx.clone())
+                    for name in ("助战action", "Chaldea助战action"):
+                        runner.task(name, {name: {
+                            "recognition": {"type": "DirectHit"},
+                            "action": {"type": "Custom", "param": {
+                                "custom_action": "story_support_probe"
+                            }},
+                            "next": [],
+                            "on_error": [],
+                        }})
+                    return True
+                except Exception as exc:
+                    errors.append(repr(exc))
+                    return False
+
+        resource.register_custom_action("story_support_probe", Inner())
+        resource.register_custom_action("story_outer_probe", Outer())
+        tasker = Tasker()
+        self.assertTrue(tasker.bind(resource, controller))
+        status = tasker.post_task("story_outer_probe", {"story_outer_probe": {
+            "action": {"type": "Custom", "param": {
+                "custom_action": "story_outer_probe"
+            }}
+        }}).wait()
+        self.assertTrue(status.succeeded, errors)
+        self.assertEqual([name for name, _ in seen],
+                         ["助战action", "Chaldea助战action"])
+        self.assertTrue(all(reco_id > 0 for _, reco_id in seen))
+        self.assertEqual(controller.clicks, [])
+
     def test_custom_next_returns_click_point_through_framework(self):
         sys.path.insert(0, str(ROOT / "tests"))
         from test_main_story import NextImageTests

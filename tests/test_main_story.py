@@ -202,9 +202,15 @@ class RoutingTests(unittest.TestCase):
                                {"进本-战斗主界面已出现"}])
                 c.nodes["进本流程"]["next"] = [support_name, "进本-队伍确认"]
                 r.fight()
-                self.assertEqual([n for n, _ in c.actions], [support_name])
+                custom = support_name in ("助战action", "Chaldea助战action")
+                self.assertEqual([n for n, _ in c.actions], [] if custom else [support_name])
                 self.assertEqual([n for n, _ in c.tasks],
-                                 ["进本流程", "原生自动战斗入口"])
+                                 ([support_name] if custom else [])
+                                 + ["进本流程", "原生自动战斗入口"])
+                if custom:
+                    self.assertEqual(c.tasks[0][1], {
+                        support_name: {"next": [], "on_error": []}
+                    })
 
     def test_ambiguous_support_configuration_stops_before_click(self):
         r, c = runner([{"进本-选择助战", "助战action"}])

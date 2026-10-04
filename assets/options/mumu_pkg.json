@@ -22,7 +22,7 @@
           "pipeline_override": {
             "启动bbc": {
               "attach": {
-                "mumu_pkg": "com.bilibili.fga.uc"
+                "mumu_pkg": "com.bilibili.fgo.uc"
               }
             }
           }

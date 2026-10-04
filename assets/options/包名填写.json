@@ -43,7 +43,7 @@
                             "action": {
                                 "type": "StartApp",
                                 "param": {
-                                    "package": "com.bilibili.fga.uc"
+                                    "package": "com.bilibili.fgo.uc"
                                 }
                             }
                         },
@@ -51,7 +51,7 @@
                             "action": {
                                 "type": "StopApp",
                                 "param": {
-                                    "package": "com.bilibili.fga.uc"
+                                    "package": "com.bilibili.fgo.uc"
                                 }
                             }
                         },
@@ -59,7 +59,7 @@
                             "action": {
                                 "type": "StopApp",
                                 "param": {
-                                    "package": "com.bilibili.fga.uc"
+                                    "package": "com.bilibili.fgo.uc"
                                 }
                             }
                         }
