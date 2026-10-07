@@ -3,7 +3,7 @@
         "原生自动战斗使用Chaldea队伍": {
             "type": "switch",
             "label": "是否使用 Chaldea 队伍",
-            "description": "使用chaldea编队和战斗数据\n >",
+            "description": "使用 Chaldea 编队和战斗技能释放逻辑。\n\n[使用指南](https://www.bilibili.com/video/BV1Lueb6bEbW/)",
             "default_case": "No",
             "cases": [
                 {
