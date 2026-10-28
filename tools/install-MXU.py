@@ -85,6 +85,7 @@ def validate_editor_bundle(root, *, packaged=False):
         "agent/battle_editor/bbc_import.py", "agent/chaldea/bbc_importer.py", "agent/chaldea/servant_types.py",
         "agent/custom/battle_editor_action.py", "agent/custom/bond_matcher.py",
         "agent/chaldea/servant_aliases.py", "agent/battle/card_composer.py",
+        "agent/battle/perception/composed_card.py",
         "打开编队编辑器.cmd", "docs/HTML编队与战斗逻辑工具使用说明.md",
     ):
         required(root / relative)
@@ -93,6 +94,17 @@ def validate_editor_bundle(root, *, packaged=False):
                      "agent/custom/bond_completion_costs.json"):
         document(root / relative)
     document(data / "catalog.json")
+    commands = resource / "base/image/CommandCards"
+    portraits = document(commands / "manifest")
+    if not isinstance(portraits.get("servants"), dict) or not portraits["servants"]:
+        raise RuntimeError("战斗合成卡面打包头像清单不完整")
+    for pack, region in (("base", "JP"), ("cn", "CN")):
+        composition = document(resource / pack / "image/CommandCards/_composition/manifest")
+        if (composition.get("region") != region
+                or any(not isinstance(composition.get(key), dict) or not composition[key]
+                       for key in ("shared", "np_names"))
+                or not isinstance(composition.get("np_extra_names", {}), dict)):
+            raise RuntimeError(f"战斗合成卡面打包清单不完整：{region}")
     sources = document(data / "sources.json")
     if not isinstance(sources.get("media"), list):
         raise RuntimeError("编队编辑器技能 / 御主礼装资源索引不完整")

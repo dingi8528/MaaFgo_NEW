@@ -28,7 +28,7 @@ from ..data.servant_identity import servant_template_ids
 _COLORS = {'arts': CardColor.ARTS, 'buster': CardColor.BUSTER, 'quick': CardColor.QUICK}
 _WORK_SCALE = .5
 _MAX_METADATA_BYTES = 4 * 1024 * 1024
-_MAX_PREPARED_TEMPLATES = 256
+_MAX_PREPARED_TEMPLATES = 256  # Per region; JP+CN auto remains bounded by 512.
 
 
 @dataclass(frozen=True)
@@ -231,6 +231,7 @@ class ComposedCardRecognizer:
         templates, seen = [], set()
         complete = True
         for region in self.regions:
+            region_candidates = 0
             forms = list(self._forms(sid, region))
             if not forms:
                 complete = False
@@ -270,7 +271,8 @@ class ComposedCardRecognizer:
                         if template_key in seen:
                             continue
                         seen.add(template_key)
-                        if len(seen) > _MAX_PREPARED_TEMPLATES:
+                        region_candidates += 1
+                        if region_candidates > _MAX_PREPARED_TEMPLATES:
                             return _Prepared((), False, 'candidate_limit_exceeded')
                         try:
                             card = self.composer.compose(render_sid, color, portrait_variant=variant,
