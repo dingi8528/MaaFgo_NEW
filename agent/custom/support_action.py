@@ -785,11 +785,15 @@ class SupportAction(CustomAction):
             attach = node.get("attach") or {}
             fallback_enabled = attach.get("fallback_after_refresh") is True
             root, token = None, ""
-            if fallback_enabled:
+            try:
                 root, token = context_session(context)
                 if not sessions.valid(root, token):
-                    mfaalog.error("[SupportAction] 助战兜底需要有效的原生战斗会话")
-                    return CustomAction.RunResult(success=False)
+                    root, token = None, ""
+            except (AttributeError, TypeError, ValueError):
+                root, token = None, ""  # 独立助战/BBC 不创建原生会话。
+            if fallback_enabled and not token:
+                mfaalog.error("[SupportAction] 助战兜底需要有效的原生战斗会话")
+                return CustomAction.RunResult(success=False)
             skip_servant = False
             if source_mode == "chaldea":
                 if attach.get("chaldea_enabled") is not True:
@@ -949,7 +953,7 @@ class SupportAction(CustomAction):
                     if not passive_need:
                         cx, cy = (bx + bx2) // 2, (by + by2) // 2
                         self._tap(controller, cx, cy)
-                        if fallback_enabled:
+                        if token:
                             sessions.set_support_fallback(root, token, False)
                         mfaalog.info(f"[SupportAction] 点击条目 ({cx},{cy})")
                         return True
@@ -972,7 +976,7 @@ class SupportAction(CustomAction):
                         continue
                     cx, cy = (bx + bx2) // 2, (by + by2) // 2
                     self._tap(controller, cx, cy)
-                    if fallback_enabled:
+                    if token:
                         sessions.set_support_fallback(root, token, False)
                     mfaalog.info(f"[SupportAction] 点击条目 ({cx},{cy})")
                     return True

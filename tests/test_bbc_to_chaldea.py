@@ -109,6 +109,7 @@ class BbcToChaldeaTest(unittest.TestCase):
 
         runtime = AutoBattleRuntime.__new__(AutoBattleRuntime)
         runtime.decider = SimpleNamespace(plan=plan)
+        runtime._turn_index = 0
         runtime.battle_policy = SimpleNamespace(skill=SimpleNamespace(use_master_skills=True))
         calls = []
         runtime._execute_skill_cast = lambda label, *_args, **_kwargs: calls.append(label) or True

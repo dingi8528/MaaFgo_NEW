@@ -58,7 +58,7 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
       <span className="summary-card-label">{label}</span>
      </span>
     </span>;
-   })}</div>:<span className="summary-muted">普通选卡补齐</span>}
+   })}</div>:<span className="summary-muted">按通用规则选普通卡，不使用宝具</span>}
   </div>;
  }
  if(raw?.type!=='skill')return <div className="summary-action summary-unresolved"><FileQuestion size={16} aria-hidden="true"/>{actionTitle(entry,data,catalog)}</div>;
@@ -86,7 +86,7 @@ export function BattleSummary({data,catalog,cardPreviewRegion:preference,npCardP
  const turns=turnsOf(data),region=cardPreviewRegion(preference,npCardPreview);
  return <div className="summary-panel visual-battle-summary">
   <div className="subsection-title">打法摘要 <small>共 {turns.length} 回合</small></div>
-  {turns.length?turns.map((turn,i)=><div className="summary-turn" key={i}><span>{String(i+1).padStart(2,'0')}</span><div className="summary-turn-content"><b>第 {i+1} 回合</b><div className="summary-actions">{turn.entries.map(entry=><SummaryEntry entry={entry} data={data} catalog={catalog} region={region} config={npCardPreview} key={entry.index}/>)}</div></div></div>):<p className="muted">尚未配置攻击回合。</p>}
+  {turns.length?turns.map((turn,i)=><div className="summary-turn" key={i}><span>{String(i+1).padStart(2,'0')}</span><div className="summary-turn-content"><b>第 {i+1} 回合</b><div className="summary-actions">{turn.entries.map(entry=><SummaryEntry entry={entry} data={data} catalog={catalog} region={region} config={npCardPreview} key={entry.index}/>)}</div></div></div>):<p className="muted">未设置回合逻辑，全程使用通用自动战斗。</p>}
   <div className="hint"><Info size={15}/><span>未指定的面卡和不可用宝具由当前默认策略补齐。计划结束后恢复原生默认策略。</span></div>
  </div>;
 }

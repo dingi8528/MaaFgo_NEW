@@ -19,7 +19,7 @@ from .special_skills import SpecialSkillDispatcher
 from ..core.enums import PrimitiveKind, Scene
 from ..core.models import (BattlePlan, BattleState, CardPick, InitialFormation,
                            MasterSkillAction, OrderChangeAction,
-                           ServantSkillAction, is_slot)
+                           ServantSkillAction, VERIFIED_FORMATION_SOURCE, is_slot)
 from ..core.policy import BattlePolicy, StrategyProfile
 from ..core.validator import (
     skip_unusable_servant_skills,
@@ -107,6 +107,11 @@ class AutoBattleRuntime:
         self.executor = Executor(context, controller)
         self._turn_index = 0
         self._selection_cards = ()
+
+    def _has_active_plan(self) -> bool:
+        plan = getattr(self.decider, "plan", None)
+        return (isinstance(plan, BattlePlan)
+                and plan.active_turn(self._turn_index) is not None)
 
     def run(self) -> BattleResult:
         scope = getattr(self, "_special_skill_servant_ids", None)
@@ -288,8 +293,9 @@ class AutoBattleRuntime:
                 mfaalog.info("[AutoBattle] Picks executed, waiting for attack animation to settle...")
                 # 选完第 3 张自动发动 -> 等动画结束
                 if not self._wait_turn_settled():
-                    mfaalog.info(f"[AutoBattle] Stuck after attack (no scene change within {_ANIMATION_TIMEOUT_S}s). turns={turns}")
-                    return BattleResult.fail("stuck_after_attack", turns)
+                    reason = getattr(self, "_post_attack_failure_reason", "stuck_after_attack")
+                    mfaalog.error(f"[AutoBattle] 出卡后等待失败: {reason}；保留当前画面停止。 turns={turns}")
+                    return BattleResult.fail(reason, turns)
                 if self._post_attack_returned_to_map:
                     # 剧情后直接返回地图的关卡没有普通结算；交回调用方复核，
                     # 不将剧情按钮本身视为胜利，也不进入下一回合。
@@ -344,11 +350,10 @@ class AutoBattleRuntime:
         if result.scene is Scene.MAIN_BATTLE and any(candidates):
             self._update_frontline(result.servants)
 
-        # 有 Chaldea 计划时：技能 CD 检测无意义（计划已精确指定何时放技能），
+        # 当前回合有 Chaldea 计划时：技能 CD 检测无意义（计划已精确指定何时放技能），
         # 且 ColorMatch ROI 可能因分辨率/缩放偏移导致误判为 CD。
         # 将所有技能标记为可用，避免被安全门过滤掉。
-        has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
-        if has_plan:
+        if self._has_active_plan():
             result = self._patch_skills_available(result)
             mfaalog.info("[AutoBattle] _observe() -> plan active, present servants' skills patched to available")
 
@@ -611,8 +616,7 @@ class AutoBattleRuntime:
 
             if isinstance(step, MasterSkillAction):
                 sk = step
-                has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
-                if not has_plan and not self.battle_policy.skill.use_master_skills:
+                if not self._has_active_plan() and not self.battle_policy.skill.use_master_skills:
                     mfaalog.info(f"[AutoBattle] master skill skipped (use_master_skills=False): idx={sk.skill_index}")
                     continue
                 if not (
@@ -727,7 +731,8 @@ class AutoBattleRuntime:
             return None, "no_actual_formation"
         if self.initial_formation_reused:
             return None, "formation_not_reconfirmed_this_battle"
-        if initial.source != "formation_confirmation" or initial.calibration_id in ("", "unverified"):
+        if (initial.source not in ("formation_confirmation", VERIFIED_FORMATION_SOURCE)
+                or initial.calibration_id in ("", "unverified")):
             return None, "formation_not_calibrated"
         if any(slot.status not in {"identified", "empty"} for slot in initial.slots):
             return None, "formation_contains_unknown"
@@ -846,9 +851,11 @@ class AutoBattleRuntime:
 
     def _wait_turn_settled(self) -> bool:
         self._post_attack_returned_to_map = False
+        self._post_attack_failure_reason = "stuck_after_attack"
         mfaalog.info(f"[AutoBattle] _wait_turn_settled() timeout={_ANIMATION_TIMEOUT_S}s")
         result = self._wait_until(_TERMINAL_OR_MAIN, _ANIMATION_TIMEOUT_S,
-                                  tap_close=True, handle_story=True)
+                                  tap_close=True, handle_story=True,
+                                  command_selection_timeout_s=3.0)
         mfaalog.info(f"[AutoBattle] _wait_turn_settled() result={result}")
         return result
 
@@ -877,11 +884,14 @@ class AutoBattleRuntime:
         return ok
 
     def _wait_until(self, scenes, timeout_s: float, tap_close: bool = False,
-                    handle_story: bool = False) -> bool:
+                    handle_story: bool = False,
+                    command_selection_timeout_s: float | None = None) -> bool:
         mfaalog.info(f"[AutoBattle] _wait_until() scenes={[s.name for s in scenes]} timeout={timeout_s}s")
         deadline = time.monotonic() + timeout_s
         story_seen = False
         map_since = None
+        command_selection_since = None
+        command_selection_observations = 0
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 mfaalog.info("[AutoBattle] _wait_until() detected stop signal, aborting wait")
@@ -894,6 +904,24 @@ class AutoBattleRuntime:
             if scene in scenes:
                 mfaalog.info(f"[AutoBattle] _wait_until() matched scene={scene.name}")
                 return True
+            if command_selection_timeout_s is not None and scene is Scene.COMMAND_SELECTION:
+                now = time.monotonic()
+                if command_selection_since is None:
+                    command_selection_since = now
+                command_selection_observations += 1
+                if (command_selection_observations >= 2
+                        and now - command_selection_since >= command_selection_timeout_s):
+                    self._post_attack_failure_reason = "card_selection_not_submitted"
+                    mfaalog.error(
+                        "[AutoBattle] 三次出卡操作后仍持续停留在选卡界面，"
+                        "出卡选择未完成；保留画面停止，不自动补卡。"
+                    )
+                    return False
+                # 卡牌未提交时不点击关闭或重试，避免更改用户当前选择。
+                time.sleep(0.5)
+                continue
+            command_selection_since = None
+            command_selection_observations = 0
             if handle_story and scene is Scene.UNKNOWN:
                 handled = self._handle_post_attack_story(img)
                 if handled is False:

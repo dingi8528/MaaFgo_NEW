@@ -126,6 +126,60 @@ class SupportFallbackTests(unittest.TestCase):
         self.assertEqual(ctx.refreshes, 11)
         self.assertNotIn("助战兜底-选择首个助战", ctx.entries)
 
+    def test_default_disabled_selection_invalidates_verified_formation_in_both_success_branches(self):
+        for passive in (False, True):
+            with self.subTest(passive=passive):
+                ctx = Context(enabled=False)
+                ctx.attach["skill_passive_1"] = 10 if passive else 0
+                slots = tuple(FormationSlot(i, "identified", "100100", is_support=i == 3)
+                              for i in range(1, 7))
+                sessions.publish_verified(ctx.root, ctx.token,
+                    sessions.begin_update(ctx.root, ctx.token), slots)
+                result, action = self.search(ctx, lambda *args: True)
+                self.assertTrue(result.success)
+                self.assertEqual(action._tap.call_args.args[-2:], (50, 50))
+                self.assertEqual(action._match_passive.call_count, int(passive))
+                self.assertIsNone(sessions.verified_snapshot(ctx.root, ctx.token))
+                self.assertIsNone(sessions.read(ctx.root, ctx.token)[0])
+                self.assertTrue(sessions.valid(ctx.root, ctx.token))
+                self.assertFalse(sessions.support_fallback(ctx.root, ctx.token))
+
+    def test_chaldea_default_disabled_selection_also_invalidates_verified_formation(self):
+        ctx = self.chaldea_context(enabled=False)
+        slots = tuple(FormationSlot(i, "identified", "100100", is_support=i == 3)
+                      for i in range(1, 7))
+        sessions.publish_verified(ctx.root, ctx.token,
+            sessions.begin_update(ctx.root, ctx.token), slots)
+        with patch("support_action.fetch_share_data", return_value=(self.chaldea_share(), None, None)), \
+             patch("support_action.os.path.isfile", return_value=True):
+            result, action = self.search(ctx, lambda *args: True, chaldea=True)
+        self.assertTrue(result.success)
+        self.assertEqual(action._tap.call_args.args[-2:], (50, 50))
+        self.assertIsNone(sessions.verified_snapshot(ctx.root, ctx.token))
+        self.assertIsNone(sessions.read(ctx.root, ctx.token)[0])
+
+    def test_default_disabled_without_native_session_does_not_create_one(self):
+        for missing_context_api in (False, True):
+            with self.subTest(missing_context_api=missing_context_api):
+                ctx = Context(enabled=False)
+                sessions.finish(ctx.root, ctx.token)
+                context = NS(tasker=ctx.tasker, get_node_data=ctx.get_node_data,
+                             run_task=ctx.run_task) if missing_context_api else ctx
+                with patch("support_action.sessions.begin") as begin:
+                    result, action = self.search(context, lambda *args: True)
+                self.assertTrue(result.success)
+                self.assertEqual(action._tap.call_args.args[-2:], (50, 50))
+                begin.assert_not_called()
+                self.assertFalse(sessions.valid(ctx.root, ctx.token))
+
+    def test_fallback_enabled_still_requires_a_native_session(self):
+        ctx = Context(enabled=True)
+        sessions.finish(ctx.root, ctx.token)
+        result, action = self.search(ctx, lambda *args: True)
+        self.assertFalse(result.success)
+        action._get_detector.assert_not_called()
+        action._tap.assert_not_called()
+
     def test_chaldea_config_errors_do_not_fallback(self):
         for error in ("disabled", "blank_source", "invalid_share", "missing_template"):
             with self.subTest(error=error):

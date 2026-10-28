@@ -104,10 +104,10 @@ def _normalize_replace_member(item: object) -> Optional[Tuple[int, int]]:
 
 
 def convert_chaldea_actions_to_battle_plan(
-    actions: List[dict],
+    actions: Optional[List[dict]],
     delegate: Optional[dict] = None,
     mystic_code_id: Optional[int] = None,
-) -> BattlePlan:
+) -> Optional[BattlePlan]:
     """把 Chaldea actions 转成 BattlePlan。
 
     每个 ``attack`` 动作把之前累积的技能/宝具结算成 1 个 TurnPlan；
@@ -115,11 +115,14 @@ def convert_chaldea_actions_to_battle_plan(
     会补成最后一个回合。
 
     Returns:
-        永远返回非空 BattlePlan；无任何回合时返回 1 个空回合。
+        无任何回合时返回 None，沿用通用自动战斗；显式 attack 即使没有
+        attacks 也保留为空回合，在该回合只按普通卡策略出卡。
     """
+    if actions is None:
+        return None
     if not isinstance(actions, list):
         mfaalog.warning(f"[chaldea_converter] actions 不是列表, 类型={type(actions).__name__}")
-        return BattlePlan(turns=(TurnPlan(),))
+        return None
 
     mfaalog.info(f"[chaldea_converter] 开始转换: actions={len(actions)}条, "
                  f"mystic_code_id={mystic_code_id}, delegate={'有' if delegate else '无'}")
@@ -258,7 +261,4 @@ def convert_chaldea_actions_to_battle_plan(
     if cur_skills or cur_masters or cur_np or cur_order_change is not None:
         _flush()
 
-    if not turns:
-        turns.append(TurnPlan())
-
-    return BattlePlan(turns=tuple(turns), special_choices=parse_special_skill_choices(delegate))
+    return BattlePlan(turns=tuple(turns), special_choices=parse_special_skill_choices(delegate)) if turns else None

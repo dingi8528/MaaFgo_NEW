@@ -180,7 +180,7 @@ class TeamFetchError(RuntimeError):
     pass
 
 
-def _build_plan_from_share(share: dict) -> BattlePlan:
+def _build_plan_from_share(share: dict) -> BattlePlan | None:
     """把 BattleShareData actions 转成 BattlePlan。"""
     actions = share.get("actions")
     team = share.get("team") or {}
@@ -194,7 +194,7 @@ def _build_plan_from_share(share: dict) -> BattlePlan:
         delegate=delegate,
         mystic_code_id=mystic_code_id,
     )
-    mfaalog.info(f"[auto_battle] chaldea_share -> plan turns={len(plan.turns)}")
+    mfaalog.info(f"[auto_battle] chaldea_share -> plan turns={len(plan.turns) if plan is not None else 0}")
     return plan
 
 

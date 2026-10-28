@@ -14,7 +14,7 @@ CARD_TYPES = {1: "arts", 2: "buster", 3: "quick", "1": "arts", "2": "buster", "3
 DEFAULTS = {
     "newBattle": {"team": {"name": "未命名方案", "onFieldSvts": [None, None, None], "backupSvts": [None, None, None], "mysticCode": {"mysticCodeId": 210, "level": 10}}, "actions": []},
     "servant": {"supportType": "none", "skillLvs": [10, 10, 10], "appendLvs": [0, 0, 0, 0, 0]}, "equip": {}, "mysticCode": {},
-    "description": {"lv": "未指定，不新增等级要求", "tdLv": "未指定，不新增宝具要求", "skillLvs": "空槽新选从者预设 10/10/10；导入未指定时保持缺失，不新增技能要求", "appendLvs": "空槽新选从者预设 0/0/0/0/0，0 表示不要求；导入保留原字段与数组长度", "taskSkillDefaults": "任务技能预设只在新选空槽或显式补齐空项时使用；更换已有从者及切换助战类型不自动补值，预设不是游戏内实际等级", "mysticCode.level": "未指定，仅记录属性", "playerTarget": "未指定，省略该字段", "emptyAttack": "attacks: []，其余由当前默认选卡策略补齐", "autoAttackCard": "Maa 扩展 isAuto: true，按当前位置使用默认普通卡策略补齐；不属于上游 Chaldea 标准，不能混入具体卡片字段"},
+    "description": {"lv": "未指定，不新增等级要求", "tdLv": "未指定，不新增宝具要求", "skillLvs": "空槽新选从者预设 10/10/10；导入未指定时保持缺失，不新增技能要求", "appendLvs": "空槽新选从者预设 0/0/0/0/0，0 表示不要求；导入保留原字段与数组长度", "taskSkillDefaults": "任务技能预设只在新选空槽或显式补齐空项时使用；更换已有从者及切换助战类型不自动补值，预设不是游戏内实际等级", "mysticCode.level": "未指定，仅记录属性", "playerTarget": "未指定，省略该字段", "emptyAttack": "完全空的回合保留一条 attack（attacks: []）：不释放技能或宝具，仅按通用规则选普通卡；同回合已安排的技能仍执行。actions 为空表示未设置回合，使用通用自动战斗", "autoAttackCard": "Maa 扩展 isAuto: true，按当前位置使用默认普通卡策略补齐；不属于上游 Chaldea 标准，不能混入具体卡片字段"},
 }
 
 

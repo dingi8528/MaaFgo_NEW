@@ -313,6 +313,7 @@ class AutoFormationFromChaldea(CustomAction):
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
         try:
             self.context = context
+            self._begin_verified_formation_update()
             self.controller = context.tasker.controller
             self.direct_formation_mode = False
             node = context.get_node_data(argv.node_name) or {}
@@ -460,11 +461,67 @@ class AutoFormationFromChaldea(CustomAction):
                 self._fail("formation_confirm_failed: 未能点击编队决定")
                 return CustomAction.RunResult(success=False)
             self._confirm_formation_change_if_present()
+            self._publish_verified_layout(current)
             mfaalog.info("[自动编队] 编队完成，已点击编队决定")
             return CustomAction.RunResult(success=True)
         except Exception as exc:
             mfaalog.error(f"[自动编队] 异常: {exc}\n{traceback.format_exc()}")
             return CustomAction.RunResult(success=False)
+        finally:
+            self._discard_unpublished_formation()
+
+    def _begin_verified_formation_update(self):
+        """只复用原生任务会话；独立编队/BBC 不创建额外状态。"""
+        self._formation_update = None
+        try:
+            root, token = context_session(self.context)
+        except (AttributeError, TypeError):
+            return
+        if token and sessions.valid(root, token) and not self.context.tasker.stopping:
+            self._formation_update = (root, token, sessions.begin_update(root, token))
+
+    def _discard_unpublished_formation(self):
+        update = getattr(self, "_formation_update", None)
+        if update is not None:
+            try:
+                sessions.abandon_update(*update)
+            except ValueError:
+                pass  # 任务已结束/停止，不得重建其会话。
+            self._formation_update = None
+
+    def _publish_verified_layout(self, layout):
+        """layout 必须来自最终实际复核，不能以 expected 填补未知位置。"""
+        update = getattr(self, "_formation_update", None)
+        if update is None or self.context.tasker.stopping:
+            return
+        try:
+            if len(layout) != 6:
+                raise ValueError("incomplete verified formation layout")
+            slots = []
+            for index, actual in enumerate(layout, 1):
+                kind, sid = actual.get("kind"), actual.get("svt_id")
+                support = True if kind == "SUPPORT" else False if kind in {"LOCAL", "EMPTY", "OTHER"} else None
+                servant = self._get_servant_info(sid) if sid is not None else None
+                sid = str(servant["id"]) if servant else str(sid) if type(sid) is int and sid > 0 else None
+                identified = kind in {"LOCAL", "SUPPORT"} and sid is not None
+                score = float(actual.get("identity_score" if support else "score", 0.0))
+                slots.append(FormationSlot(
+                    slot=index, status="empty" if kind == "EMPTY" else "identified" if identified else "unknown",
+                    servant_id=sid if identified else None, is_support=support,
+                    identity_confidence=Confidence(score if identified else 0.0, "chaldea_final_verification"),
+                    catalog_class=servant.get("class") if servant and identified else None,
+                    best_candidate_id=sid if identified else None,
+                    best_score=score if identified else 0.0,
+                    matched_template=actual.get("template") or "",
+                    reason="" if identified or kind == "EMPTY" else "unspecified_identity_not_verified",
+                    search_scope="chaldea_final_verification",
+                ))
+            sessions.publish_verified(*update, tuple(slots))
+            self._formation_update = None
+            known = sum(slot.status != "unknown" for slot in slots)
+            mfaalog.info(f"[初始编队] 已传递最终编队复核结果：已知{known}/6槽，未知槽位将在进本前补识别")
+        except (ValueError, TypeError) as exc:
+            mfaalog.warning(f"[初始编队] 编队结果传递未完成，保留正常识别路径: {exc}")
 
     # ---------- Chaldea 队伍规格 ----------
 
@@ -2212,6 +2269,7 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
         try:
             self.context = context
+            self._begin_verified_formation_update()
             self.controller = context.tasker.controller
             node = context.get_node_data(argv.node_name) or {}
             attach = node.get("attach") or {}
@@ -2267,6 +2325,7 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
                     mfaalog.info("[手动编队] 从者身份与位置均匹配，已保存当前编队")
                 else:
                     mfaalog.info("[手动编队] 从者身份与位置均匹配，直接进入战斗")
+                self._publish_verified_layout(current)
                 return CustomAction.RunResult(success=True)
 
             mfaalog.info(
@@ -2305,11 +2364,14 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
                 return CustomAction.RunResult(success=False)
             if not self._save_manual_formation():
                 return CustomAction.RunResult(success=False)
+            self._publish_verified_layout(current)
             mfaalog.info("[手动编队] 从者换位完成并已保存编队")
             return CustomAction.RunResult(success=True)
         except Exception as exc:
             mfaalog.error(f"[手动编队] 异常: {exc}\n{traceback.format_exc()}")
             return CustomAction.RunResult(success=False)
+        finally:
+            self._discard_unpublished_formation()
 
     def _manual_identities_match(self, current):
         expected_counts = Counter(
@@ -2609,7 +2671,7 @@ class FormationIdentityReader(AutoFormationFromChaldea):
             return ranked[0][1], Confidence(ranked[0][0], "formation_class_template")
         return None, Confidence(0.0, "class_uncertain")
 
-    def read_frame(self, image, *, full_audit=False, diagnostics=False):
+    def read_frame(self, image, *, full_audit=False, diagnostics=False, known_slots=()):
         # 继承的 ROI 裁剪缓存只能在当前图像内使用。不能用 id(image) 在跨帧
         # 缓存中判定图像相同：Python 会复用 id，且旧裁片会持续占用内存。
         self._roi_crop_cache = {}
@@ -2617,7 +2679,7 @@ class FormationIdentityReader(AutoFormationFromChaldea):
         self.last_match_stats = {"coarse_ms": 0.0, "slots": []}
         started = time.perf_counter()
         try:
-            return self._read_frame(image, full_audit=full_audit, diagnostics=diagnostics)
+            return self._read_frame(image, full_audit=full_audit, diagnostics=diagnostics, known_slots=known_slots)
         finally:
             self._roi_crop_cache.clear()
             self._frame_match_cache = None
@@ -2631,7 +2693,7 @@ class FormationIdentityReader(AutoFormationFromChaldea):
                 f"粗筛={self.last_match_stats['coarse_ms']:.0f}ms 槽位=[{summary}]"
             )
 
-    def _read_frame(self, image, *, full_audit=False, diagnostics=False):
+    def _read_frame(self, image, *, full_audit=False, diagnostics=False, known_slots=()):
         image = _norm_img(image)
         if image is None:
             raise ValueError("screenshot_unavailable")
@@ -2645,8 +2707,14 @@ class FormationIdentityReader(AutoFormationFromChaldea):
             raise ValueError("not_on_formation_confirmation")
         slots = []
         c = self.calibration
+        if known_slots and tuple(s.slot for s in known_slots) != (1, 2, 3, 4, 5, 6):
+            raise ValueError("incomplete_verified_formation")
+        # 显式全库审计仍独立识别全部槽；生产补识别只查询未知位置。
+        known = {i: slot for i, slot in enumerate(known_slots)
+                 if slot.status != "unknown"} if not full_audit else {}
+        pending = [(i, roi) for i, roi in enumerate(SLOT_ROIS) if i not in known]
         pools = None
-        if (not full_audit and (c.verified or diagnostics)
+        if (pending and not full_audit and (c.verified or diagnostics)
                 and len(self.templates) >= IDENTITY_COARSE_MIN_IDENTITIES):
             coarse_started = time.perf_counter()
             try:
@@ -2654,12 +2722,19 @@ class FormationIdentityReader(AutoFormationFromChaldea):
                     self._candidate_index = FormationCandidateIndex(self.templates, c.identity_crop)
                 base = image if (width, height) == (BASE_W, BASE_H) else cv2.resize(
                     image, (BASE_W, BASE_H), interpolation=cv2.INTER_AREA)
-                pools = self._candidate_index.shortlists(base, SLOT_ROIS)
+                pools = dict(zip((i for i, _ in pending),
+                                 self._candidate_index.shortlists(base, [roi for _, roi in pending])))
             except (ValueError, cv2.error) as exc:
                 mfaalog.warning(f"[初始编队] 粗筛失败，回退原图匹配: {exc}")
             self.last_match_stats["coarse_ms"] = (time.perf_counter() - coarse_started) * 1000
         for index, roi in enumerate(SLOT_ROIS):
             slot_started = time.perf_counter()
+            if index in known:
+                slots.append(known[index])
+                self.last_match_stats["slots"].append({
+                    "slot": index + 1, "scope": "verified_reuse", "candidates": 0, "ms": 0.0,
+                })
+                continue
             if self._is_empty_slot(image, roi):
                 slots.append(FormationSlot(index + 1, "empty", is_support=False,
                                            reason="existing_empty_slot_heuristic"))
@@ -2672,7 +2747,7 @@ class FormationIdentityReader(AutoFormationFromChaldea):
             is_support = None if support is None else support[0] >= SUPPORT_THRESHOLD
             class_id, class_conf = self._class(image, roi)
             ranked, scope = [], "not_calibrated"
-            pool = pools[index] if pools is not None else None
+            pool = pools.get(index) if pools is not None else None
             if pool is not None and not pool.fallback:
                 # 全库粗筛，不以职阶限制候选；仍以原图阈值和不同 ID 分差发布。
                 ranked = self._rank(image, roi, pool.ids)
@@ -2777,7 +2852,8 @@ class FormationIdentityFrame(CustomRecognition):
             helper._init_paths()
             calibration = FormationCalibration.parse(param.get("calibration", {}))
             reader = FormationIdentityReader.acquire(helper.image_roots, calibration)
-            slots = reader.read_frame(argv.image, full_audit=param.get("full_audit", False))
+            known = sessions.capture_seed(root, token, revision)
+            slots = reader.read_frame(argv.image, full_audit=param.get("full_audit", False), known_slots=known)
             sessions.append_frame(root, token, revision, slots)
             return CustomRecognition.AnalyzeResult(box=(0, 0, 1, 1), detail={"frame_ok": True})
         except Exception as exc:
@@ -2798,7 +2874,13 @@ class CaptureInitialFormation(CustomAction):
     def run(self, context: Context, argv: CustomAction.RunArg):
         root, token = context_session(context)
         try:
-            revision = sessions.begin_capture(root, token)
+            if context.tasker.stopping:
+                raise ValueError("formation_session_stopped")
+            verified = sessions.verified_snapshot(root, token)
+            if verified is not None and all(slot.status != "unknown" for slot in verified.slots):
+                mfaalog.info("[初始编队] 已复用 Chaldea 最终编队结果（6/6槽），跳过重复身份识别")
+                return CustomAction.RunResult(success=True)
+            revision = sessions.begin_capture(root, token, reuse_verified=True)
             node = context.get_node_data(argv.node_name) or {}
             config = (node.get("attach") or {}).get("calibration", {})
             calibration = FormationCalibration.parse(config)

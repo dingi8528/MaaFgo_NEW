@@ -87,6 +87,14 @@ class SpecialSkillScopeTests(unittest.TestCase):
             with self.subTest(initial=initial, battle=battle):
                 self.assertEqual(runtime(initial, battle=battle)._special_skill_pipeline_override(), {})
 
+    def test_complete_verified_chaldea_result_can_scope_but_unknown_or_reused_cannot(self):
+        initial = replace(snapshot(), source="chaldea_formation_verified", calibration_id="chaldea-final-check-v1")
+        self.assertEqual(runtime(initial)._special_skill_pipeline_override()[ENTRY]["next"],
+                         [*COMMON[:2], LILITH, *COMMON[2:]])
+        partial = replace(initial, slots=(*initial.slots[:5], FormationSlot(6, "unknown")))
+        self.assertEqual(runtime(partial)._special_skill_pipeline_override(), {})
+        self.assertEqual(runtime(initial, battle=2)._special_skill_pipeline_override(), {})
+
     def test_merged_roster_conflict_or_extra_member_does_not_prove_absence(self):
         for roster in ((None, "100500", "200100", None, None, None),
                        ("405900", "100500", "200100", "203300", None, None)):

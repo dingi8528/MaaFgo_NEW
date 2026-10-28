@@ -11,9 +11,9 @@ sys.path[:0] = [str(ROOT / "agent"), str(ROOT / "agent/custom")]
 
 from battle.core.decider import RuleDecider
 from battle.core.enums import Scene
-from battle.core.models import (BattleAction, BattleState, Confidence, EnemyState,
+from battle.core.models import (BattleAction, BattlePlan, BattleState, Confidence, EnemyState,
                                 MasterSkillAction, OrderChangeAction,
-                                ServantSkillAction, ServantState, SkillState)
+                                ServantSkillAction, ServantState, SkillState, TurnPlan)
 from battle.core.plan_parser import _parse_plan
 from battle.core.policy import StrategyProfile
 from battle.core.validator import (skip_unusable_master_skills,
@@ -57,7 +57,8 @@ class SkillEnemyTargetTests(unittest.TestCase):
         runtime = AutoBattleRuntime.__new__(AutoBattleRuntime)
         runtime.ctx = NS(tasker=NS(stopping=False))
         runtime.profile = StrategyProfile()
-        runtime.decider = NS(plan=object())
+        runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)))
+        runtime._turn_index = 0
         runtime.battle_policy = NS(skill=NS(use_master_skills=True))
         runtime.roster_servant_ids = ("one", "two", "three", "four", None, None)
         runtime.events = []
@@ -302,7 +303,7 @@ class SkillEnemyTargetTests(unittest.TestCase):
         runtime.initial_formation = None
         runtime.initial_formation_reused = False
         runtime.candidate_servant_ids = ()
-        runtime.decider = NS(plan=object(), decide=lambda *_args, **_kw: action)
+        runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)), decide=lambda *_args, **_kw: action)
         opened = [False]
         def observe(**_kw):
             return state(selected=runtime.selected, scene=Scene.VICTORY if opened[0] else Scene.MAIN_BATTLE)
@@ -332,7 +333,7 @@ class SkillEnemyTargetTests(unittest.TestCase):
         action = action_for([ServantSkillAction(1, 1, target_enemy=2)], target=1)
         runtime.initial_formation = None;runtime.initial_formation_reused = False
         runtime.candidate_servant_ids = ()
-        runtime.decider = NS(plan=object(), decide=lambda *_args, **_kw: action)
+        runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)), decide=lambda *_args, **_kw: action)
         alive = {1, 2, 3};opened = [False]
         def observe(**_kw):
             return state(scene=Scene.VICTORY if opened[0] else Scene.MAIN_BATTLE,

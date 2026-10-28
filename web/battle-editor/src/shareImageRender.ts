@@ -225,7 +225,7 @@ export async function renderShareImage(options:ShareImageOptions):Promise<Render
   box(ctx,PAD,top,CONTENT,geometry.mystic,COLOR.paper,COLOR.line,10);image(ctx,assets,model.mystic.image,PAD+18,top+15,72,92,'御主','contain');
   text(ctx,'御主礼装',PAD+110,top+16,470,14,COLOR.muted,20);text(ctx,model.mystic.name,PAD+110,top+44,470,25,COLOR.ink,34,true);text(ctx,model.mystic.level,PAD+110,top+geometry.mystic-28,200,14,COLOR.muted,20);
   model.mystic.skills.slice(0,3).forEach((skill,index)=>{const x=PAD+622+index*154;image(ctx,assets,skill.icon,x,top+18,40,40,String(skill.number),'contain');text(ctx,skill.name,x,top+65,140,14,COLOR.ink,20);});top+=geometry.mystic+28;
-  if(!model.turns.length){box(ctx,PAD,top,CONTENT,80,COLOR.paper,COLOR.line,10);text(ctx,'尚未配置战斗回合',PAD+24,top+25,CONTENT-48,21,COLOR.muted,30);top+=100;}
+  if(!model.turns.length){box(ctx,PAD,top,CONTENT,80,COLOR.paper,COLOR.line,10);text(ctx,'未设置回合逻辑 · 全程使用通用自动战斗',PAD+24,top+25,CONTENT-48,21,COLOR.muted,30);top+=100;}
   model.turns.forEach((turn,index)=>{
    const h=geometry.turns[index];box(ctx,PAD,top,CONTENT,h,COLOR.paper,COLOR.line,10);box(ctx,PAD+20,top+17,46,40,COLOR.deep,'',6);text(ctx,String(turn.number).padStart(2,'0'),PAD+28,top+24,34,20,'#ffffff',28,true);
    text(ctx,`第 ${turn.number} 回合`,PAD+82,top+22,500,25,COLOR.deep,34,true);text(ctx,'固定回合计划',W-PAD-170,top+28,145,14,COLOR.muted,20);

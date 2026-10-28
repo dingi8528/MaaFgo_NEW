@@ -12,7 +12,7 @@ V2：支持 BattlePlan（固定回合计划）。有计划时：
 from __future__ import annotations
 
 from itertools import permutations
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Protocol, Tuple
 
 from .enums import CardColor, PrimitiveKind, Scene
 from .models import (BattleAction, BattlePlan, BattleState, CardPick,
@@ -62,8 +62,9 @@ class RuleDecider:
 
     def _pick_enemy_target(self, state: BattleState, turn_index: int) -> int | None:
         # 目标取自攻略；未指定或目标已不在场时沿用既有选怪行为。
-        if self.plan is not None:
-            planned = self.plan.turn(turn_index).target_enemy
+        tp = self.plan.active_turn(turn_index) if self.plan is not None else None
+        if tp is not None:
+            planned = tp.target_enemy
             if planned is not None and any(
                 enemy.slot == planned and enemy.alive for enemy in state.enemies
             ):
@@ -72,8 +73,9 @@ class RuleDecider:
 
     def _decide_main_battle(self, state: BattleState, turn_index: int,
                             target) -> BattleAction:
-        if self.plan is None:
-            # 无计划：按 SkillPolicy 自动决策可用的从者技能
+        tp = self.plan.active_turn(turn_index) if self.plan is not None else None
+        if tp is None:
+            # 无计划或计划已结束：按 SkillPolicy 自动决策可用的从者技能
             servant_skills = _auto_servant_skills(state, self.skill_policy)
             return BattleAction(
                 target_enemy=target,
@@ -84,7 +86,6 @@ class RuleDecider:
                 rationale_tag="v2:main_battle_auto_skills"
             )
 
-        tp = self.plan.turn(turn_index)
         # 敌人目标已按攻略确定。技能状态过滤由 Runtime 的统一安全门处理，
         # 保证 RuleDecider 与未来其他 Decider 使用同一套跳过策略。
         # 日志：输出 Chaldea 计划的本回合技能队列
@@ -103,9 +104,7 @@ class RuleDecider:
 
     def _decide_command_selection(self, state: BattleState, turn_index: int,
                                   target) -> BattleAction:
-        tp: Optional[TurnPlan] = None
-        if self.plan is not None and 0 <= turn_index < len(self.plan.turns):
-            tp = self.plan.turn(turn_index)
+        tp = self.plan.active_turn(turn_index) if self.plan is not None else None
 
         if tp is not None and tp.card_sequence:
             picks = _resolve_planned_cards(tp, state, self.card_policy)
@@ -235,15 +234,15 @@ def _best_face_order(
     weights = {c: len(policy.color_priority) - i for i, c in enumerate(policy.color_priority)}
     goal_color = _GOAL_COLOR.get(policy.goal)
 
-    def score(seq: Tuple[CommandCard, ...]) -> tuple[int, float]:
+    def score(seq: Tuple[CommandCard, ...]) -> tuple[int, int, float]:
         s = 0.0
         n = len(seq)
         for pos, card in enumerate(seq):
             s += weights.get(card.color, 0) * (n - pos)      # 靠前的卡权重更高
         colors = {c.color for c in seq}
-        if len(colors) == 1:                                 # 同色链
+        if len(colors) == 1 and CardColor.UNKNOWN not in colors:  # 已识别的同色链
             s += 5.0
-        elif len(colors) == 3 and policy.prefer_mighty_chain:
+        elif colors == {CardColor.BUSTER, CardColor.ARTS, CardColor.QUICK} and policy.prefer_mighty_chain:
             # 三色连锁（红蓝绿各一张）：全卡享受三种首卡染色加成，
             # 顺序偏好取决于目标：
             #   FINISH_WAVE → QAB（绿垫刀，红末位吃最高倍率）
@@ -273,7 +272,8 @@ def _best_face_order(
                 s += 3.0
             if seq[-1].color is goal_color:
                 s += 2.0
-        return sum(card.can_attack for card in seq), s
+        return (sum(card.can_attack for card in seq),
+                sum(card.color is not CardColor.UNKNOWN for card in seq), s)
 
     best = max(permutations(cards, need), key=score)
     return [c.ui_slot for c in best]

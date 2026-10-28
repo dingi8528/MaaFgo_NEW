@@ -7,8 +7,12 @@ from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "agent"))
+sys.path.insert(0, str(ROOT / "agent/custom"))
 
 from battle.core.enums import CardColor
+from battle.core.decider import _best_face_order
+from battle.core.models import CommandCard, Confidence
+from battle.core.policy import CardPolicy
 from battle.perception.perception import _detect_card
 
 
@@ -55,12 +59,12 @@ class BattleCardColorTests(unittest.TestCase):
         for text in ("MArts", "Arts Chain", "Quickness", "Buster!", "技击卡", "", "   "):
             with self.subTest(text=text):
                 card = self.detect(text)
-                self.assertEqual(card.color, CardColor.BUSTER)
+                self.assertEqual(card.color, CardColor.UNKNOWN)
                 self.assertEqual(card.confidence.value, 0.0)
 
     def test_failed_recognition_keeps_zero_confidence_even_with_known_text(self):
         card = self.detect("Arts", hit=False)
-        self.assertEqual(card.color, CardColor.BUSTER)
+        self.assertEqual(card.color, CardColor.UNKNOWN)
         self.assertEqual(card.confidence.value, 0.0)
 
     def test_missing_recognition_detail_keeps_zero_confidence(self):
@@ -68,8 +72,22 @@ class BattleCardColorTests(unittest.TestCase):
             with self.subTest(result=result):
                 context = NS(run_recognition=Mock(return_value=result))
                 card = _detect_card(context, object(), 1)
-                self.assertEqual(card.color, CardColor.BUSTER)
+                self.assertEqual(card.color, CardColor.UNKNOWN)
                 self.assertEqual(card.confidence.value, 0.0)
+
+    def test_unknown_cards_do_not_beat_known_colors_as_a_fake_chain(self):
+        cards = tuple(CommandCard(i, color, None, Confidence(0 if color is CardColor.UNKNOWN else 1))
+                      for i, color in enumerate((CardColor.UNKNOWN, CardColor.UNKNOWN,
+                                                 CardColor.UNKNOWN, CardColor.QUICK,
+                                                 CardColor.ARTS), 1))
+        selected = _best_face_order(cards, 3, CardPolicy())
+        self.assertIn(4, selected)
+        self.assertIn(5, selected)
+        self.assertEqual(len(set(selected)), 3)
+
+    def test_unknown_cards_remain_available_for_safe_three_card_filling(self):
+        cards = tuple(CommandCard(i, CardColor.UNKNOWN, None, Confidence(0)) for i in range(1, 6))
+        self.assertEqual(_best_face_order(cards, 3, CardPolicy()), [1, 2, 3])
 
 
 if __name__ == "__main__":

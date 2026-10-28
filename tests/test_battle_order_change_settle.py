@@ -11,8 +11,8 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'agent'), str(ROOT / 'agent/custom')]
 from battle.core.enums import Scene
-from battle.core.models import (BattleAction, BattleState, Confidence, MasterSkillAction,
-                                OrderChangeAction, ServantSkillAction, ServantState, SkillState)
+from battle.core.models import (BattleAction, BattlePlan, BattleState, Confidence, MasterSkillAction,
+                                OrderChangeAction, ServantSkillAction, ServantState, SkillState, TurnPlan)
 from battle.core.policy import StrategyProfile
 from battle.runtime.runtime import AutoBattleRuntime, _ORDER_CHANGE_RETURN_TIMEOUT_S
 
@@ -43,7 +43,8 @@ class OrderChangeSettleTests(unittest.TestCase):
     def runtime(self):
         runtime = AutoBattleRuntime.__new__(AutoBattleRuntime)
         runtime.roster_servant_ids = INITIAL
-        runtime.decider = NS(plan=object())
+        runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)))
+        runtime._turn_index = 0
         runtime.battle_policy = NS(skill=NS(use_master_skills=True))
         runtime.events = []
         runtime._mark_action = Mock()
