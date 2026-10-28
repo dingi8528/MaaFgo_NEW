@@ -14,8 +14,10 @@ import time
 from dataclasses import dataclass, replace
 
 from ..core.decider import Decider
+from ..core.special_skills import SpecialSkillChoiceError
+from .special_skills import SpecialSkillDispatcher
 from ..core.enums import PrimitiveKind, Scene
-from ..core.models import (BattleState, CardPick, InitialFormation,
+from ..core.models import (BattlePlan, BattleState, CardPick, InitialFormation,
                            MasterSkillAction, OrderChangeAction,
                            ServantSkillAction, is_slot)
 from ..core.policy import BattlePolicy, StrategyProfile
@@ -550,6 +552,18 @@ class AutoBattleRuntime:
         return not required and not self.ctx.tasker.stopping
 
     def _execute_skills(self, action) -> bool:
+        plan = getattr(self.decider, "plan", None)
+        if (isinstance(plan, BattlePlan) and plan.special_choices.configured
+                and 0 <= self._turn_index < len(plan.turns)):
+            if getattr(self, "_special_choice_dispatcher", None) is None:
+                self._special_choice_dispatcher = SpecialSkillDispatcher(plan.special_choices)
+            try:
+                self._special_choice_dispatcher.check_skipped(
+                    plan.turns[self._turn_index], action, self.roster_servant_ids,
+                )
+            except SpecialSkillChoiceError as exc:
+                mfaalog.error(f"[AutoBattle] Chaldea 特殊技能选择失败: {exc}")
+                return False
         # 日志：输出实际要执行的技能队列（安全门过滤后）
         sequence = action.skill_sequence or (
             *action.servant_skills, *action.master_skills,
@@ -590,6 +604,7 @@ class AutoBattleRuntime:
                     (Scene.MAIN_BATTLE,),
                     _SKILL_ANIM_TIMEOUT_S,
                     default_target=sk.servant_slot,
+                    skill=sk,
                 ):
                     return False
                 continue
@@ -752,7 +767,7 @@ class AutoBattleRuntime:
         return {self._SPECIAL_SKILL_PIPELINE: {"next": kept}}
 
     def _execute_skill_cast(self, label, cast_callable, target_ally, return_scenes, return_timeout,
-                            default_target: int = 1):
+                            default_target: int = 1, *, skill=None):
         """通用技能执行核：cast → sleep 0.6s → 子流水线处理特殊覆盖层 → 等回主界面。
 
         特殊覆盖层（弹窗/目标选择/专属技能流程）的识别与点击已下沉到
@@ -772,7 +787,12 @@ class AutoBattleRuntime:
             )
             for slot in (1, 2, 3)
         }
-        entry = self._run_special_skill_pipeline(override)
+        try:
+            entry = (self._run_special_skill_pipeline(override, skill=skill) if skill is not None
+                     else self._run_special_skill_pipeline(override))
+        except SpecialSkillChoiceError as exc:
+            mfaalog.error(f"[AutoBattle] Chaldea 特殊技能选择失败: {exc}")
+            return False
         if entry in self._SKILL_SKIP_BRANCHES:
             mfaalog.info(f"[AutoBattle] special dialog '{entry}' handled; skill skipped")
             return True
@@ -782,7 +802,7 @@ class AutoBattleRuntime:
             mfaalog.info(f"[AutoBattle] special skill branch '{entry}' executed")
         return self._wait_until(return_scenes, return_timeout, tap_close=True)
 
-    def _run_special_skill_pipeline(self, pipeline_override=None):
+    def _run_special_skill_pipeline(self, pipeline_override=None, *, skill=None):
         """运行特殊技能子流水线，返回命中分支节点名（entry）；异常/未命中返回 None。
 
         next 末尾的 DirectHit 兜底节点保证「直接释放」也在一轮识别内正常结束，
@@ -790,12 +810,27 @@ class AutoBattleRuntime:
         处理覆盖层本身（关弹窗/选目标/选选项），不等待回主界面——那由外层
         _wait_until 负责。
         """
+        plan = getattr(self.decider, "plan", None)
+        use_choices = (isinstance(skill, ServantSkillAction) and isinstance(plan, BattlePlan)
+                       and plan.special_choices.configured and 0 <= self._turn_index < len(plan.turns))
         try:
             override = self._special_skill_pipeline_override()
             override.update(pipeline_override or {})
-            detail = self.ctx.run_task(self._SPECIAL_SKILL_PIPELINE,
-                                       pipeline_override=override)
+            if use_choices:
+                dispatcher = getattr(self, "_special_choice_dispatcher", None)
+                if dispatcher is None:
+                    dispatcher = self._special_choice_dispatcher = SpecialSkillDispatcher(plan.special_choices)
+                sid = self.roster_servant_ids[skill.servant_slot - 1]
+                detail = dispatcher.run(self.ctx, override, servant_id=canonical_servant_id(sid),
+                                        skill_index=skill.skill_index)
+            else:
+                detail = self.ctx.run_task(self._SPECIAL_SKILL_PIPELINE,
+                                           pipeline_override=override)
+        except SpecialSkillChoiceError:
+            raise
         except Exception as e:
+            if use_choices:
+                raise SpecialSkillChoiceError(f"特殊技能流水线异常，无法确认已配置的选项: {e}") from e
             mfaalog.error(f"[AutoBattle] special skill pipeline error: {e}")
             return None
         if detail is None:

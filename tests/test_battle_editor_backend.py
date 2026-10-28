@@ -213,7 +213,7 @@ class ValidationTests(unittest.TestCase):
     def test_unsupported_actions_special_options_card_types_and_targets_block_formal_save(self):
         for modify, code in (
             (lambda d: d["actions"].append({"type": "wait", "opaque": {"a": 1}}), "unsupported_action"),
-            (lambda d: d.update(delegate={"skillActSelectSelections": [1]}), "unsupported_delegate"),
+            (lambda d: d.update(delegate={"actWeightSelections": [1]}), "unsupported_delegate"),
             (lambda d: d["actions"][0].update(options={"enemyTarget": 3}), "invalid_integer"),
             (lambda d: d["actions"][0].update(attacks=[{"svt": 0, "card": 0, "cardType": 5}]), "unsupported_card_color"),
             (lambda d: d["actions"][0].update(attacks=[{"svt": 0, "cardType": 1}]), "invalid_deck_index"),

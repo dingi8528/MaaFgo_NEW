@@ -25,6 +25,7 @@ from maa.tasker import TaskerEventSink
 import mfaalog
 from battle.core.decider import RuleDecider
 from battle.core.models import BattlePlan
+from battle.core.special_skills import SpecialSkillChoiceError
 from battle.core.plan_parser import (_load_action_param, _parse_battle_policy,
                                     _parse_plan, _parse_strategy_profile)
 from battle.core.policy import StrategyProfile
@@ -91,7 +92,7 @@ class AutoBattleAction(CustomAction):
         try:
             if plan is None:
                 plan, chaldea_roster = _battle_setup_from_chaldea_share(param)
-        except TeamFetchError as e:
+        except (TeamFetchError, SpecialSkillChoiceError) as e:
             # 队伍下载失败: 明确失败并提示, 由 pipeline on_error 走终止分支
             mfaalog.error(f"[auto_battle] {e}")
             if token:

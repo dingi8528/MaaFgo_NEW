@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from .special_skills import SpecialSkillChoices
+
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
@@ -232,6 +234,7 @@ class BattlePlan:
     turns 为 0-based 索引列表；超出长度时返回空 TurnPlan（平A/宝具兜底）。
     """
     turns: Tuple[TurnPlan, ...] = ()
+    special_choices: SpecialSkillChoices = SpecialSkillChoices()
 
     def turn(self, index: int) -> TurnPlan:
         """获取第 index 回合（0-based）的计划；越界返回空计划。"""

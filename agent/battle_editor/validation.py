@@ -316,7 +316,21 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         else:
             known = {"actWeightSelections", "skillActSelectSelections", "tdTypeChanges", "ptRandomIndexes", "canActivateDecisions", "damageSelections", "replaceMemberIndexes"}
             unknown(delegate, known, "delegate")
-            for key in known - {"replaceMemberIndexes"}:
+            for key in ("tdTypeChanges", "skillActSelectSelections"):
+                values = delegate.get(key)
+                if values is None:
+                    continue
+                if not isinstance(values, list):
+                    error("delegate." + key, "invalid_array", "特殊选项必须是数组或 null")
+                    continue
+                allowed = (1, 2, 3) if key == "tdTypeChanges" else (0, 1, 2)
+                for index, value in enumerate(values):
+                    if key == "tdTypeChanges" and isinstance(value, str):
+                        value = {"arts": 1, "buster": 2, "quick": 3}.get(value)
+                    if type(value) is not int or value not in allowed:
+                        error(f"delegate.{key}[{index}]", "invalid_special_choice",
+                              f"无法对应游戏选项；支持 {allowed}，不支持模拟器的空选择")
+            for key in known - {"replaceMemberIndexes", "tdTypeChanges", "skillActSelectSelections"}:
                 if delegate.get(key) is not None and not isinstance(delegate[key], list):
                     error("delegate." + key, "invalid_array", "特殊选项必须是数组或 null")
                 elif delegate.get(key):

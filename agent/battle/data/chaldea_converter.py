@@ -26,6 +26,7 @@ from typing import List, Optional, Tuple
 import mfaalog
 
 from ..core.enums import CardColor, PrimitiveKind
+from ..core.special_skills import parse_special_skill_choices
 from ..core.models import (BattlePlan, MasterSkillAction, OrderChangeAction,
                            PlannedCard, ServantSkillAction, TurnPlan)
 
@@ -260,4 +261,4 @@ def convert_chaldea_actions_to_battle_plan(
     if not turns:
         turns.append(TurnPlan())
 
-    return BattlePlan(turns=tuple(turns))
+    return BattlePlan(turns=tuple(turns), special_choices=parse_special_skill_choices(delegate))
