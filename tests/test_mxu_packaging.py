@@ -38,6 +38,7 @@ class MxuPackagingTests(unittest.TestCase):
             "agent/battle_editor/bbc_import.py", "agent/chaldea/bbc_importer.py", "agent/chaldea/servant_types.py",
             "agent/custom/battle_editor_action.py", "agent/custom/bond_matcher.py",
             "agent/chaldea/servant_aliases.py", "agent/battle/card_composer.py",
+            "agent/battle/perception/composed_card.py",
             "打开编队编辑器.cmd", "docs/HTML编队与战斗逻辑工具使用说明.md",
         ):
             self.write(relative, "fixture")
@@ -51,6 +52,12 @@ class MxuPackagingTests(unittest.TestCase):
         self.write("agent/battle_editor/data/ui/media/formation.webp", b"webp-fixture")
         self.write("agent/battle_editor/data/media/skill/skill.png", b"skill-fixture")
         self.write("assets/resource/base/image/CommandCards/_composition/shared/frame.png", b"np-fixture")
+        self.document("assets/resource/base/image/CommandCards/manifest", {
+            "servants": {"100100": [{"file": "100100/card_servant_1.png"}]}})
+        for pack, region in (("base", "JP"), ("cn", "CN")):
+            self.document(f"assets/resource/{pack}/image/CommandCards/_composition/manifest", {
+                "region": region, "shared": {"frame": {}}, "np_names": {
+                    "100100": {"file": "np/100100/card_servant_np.png", "name_rows": [0]}}})
         self.document("agent/battle_editor/data/ui/manifest.json", {
             "schema": 1, "files": {"formation.webp": self.metadata(b"webp-fixture")}})
         self.document("agent/battle_editor/data/sources.json", {

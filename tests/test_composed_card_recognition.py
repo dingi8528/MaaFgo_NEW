@@ -18,6 +18,7 @@ from battle.core.enums import CardColor
 from battle.perception.composed_card import ComposedCardRecognizer
 
 ROSTER = ('504500', '105900', '505400')
+ASSET_SERVANTS = (*ROSTER, '800100', '202200')
 
 
 def canvas():
@@ -51,14 +52,14 @@ class ComposedCardTests(unittest.TestCase):
         cls.base = cls.project / 'assets/resource/base/image/CommandCards'
         cls.base.mkdir(parents=True)
         shutil.copy2(base / 'manifest', cls.base / 'manifest')
-        for sid in ROSTER:
+        for sid in ASSET_SERVANTS:
             shutil.copytree(base / sid, cls.base / sid)
         for region, origin in [('base', base), ('cn', ROOT / 'assets/resource/cn/image/CommandCards')]:
             target = cls.project / f'assets/resource/{region}/image/CommandCards/_composition'
             target.mkdir(parents=True)
             shutil.copy2(origin / '_composition/manifest', target / 'manifest')
             shutil.copytree(origin / '_composition/shared', target / 'shared')
-            for sid in ROSTER:
+            for sid in ASSET_SERVANTS:
                 shutil.copytree(origin / f'_composition/np/{sid}', target / f'np/{sid}')
         cls.composer = CommandCardComposer(cls.base, cache_size=128)
         cls.recognizer = ComposedCardRecognizer(cls.project)
@@ -212,6 +213,75 @@ class ComposedCardTests(unittest.TestCase):
             prepared = recognizer._prepare('105900', 'np')
             self.assertFalse(prepared.complete)
             self.assertTrue(prepared.templates)
+
+    def test_registered_mash_second_row_and_real_quick_np_with_auto_region(self):
+        # Exercise genuinely registered second-row/Quick resources rather than
+        # inventing a second row in an otherwise single-row NP texture.
+        for sid, color, row, expected_color in (
+                ('800100', 'arts', 1, CardColor.ARTS),
+                ('202200', 'quick', 0, CardColor.QUICK)):
+            with self.subTest(servant=sid, row=row):
+                image = canvas()
+                place(image, self.compose(sid, color, kind='np', variant=1, row=row), 1, 'np')
+                result = self.recognizer.detect_np(image, (sid, '105900', '505400'))[0]
+                self.assertTrue(result.visual_present, result)
+                self.assertTrue(result.authoritative, result)
+                self.assertEqual((result.owner_slot, result.servant_id, result.color),
+                                 (1, sid, expected_color))
+                self.assertIn(f':row{row}', result.template)
+
+    def live_frame(self, prefix):
+        # Raw local emulator evidence stays out of the repository. CI without
+        # these optional replay inputs still runs all portable asset contracts.
+        directory = ROOT / '.workbuddy/runtime/battle-live-20261028/frames'
+        paths = sorted(directory.glob(prefix + '*COMMAND_SELECTION*.png'))
+        if not paths:
+            self.skipTest('local JP battle replay frames are unavailable')
+        image = cv2.imdecode(np.fromfile(paths[0], np.uint8), cv2.IMREAD_COLOR)
+        self.assertIsNotNone(image)
+        return image
+
+    def test_live_roster_switch_rebinds_slots_and_does_not_reuse_removed_identity(self):
+        image = self.live_frame('002')
+        recognizer = ComposedCardRecognizer(self.project)
+        first_faces, first_np = recognizer.detect_all(image, ROSTER)
+        self.assertEqual(first_faces[0].owner_slot, 2)
+        self.assertTrue(first_np[1].visual_present)
+        swapped_faces, swapped_np = recognizer.detect_all(image, ('504500', '505400', '105900'))
+        self.assertEqual([r.owner_slot for r in swapped_faces], [3, 2, 2, 3, 3])
+        self.assertEqual([r.servant_id for r in swapped_faces], [r.servant_id for r in first_faces])
+        # Pixels still show Yamato's slot2 NP while the supplied roster now says
+        # Yui occupies slot2. Old cached evidence must not assert an NP for Yui.
+        self.assertFalse(any(r.visual_present for r in swapped_np))
+        removed_faces, removed_np = recognizer.detect_all(image, ('504500', '202200', '505400'))
+        self.assertFalse(any(r.servant_id == '105900' for r in removed_faces))
+        self.assertFalse(removed_np[1].visual_present)
+        self.assertTrue(removed_np[1].authoritative)
+
+    def test_live_jpeg_and_scale_preserve_quick_colour_sealed_np_and_background_negatives(self):
+        expected = {
+            '002': ([(2, CardColor.QUICK), (3, CardColor.ARTS), (3, CardColor.BUSTER),
+                     (2, CardColor.BUSTER), (2, CardColor.ARTS)], [2]),
+            '006': ([(2, CardColor.BUSTER), (3, CardColor.QUICK), (3, CardColor.ARTS),
+                     (3, CardColor.ARTS), (1, CardColor.ARTS)], [1]),
+            '014': ([(3, CardColor.QUICK), (3, CardColor.BUSTER), (1, CardColor.ARTS),
+                     (1, CardColor.ARTS), (2, CardColor.QUICK)], [1]),
+        }
+        for prefix, (expected_faces, expected_np) in expected.items():
+            original = self.live_frame(prefix)
+            for size, quality in (((640, 360), 80), ((1920, 1080), 80), ((640, 360), 50)):
+                with self.subTest(frame=prefix, size=size, jpeg_quality=quality):
+                    scaled = cv2.resize(original, size, interpolation=(cv2.INTER_AREA if size[0] < 1280
+                                                                      else cv2.INTER_LINEAR))
+                    ok, encoded = cv2.imencode('.jpg', scaled, [cv2.IMWRITE_JPEG_QUALITY, quality])
+                    self.assertTrue(ok)
+                    jpeg = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+                    faces, nps = self.recognizer.detect_all(jpeg, ROSTER)
+                    self.assertEqual([(r.owner_slot, r.color) for r in faces], expected_faces)
+                    # NP existence includes the sealed card in 006; availability
+                    # remains the separate restriction recognizer's decision.
+                    self.assertEqual([r.ui_slot for r in nps if r.visual_present], expected_np)
+                    self.assertTrue(all(r.authoritative for r in nps))
 
 
 if __name__ == '__main__':
