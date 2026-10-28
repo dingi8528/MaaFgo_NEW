@@ -407,6 +407,7 @@
                         }
                     },
                     {
+                        "sub_name": "base/进本流程/进本-断网重连/OCR1",
                         "recognition": {
                             "type": "OCR",
                             "param": {
