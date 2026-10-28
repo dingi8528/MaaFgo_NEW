@@ -301,6 +301,19 @@ MaaFgo/
 
 ### 回归验证
 
+修改 Pipeline 或选项 JSON 后，可先运行不依赖 MaaFramework 或设备的快速检查：
+
+```powershell
+python tools/run_tests.py --suite static
+```
+
+该入口检查 `assets/` 下除 `web/` 外所有 JSON 中的内联 OCR 名称。`And` / `Or` 的
+`all_of` / `any_of` 中，每个内联 OCR 项（包括多层嵌套）必须有非空且全局唯一的
+`sub_name`，与 `recognition` 同级，而不是放进 OCR 的 `param`。名称用于区分批量
+OCR 缓存，采用 `资源层/文件名/节点名/OCR序号`，例如
+`base/进本流程/进本-断网重连/OCR1`；复制识别项或新增资源层、选项覆盖时也须使用唯一名称。
+所有回归套件会先执行此检查，失败后立即退出。
+
 使用 Python 3.12 安装测试依赖后，可运行不依赖个人 BBC 安装目录或账号配置的回归：
 
 ```powershell

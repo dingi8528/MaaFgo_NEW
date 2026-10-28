@@ -69,6 +69,20 @@ test('skill and card availability follows the roster after swapping an unknown s
 });
 const fixture=():Json=>({unknown:{null:null,deep:['x',{test:true}]},team:{name:'原名',onFieldSvts:[{svtId:1,skillLvs:[10,0,2],appendLvs:[0,10,0,0,0],equip1:{ceId:123,deep:null}}, {svtId:2}, {svtId:3}],backupSvts:[{svtId:4},null,null],mysticCode:{mysticCodeId:20}},actions:[{type:'skill',svt:0,skill:0,unknown:['keep']},{type:'skill',svt:null,skill:2},{type:'skill',svt:0,skill:1},{type:'attack',attacks:[{svt:0,isTD:true,card:-1}],options:{enemyTarget:2}},{type:'attack',attacks:[]}],delegate:{replaceMemberIndexes:[[0,0]],unknown:'keep'}});
 test('new plans explicitly start with Chaldea mystic code 210 at level 10',()=>{const d=newBattle();assert.deepEqual(d.team.mysticCode,{mysticCodeId:210,level:10});assert.deepEqual(members(d),[null,null,null,null,null,null]);assert.deepEqual(d.actions,[]);});
+
+test('zero turns and a recorded empty turn stay distinct through JSON and turn deletion',()=>{
+ for(const form of ['missing','null','empty']){
+  const data:Json={team:{name:'仅编队',onFieldSvts:[{svtId:1,supportType:'friend'}]},future:{keep:[null,false]}};
+  if(form!=='missing')data.actions=form==='null'?null:[];
+  const original=clone(data);assertEditable(data);assert.equal(turnsOf(data).length,0);assert.deepEqual(data,original);
+  const empty={type:'attack',attacks:[],future:{keep:true}};
+  writeTurns(data,[{entries:[{raw:empty,index:0}]}]);
+  const restored=JSON.parse(JSON.stringify(data));
+  assert.equal(turnsOf(restored).length,1);assert.deepEqual(restored.actions,[empty]);
+  writeTurns(restored,[]);assert.equal(turnsOf(restored).length,0);assert.deepEqual(restored.actions,[]);
+  assert.deepEqual(restored.team,original.team);assert.deepEqual(restored.future,original.future);
+ }
+});
 test('each new plan owns independent formation, mystic code and action containers',()=>{const a=newBattle(),b=newBattle();a.team.mysticCode.level=1;a.team.mysticCode.mysticCodeId=20;setMember(a,0,{svtId:1});a.actions.push({type:'attack',attacks:[]});assert.deepEqual(b,newBattle());assert.notEqual(a.team,b.team);assert.notEqual(a.team.mysticCode,b.team.mysticCode);assert.notEqual(a.team.onFieldSvts,b.team.onFieldSvts);assert.notEqual(a.actions,b.actions);});
 test('import and draft projections preserve missing, null and different mystic code values',()=>{for(const team of [{},{mysticCode:null},{mysticCode:{}},{mysticCode:{mysticCodeId:20}},{mysticCode:{mysticCodeId:210,level:null}},{mysticCode:{mysticCodeId:1,level:5}}]){const imported:Json={team,actions:[],unknown:null},before=clone(imported);newBattle();assertEditable(imported);members(imported);turnsOf(imported);rosterAt(imported,0);assert.deepEqual(imported,before);}});
 test('new servant skill defaults follow task active 10 and five append zeros with independent arrays',()=>{const a=newServantDefaults(),b=newServantDefaults();assert.deepEqual(a,{supportType:'none',skillLvs:[10,10,10],appendLvs:[0,0,0,0,0]});a.skillLvs[0]=1;a.appendLvs[1]=10;assert.deepEqual(b,newServantDefaults());assert.notEqual(a.skillLvs,b.skillLvs);assert.notEqual(a.appendLvs,b.appendLvs);});

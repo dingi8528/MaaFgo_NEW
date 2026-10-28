@@ -1,4 +1,4 @@
-"""Offline, standalone command-card composition for future Agent callers.
+"""Offline, standalone command-card composition for Agent callers.
 
 No Maa imports, Pillow, networking or game-asset decoding. The caller supplies
 identity, artwork variant and card colour. NP callers must explicitly select
@@ -14,8 +14,8 @@ Example::
                                cv2.TM_CCOEFF_NORMED, mask=noble.mask)
 
 The layout is an experimental 720p-calibrated profile, not a reproduction of
-all runtime animations, status overlays or perspective transforms. Existing
-battle recognition does not call this module.
+all runtime animations, status overlays or perspective transforms. Battle
+recognition reuses it through perception.composed_card with overlay masks.
 """
 from __future__ import annotations
 

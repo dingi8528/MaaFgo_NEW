@@ -10,6 +10,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from formation_test_support import formation as f
 from battle.core.models import Confidence
+from battle.core.models import FormationSlot
 from battle.perception.formation_candidates import CandidatePool, FormationCandidateIndex
 import test_formation_identity as identity_fixtures
 
@@ -157,6 +158,26 @@ class FastReaderTests(unittest.TestCase):
             result = self.reader.read_frame(self.fixture.image, diagnostics=True)
         self.assertTrue(all(slot.servant_id is None for slot in result))
         self.assertTrue(all(slot.reason == "calibration_required" for slot in result))
+
+    def test_partial_reuse_only_coarse_and_exact_matches_unknown_slot(self):
+        known = tuple(FormationSlot(i, "identified", "1000", is_support=False)
+                      if i != 6 else FormationSlot(i, "unknown", is_support=False)
+                      for i in range(1, 7))
+        with self.fast_pool() as coarse, patch.object(self.reader, "_rank", wraps=self.reader._rank) as rank:
+            result = self.reader.read_frame(self.fixture.image, known_slots=known)
+        self.assertEqual(coarse.call_args.args[1], [f.SLOT_ROIS[5]])
+        self.assertEqual({tuple(call.args[1]) for call in rank.call_args_list}, {f.SLOT_ROIS[5]})
+        for before, after in zip(known[:5], result[:5]):
+            self.assertIs(before, after)
+        self.assertEqual(result[5].servant_id, "1000")
+        self.assertEqual([s["scope"] for s in self.reader.last_match_stats["slots"][:5]], ["verified_reuse"] * 5)
+
+    def test_partial_reuse_does_not_bypass_page_guard_and_audit_remains_independent(self):
+        known = tuple(FormationSlot(i, "identified", "2000", is_support=False) for i in range(1, 7))
+        with self.assertRaisesRegex(ValueError, "not_on_formation"):
+            self.reader.read_frame(np.zeros_like(self.fixture.image), known_slots=known)
+        audited = self.reader.read_frame(self.fixture.image, known_slots=known, full_audit=True)
+        self.assertTrue(all(slot.servant_id == "1000" for slot in audited))
 
 
 if __name__ == "__main__":

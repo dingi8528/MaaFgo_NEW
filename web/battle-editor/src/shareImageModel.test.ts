@@ -14,6 +14,21 @@ const catalog:Catalog={
 const config:CardPreviewConfig={enabled:true,regions:['JP','CN'],defaultRegion:'JP',endpoint:'/api/np-card',faceEndpoint:'/api/command-card'};
 function team():Json{return {team:{name:'测试方案',onFieldSvts:[{svtId:101,skillLvs:[10,8,0]},null,null],backupSvts:[{svtId:200,tdId:202,skillLvs:[6,7,8]},null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[],delegate:{replaceMemberIndexes:[]}};}
 
+test('share projection keeps zero turns distinct from an explicit empty attack',()=>{
+ const data=team(),original=structuredClone(data);
+ for(const form of ['missing','null','empty']){
+  if(form==='missing')delete data.actions;else data.actions=form==='null'?null:[];
+  assert.equal(shareImageModel(data,catalog).turns.length,0);
+ }
+ data.actions=[{type:'attack',attacks:[]}];
+ const model=shareImageModel(data,catalog);
+ assert.equal(model.turns.length,1);assert.equal(model.turns[0].actions.length,1);
+ const attack=model.turns[0].actions[0];assert.equal(attack.kind,'attack');
+ if(attack.kind!=='attack')throw new Error('expected attack');
+ assert.equal(attack.cards.length,3);assert.equal(attack.cards.every(card=>card.automatic),true);
+ assert.deepEqual(data.team,original.team);assert.deepEqual(data.actions,[{type:'attack',attacks:[]}]);
+});
+
 test('share rows resolve aliases and use the roster at the exact action point after a swap',()=>{
  const data=team();data.actions=[{type:'skill',svt:0,skill:0,options:{playerTarget:0}},{type:'skill',svt:null,skill:2},{type:'skill',svt:0,skill:1,options:{playerTarget:0,enemyTarget:2}},{type:'attack',attacks:[{isTD:true,svt:0}]}];
  data.delegate.replaceMemberIndexes=[[0,0]];

@@ -1,6 +1,6 @@
 {
     "战斗_仇凛2技能_色卡选择": {
-        "doc": "已标定：识别文案（变更为何种类型）+ ROI [366,151,563,94]；Q(327,402) A(650,399) B(943,393)；默认选 A（蓝卡主流），顺序即优先级",
+        "doc": "已标定：识别文案（变更为何种类型）+ ROI [366,151,563,94]；Q(327,402) A(650,399) B(943,393)。无配置时默认 A；Chaldea tdTypeChanges 按 1=Arts、2=Buster、3=Quick 由本次局部路由指定唯一选项。2026-10-29日服MaaMCP两场5AP已验证[2]命中选B、[3]命中选Q；子选项为DirectHit，必须先经本标题正向门禁，不能把子项放进菜单识别的Or。可参考战斗_梵高矿工1技能_Buster选择的同场独立队列验证。",
         "recognition": {
             "type": "OCR",
             "param": {
@@ -120,7 +120,7 @@
         ]
     },
     "战斗_库库尔坎_不消耗": {
-        "doc": "模板匹配不消耗按钮并点击识别位置（位置随消耗数文案宽度变化，点模板位置更稳）。next 兼容两种后续：2 技能弹目标子屏（串接选择），1/3 技能直接回主界面（DirectHit 终点结束）",
+        "doc": "模板匹配不消耗按钮并点击识别位置（位置随消耗数文案宽度变化，点模板位置更稳）。next 兼容两种后续：2 技能弹目标子屏（串接选择），1/3 技能直接回主界面（DirectHit 终点结束）。2026-10-29日服MaaMCP：明确Chaldea选项0时即使有10星仍只点击本节点，实机匹配0.973778；无配置时仍由父节点优先尝试可消耗项。",
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -148,7 +148,7 @@
         ]
     },
     "战斗_库库尔坎_暴击星消耗": {
-        "doc": "国日服暴击星选择标题：保留中文并匹配日文完整标题；标题ROI覆盖原中文区域及日文长标题。next优先消耗10可点击项，灰显时不消耗；子节点10001亮度敏感匹配和目标选择链不变。",
+        "doc": "国日服暴击星选择标题：保留中文并匹配日文完整标题；标题ROI覆盖原中文区域及日文长标题。无配置时next优先消耗10可点击项，灰显时不消耗；显式Chaldea配置由局部门禁只连接所选项，指定消耗遇灰态必须失败，不能回退不消耗。2026-10-29日服MaaMCP已验证选项0保留10星、S2选项1消耗10星并选从者3、随后S3在0星时停留灰色菜单且队列不前进；见战斗_库库尔坎_消耗10_可点击。",
         "recognition": {
             "type": "OCR",
             "param": {
@@ -171,7 +171,7 @@
         ]
     },
     "战斗_库库尔坎_消耗10_可点击": {
-        "doc": "模板匹配消耗按钮高亮态；method 必须用 10001（SQDIFF_NORMED 反转版，对亮度敏感）：默认 method=5 (CCOEFF_NORMED) 对线性亮度变化免疫，灰显按钮对亮色模板也能拿 0.9998 导致误命中（2026-09-10 实测复现）。10001 下灰显仅约 0.51、高亮约 1.0，阈值 0.8 干净切割。命中即代表暴击星足够，点识别位置。next 兼容两种后续：2 技能弹目标子屏（串接选择），1/3 技能直接回主界面（DirectHit 终点结束）",
+        "doc": "模板匹配消耗按钮高亮态；method 必须用 10001（SQDIFF_NORMED 反转版，对亮度敏感）：默认 method=5 (CCOEFF_NORMED) 对线性亮度变化免疫，灰显按钮对亮色模板也能拿 0.9998 导致误命中（2026-09-10 实测复现）。10001 下灰显仅约 0.51、高亮约 1.0，阈值 0.8 干净切割。命中即代表暴击星足够，点识别位置。next 兼容两种后续：2 技能弹目标子屏（串接选择），1/3 技能直接回主界面（DirectHit 终点结束）。2026-10-29日服MaaMCP亮态实测0.995982；0星灰态现场离线回放0.516532，显式Chaldea选项1正确失败并保留菜单，不走默认不消耗。",
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -455,7 +455,7 @@
         "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
     },
     "战斗_梵高矿工1技能_Quick选择": {
-        "doc": "梵高〔矿工〕S1 备选：Quick（index 0），未挂入默认入口。技能本体要求至少 10 个暴击星。",
+        "doc": "梵高〔矿工〕S1 备选：Quick（index 0），未挂入默认入口。技能本体要求至少 10 个暴击星。2026-10-29日服MaaMCP：S2先产生20星后，Chaldea skillActSelectSelections=[0]经本节点成功释放；同场太空伊什塔尔tdTypeChanges=[3]由独立队列消费。",
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -485,7 +485,7 @@
         "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
     },
     "战斗_梵高矿工1技能_Buster选择": {
-        "doc": "梵高〔矿工〕S1 备选：Buster（index 2），未挂入默认入口。",
+        "doc": "梵高〔矿工〕S1 备选：Buster（index 2），未挂入默认入口。2026-10-29日服MaaMCP：S2产生20星后，Chaldea skillActSelectSelections=[2]命中本节点并完成释放；S2无菜单，不推进选择队列。可参考战斗_仇凛2技能_色卡选择的同场红宝具配置。",
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -676,5 +676,80 @@
         "post_wait_freezes": 500,
         "post_delay": 500,
         "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"]
+    },
+    "战斗_特殊技能_未支持选项": {
+        "doc": "仅有Chaldea特殊选择数据时，由Runtime放在无覆盖层兜底前；拒绝把未知菜单当作直接施法或普通选人。命中后Python停止，不点击任何按钮。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [200, 130, 880, 130], "expected": ["選択してください|请选择|請選擇"]
+        }},
+        "action": {"type": "DoNothing"},
+        "next": [],
+        "on_error": []
+    },
+    "战斗_玉兔2技能_单体宝具选择": {
+        "doc": "SelectAddInfo index 1：日輪(単体タイプ)。索引依据 Atlas JP 技能2535550，使用按钮文字OCR；尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["日輪|日轮|単体タイプ|单体宝具|單體寶具"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
+    },
+    "战斗_岸波白野3技能_地之力选择": {
+        "doc": "SelectAddInfo index 1：威力アップ〔地の力〕。按原始按钮文案OCR，尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["地の力|地之力"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
+    },
+    "战斗_岸波白野3技能_人之力选择": {
+        "doc": "SelectAddInfo index 2：威力アップ〔人の力〕。按原始按钮文案OCR，尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["人の力|人之力"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
+    },
+    "战斗_静希草十郎3技能_绿卡选择": {
+        "doc": "SelectAddInfo index 0：Quick。按按钮文字OCR，尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["^Quick$|绿卡|綠卡"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
+    },
+    "战斗_静希草十郎3技能_蓝卡选择": {
+        "doc": "SelectAddInfo index 1：Arts。按按钮文字OCR，尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["^Arts$|蓝卡|藍卡"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
+    },
+    "战斗_巴格斯特3技能_单体宝具选择": {
+        "doc": "SelectAddInfo index 1：単体化する。按按钮完整文案OCR避免命中‘単体化しない’，尚无本次实机验收。",
+        "recognition": {"type": "OCR", "param": {
+            "roi": [120, 350, 1040, 150], "expected": ["^単体化する$|^单体宝具$|^單體寶具$"]
+        }},
+        "action": {"type": "Click"},
+        "post_wait_freezes": 500,
+        "post_delay": 500,
+        "next": ["战斗_技能目标子屏", "战斗_特殊技能_已回主界面"],
+        "on_error": []
     }
 }

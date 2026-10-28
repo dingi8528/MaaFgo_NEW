@@ -296,6 +296,13 @@ def convert_actions_to_bbc_rounds(
 
         elif action_type == "attack":
             attacks = action.get("attacks", [])
+            if (attacks is None or attacks == []) and not current_skills:
+                # BBC drops a wholly empty configured turn, which would enable
+                # its free skill/NP policy instead of preserving a normal-card turn.
+                raise ValueError(
+                    "BBC 无法无损表达不使用技能和宝具的纯空回合；"
+                    "请使用原生战斗保留该回合的默认普通卡选取规则。"
+                )
             if isinstance(attacks, list):
                 for atk in attacks:
                     if not isinstance(atk, dict):
@@ -330,6 +337,8 @@ def chaldea_to_bbc(share_data: dict) -> dict:
 
     team_data = share_data.get("team", {})
     actions = share_data.get("actions", [])
+    if actions is None:
+        actions = []
     delegate = share_data.get("delegate") or {}
 
     if not isinstance(team_data, dict):

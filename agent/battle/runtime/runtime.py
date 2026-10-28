@@ -14,10 +14,12 @@ import time
 from dataclasses import dataclass, replace
 
 from ..core.decider import Decider
+from ..core.special_skills import SpecialSkillChoiceError
+from .special_skills import SpecialSkillDispatcher
 from ..core.enums import PrimitiveKind, Scene
-from ..core.models import (BattleState, CardPick, InitialFormation,
+from ..core.models import (BattlePlan, BattleState, CardPick, InitialFormation,
                            MasterSkillAction, OrderChangeAction,
-                           ServantSkillAction, is_slot)
+                           ServantSkillAction, VERIFIED_FORMATION_SOURCE, is_slot)
 from ..core.policy import BattlePolicy, StrategyProfile
 from ..core.validator import (
     skip_unusable_servant_skills,
@@ -105,6 +107,11 @@ class AutoBattleRuntime:
         self.executor = Executor(context, controller)
         self._turn_index = 0
         self._selection_cards = ()
+
+    def _has_active_plan(self) -> bool:
+        plan = getattr(self.decider, "plan", None)
+        return (isinstance(plan, BattlePlan)
+                and plan.active_turn(self._turn_index) is not None)
 
     def run(self) -> BattleResult:
         scope = getattr(self, "_special_skill_servant_ids", None)
@@ -286,8 +293,9 @@ class AutoBattleRuntime:
                 mfaalog.info("[AutoBattle] Picks executed, waiting for attack animation to settle...")
                 # 选完第 3 张自动发动 -> 等动画结束
                 if not self._wait_turn_settled():
-                    mfaalog.info(f"[AutoBattle] Stuck after attack (no scene change within {_ANIMATION_TIMEOUT_S}s). turns={turns}")
-                    return BattleResult.fail("stuck_after_attack", turns)
+                    reason = getattr(self, "_post_attack_failure_reason", "stuck_after_attack")
+                    mfaalog.error(f"[AutoBattle] 出卡后等待失败: {reason}；保留当前画面停止。 turns={turns}")
+                    return BattleResult.fail(reason, turns)
                 if self._post_attack_returned_to_map:
                     # 剧情后直接返回地图的关卡没有普通结算；交回调用方复核，
                     # 不将剧情按钮本身视为胜利，也不进入下一回合。
@@ -342,11 +350,10 @@ class AutoBattleRuntime:
         if result.scene is Scene.MAIN_BATTLE and any(candidates):
             self._update_frontline(result.servants)
 
-        # 有 Chaldea 计划时：技能 CD 检测无意义（计划已精确指定何时放技能），
+        # 当前回合有 Chaldea 计划时：技能 CD 检测无意义（计划已精确指定何时放技能），
         # 且 ColorMatch ROI 可能因分辨率/缩放偏移导致误判为 CD。
         # 将所有技能标记为可用，避免被安全门过滤掉。
-        has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
-        if has_plan:
+        if self._has_active_plan():
             result = self._patch_skills_available(result)
             mfaalog.info("[AutoBattle] _observe() -> plan active, present servants' skills patched to available")
 
@@ -550,6 +557,18 @@ class AutoBattleRuntime:
         return not required and not self.ctx.tasker.stopping
 
     def _execute_skills(self, action) -> bool:
+        plan = getattr(self.decider, "plan", None)
+        if (isinstance(plan, BattlePlan) and plan.special_choices.configured
+                and 0 <= self._turn_index < len(plan.turns)):
+            if getattr(self, "_special_choice_dispatcher", None) is None:
+                self._special_choice_dispatcher = SpecialSkillDispatcher(plan.special_choices)
+            try:
+                self._special_choice_dispatcher.check_skipped(
+                    plan.turns[self._turn_index], action, self.roster_servant_ids,
+                )
+            except SpecialSkillChoiceError as exc:
+                mfaalog.error(f"[AutoBattle] Chaldea 特殊技能选择失败: {exc}")
+                return False
         # 日志：输出实际要执行的技能队列（安全门过滤后）
         sequence = action.skill_sequence or (
             *action.servant_skills, *action.master_skills,
@@ -590,14 +609,14 @@ class AutoBattleRuntime:
                     (Scene.MAIN_BATTLE,),
                     _SKILL_ANIM_TIMEOUT_S,
                     default_target=sk.servant_slot,
+                    skill=sk,
                 ):
                     return False
                 continue
 
             if isinstance(step, MasterSkillAction):
                 sk = step
-                has_plan = hasattr(self.decider, 'plan') and self.decider.plan is not None
-                if not has_plan and not self.battle_policy.skill.use_master_skills:
+                if not self._has_active_plan() and not self.battle_policy.skill.use_master_skills:
                     mfaalog.info(f"[AutoBattle] master skill skipped (use_master_skills=False): idx={sk.skill_index}")
                     continue
                 if not (
@@ -712,7 +731,8 @@ class AutoBattleRuntime:
             return None, "no_actual_formation"
         if self.initial_formation_reused:
             return None, "formation_not_reconfirmed_this_battle"
-        if initial.source != "formation_confirmation" or initial.calibration_id in ("", "unverified"):
+        if (initial.source not in ("formation_confirmation", VERIFIED_FORMATION_SOURCE)
+                or initial.calibration_id in ("", "unverified")):
             return None, "formation_not_calibrated"
         if any(slot.status not in {"identified", "empty"} for slot in initial.slots):
             return None, "formation_contains_unknown"
@@ -752,7 +772,7 @@ class AutoBattleRuntime:
         return {self._SPECIAL_SKILL_PIPELINE: {"next": kept}}
 
     def _execute_skill_cast(self, label, cast_callable, target_ally, return_scenes, return_timeout,
-                            default_target: int = 1):
+                            default_target: int = 1, *, skill=None):
         """通用技能执行核：cast → sleep 0.6s → 子流水线处理特殊覆盖层 → 等回主界面。
 
         特殊覆盖层（弹窗/目标选择/专属技能流程）的识别与点击已下沉到
@@ -772,7 +792,12 @@ class AutoBattleRuntime:
             )
             for slot in (1, 2, 3)
         }
-        entry = self._run_special_skill_pipeline(override)
+        try:
+            entry = (self._run_special_skill_pipeline(override, skill=skill) if skill is not None
+                     else self._run_special_skill_pipeline(override))
+        except SpecialSkillChoiceError as exc:
+            mfaalog.error(f"[AutoBattle] Chaldea 特殊技能选择失败: {exc}")
+            return False
         if entry in self._SKILL_SKIP_BRANCHES:
             mfaalog.info(f"[AutoBattle] special dialog '{entry}' handled; skill skipped")
             return True
@@ -782,7 +807,7 @@ class AutoBattleRuntime:
             mfaalog.info(f"[AutoBattle] special skill branch '{entry}' executed")
         return self._wait_until(return_scenes, return_timeout, tap_close=True)
 
-    def _run_special_skill_pipeline(self, pipeline_override=None):
+    def _run_special_skill_pipeline(self, pipeline_override=None, *, skill=None):
         """运行特殊技能子流水线，返回命中分支节点名（entry）；异常/未命中返回 None。
 
         next 末尾的 DirectHit 兜底节点保证「直接释放」也在一轮识别内正常结束，
@@ -790,12 +815,27 @@ class AutoBattleRuntime:
         处理覆盖层本身（关弹窗/选目标/选选项），不等待回主界面——那由外层
         _wait_until 负责。
         """
+        plan = getattr(self.decider, "plan", None)
+        use_choices = (isinstance(skill, ServantSkillAction) and isinstance(plan, BattlePlan)
+                       and plan.special_choices.configured and 0 <= self._turn_index < len(plan.turns))
         try:
             override = self._special_skill_pipeline_override()
             override.update(pipeline_override or {})
-            detail = self.ctx.run_task(self._SPECIAL_SKILL_PIPELINE,
-                                       pipeline_override=override)
+            if use_choices:
+                dispatcher = getattr(self, "_special_choice_dispatcher", None)
+                if dispatcher is None:
+                    dispatcher = self._special_choice_dispatcher = SpecialSkillDispatcher(plan.special_choices)
+                sid = self.roster_servant_ids[skill.servant_slot - 1]
+                detail = dispatcher.run(self.ctx, override, servant_id=canonical_servant_id(sid),
+                                        skill_index=skill.skill_index)
+            else:
+                detail = self.ctx.run_task(self._SPECIAL_SKILL_PIPELINE,
+                                           pipeline_override=override)
+        except SpecialSkillChoiceError:
+            raise
         except Exception as e:
+            if use_choices:
+                raise SpecialSkillChoiceError(f"特殊技能流水线异常，无法确认已配置的选项: {e}") from e
             mfaalog.error(f"[AutoBattle] special skill pipeline error: {e}")
             return None
         if detail is None:
@@ -811,9 +851,11 @@ class AutoBattleRuntime:
 
     def _wait_turn_settled(self) -> bool:
         self._post_attack_returned_to_map = False
+        self._post_attack_failure_reason = "stuck_after_attack"
         mfaalog.info(f"[AutoBattle] _wait_turn_settled() timeout={_ANIMATION_TIMEOUT_S}s")
         result = self._wait_until(_TERMINAL_OR_MAIN, _ANIMATION_TIMEOUT_S,
-                                  tap_close=True, handle_story=True)
+                                  tap_close=True, handle_story=True,
+                                  command_selection_timeout_s=3.0)
         mfaalog.info(f"[AutoBattle] _wait_turn_settled() result={result}")
         return result
 
@@ -842,11 +884,14 @@ class AutoBattleRuntime:
         return ok
 
     def _wait_until(self, scenes, timeout_s: float, tap_close: bool = False,
-                    handle_story: bool = False) -> bool:
+                    handle_story: bool = False,
+                    command_selection_timeout_s: float | None = None) -> bool:
         mfaalog.info(f"[AutoBattle] _wait_until() scenes={[s.name for s in scenes]} timeout={timeout_s}s")
         deadline = time.monotonic() + timeout_s
         story_seen = False
         map_since = None
+        command_selection_since = None
+        command_selection_observations = 0
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 mfaalog.info("[AutoBattle] _wait_until() detected stop signal, aborting wait")
@@ -859,6 +904,24 @@ class AutoBattleRuntime:
             if scene in scenes:
                 mfaalog.info(f"[AutoBattle] _wait_until() matched scene={scene.name}")
                 return True
+            if command_selection_timeout_s is not None and scene is Scene.COMMAND_SELECTION:
+                now = time.monotonic()
+                if command_selection_since is None:
+                    command_selection_since = now
+                command_selection_observations += 1
+                if (command_selection_observations >= 2
+                        and now - command_selection_since >= command_selection_timeout_s):
+                    self._post_attack_failure_reason = "card_selection_not_submitted"
+                    mfaalog.error(
+                        "[AutoBattle] 三次出卡操作后仍持续停留在选卡界面，"
+                        "出卡选择未完成；保留画面停止，不自动补卡。"
+                    )
+                    return False
+                # 卡牌未提交时不点击关闭或重试，避免更改用户当前选择。
+                time.sleep(0.5)
+                continue
+            command_selection_since = None
+            command_selection_observations = 0
             if handle_story and scene is Scene.UNKNOWN:
                 handled = self._handle_post_attack_story(img)
                 if handled is False:
