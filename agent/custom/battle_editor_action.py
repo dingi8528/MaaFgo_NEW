@@ -44,6 +44,9 @@ class OpenBattleEditor(CustomAction):
             elif operation == "open":
                 owner_pid, owner_created = _mxu_owner()
                 result = open_editor(root, owner_pid=owner_pid, owner_created=owner_created)
+                if result.replaced_pid is not None:
+                    mfaalog.info(f"[编队编辑器] 已正常退出旧服务 PID={result.replaced_pid}，原目录：{result.replaced_project_root}")
+                    mfaalog.warning("[编队编辑器] 旧页面已断开；尚未同步的修改仍留在原页面，可下载JSON备份后使用本次新打开的页面。")
                 mfaalog.info(f"[编队编辑器] {'复用' if result.reused else '启动'}服务：{result.url}")
                 mfaalog.info(f"[编队编辑器] 保存目录：{root / 'config' / 'Battle'}")
                 if owner_pid is None and not result.reused:

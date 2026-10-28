@@ -21,10 +21,11 @@ def main(argv=None):
     parser.add_argument("--owner-pid", type=int)
     parser.add_argument("--owner-created", type=float)
     parser.add_argument("--idle-timeout", type=float, default=3600)
+    parser.add_argument("--require-project-binding", action="store_true")
     args = parser.parse_args(argv)
     root = args.project_root.resolve()
     try:
-        server = create_server(root, args.port, owner_pid=args.owner_pid, owner_created=args.owner_created, idle_timeout=args.idle_timeout)
+        server = create_server(root, args.port, owner_pid=args.owner_pid, owner_created=args.owner_created, idle_timeout=args.idle_timeout, require_project_binding=args.require_project_binding)
         log_dir = server.storage.editor_dir
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", handlers=[logging.FileHandler(log_dir / "service.log", encoding="utf-8")], force=True)
         logging.info("编队编辑器已启动：%s", server.health())

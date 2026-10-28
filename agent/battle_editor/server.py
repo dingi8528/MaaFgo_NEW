@@ -32,11 +32,12 @@ class EditorHTTPServer(ThreadingHTTPServer):
     # TIME_WAIT. Keep Windows' existing bind behavior; never enable SO_REUSEPORT.
     allow_reuse_address = os.name != "nt"
 
-    def __init__(self, root: str | Path, port: int = DEFAULT_PORT, *, owner_pid: int | None = None, owner_created: float | None = None, idle_timeout: float = 3600):
+    def __init__(self, root: str | Path, port: int = DEFAULT_PORT, *, owner_pid: int | None = None, owner_created: float | None = None, idle_timeout: float = 3600, require_project_binding: bool = False):
         if owner_pid is not None and owner_created is None:
             raise ValueError("MXU 宿主必须同时提供 PID 与进程创建时间")
         self.storage = BattleStorage(root)
         self.root = self.storage.root
+        self.require_project_binding = require_project_binding
         self.mode = "mxu" if owner_pid is not None else "standalone"
         self.owner_pid, self.owner_created = owner_pid, owner_created
         self.owner_executable = None
@@ -65,7 +66,7 @@ class EditorHTTPServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), EditorHandler)
 
     def health(self) -> dict:
-        return {"service": SERVICE_NAME, "protocolVersion": PROTOCOL_VERSION, "projectId": project_identity(self.root), "pid": os.getpid(), "projectRoot": str(self.root), "mode": self.mode, "ownerPid": self.owner_pid, "ownerCreated": self.owner_created, "startedAt": self.started_at, "idleTimeout": self.idle_timeout}
+        return {"service": SERVICE_NAME, "protocolVersion": PROTOCOL_VERSION, "projectId": project_identity(self.root), "pid": os.getpid(), "projectRoot": str(self.root), "mode": self.mode, "ownerPid": self.owner_pid, "ownerCreated": self.owner_created, "startedAt": self.started_at, "idleTimeout": self.idle_timeout, "requiresProjectBinding": self.require_project_binding}
 
     def capabilities(self) -> dict:
         return {"projectRoot": str(self.root), "battleDirectory": str(self.storage.battle_dir), "mode": self.mode, "idleTimeout": self.idle_timeout, "features": {"formation": True, "skills": True, "masterSkills": True, "orderChange": True, "mixedCards": True, "enemyTarget": True, "drafts": True, "hashConflicts": True, "backups": True, "conditionalActions": False, "customSkillSelections": False, "applyToCurrentTask": False}, "defaults": DEFAULTS, "npCardPreview": {"enabled": True, "regions": ["JP", "CN"], "defaultRegion": "JP", "endpoint": "/api/np-card", "faceEndpoint": "/api/command-card"}}
@@ -414,9 +415,16 @@ class EditorHandler(BaseHTTPRequestHandler):
         if path == "/health" and method == "GET":
             self._json(200, self.server.health())
             return
+        if path.startswith("/api/"):
+            project = self.headers.get("X-Editor-Project")
+            if project is None and self.server.require_project_binding:
+                raise EditorError("project_required", "此服务需要绑定安装目录，请从本次启动器打开新页面；旧页面内容仍保留。", 403)
+            if project is not None and (len(self.headers.get_all("X-Editor-Project", [])) != 1
+                    or project != project_identity(self.server.root)):
+                raise EditorError("project_mismatch", "当前端口已切换到另一份 MaaFGO，拒绝将旧页面的数据写入此目录；请从启动器打开新页面。", 409)
         if path == "/api/session" and method == "GET":
             self.server.last_activity = time.monotonic()
-            self._json(200, {"token": self.server.token})
+            self._json(200, {"token": self.server.token, "projectId": project_identity(self.server.root)})
             return
         if path.startswith("/api/"):
             self._security(token=True)

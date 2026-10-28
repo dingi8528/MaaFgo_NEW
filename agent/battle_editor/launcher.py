@@ -2,18 +2,29 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+import getpass
+import hashlib
 import json
 import os
 from pathlib import Path
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 import webbrowser
+
+if __package__ in (None, ""):
+    # The portable CMD executes this file directly, including with embedded Python.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from battle_editor.storage import project_identity
+else:
+    from .storage import project_identity
 
 
 DEFAULT_PORT = 18765
@@ -34,6 +45,8 @@ class LaunchResult:
     reused: bool = False
     browser_opened: bool = False
     log_path: str = ""
+    replaced_pid: int | None = None
+    replaced_project_root: str | None = None
 
 
 def _root(value: str | Path | None = None) -> Path:
@@ -46,8 +59,10 @@ def _url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def _request(url: str, *, token: str | None = None, body: dict | None = None) -> dict:
+def _request(url: str, *, token: str | None = None, body: dict | None = None, project_id: str | None = None) -> dict:
     headers = {"Accept": "application/json"}
+    if project_id is not None:
+        headers["X-Editor-Project"] = project_id
     if token is not None:
         headers["X-Editor-Token"] = token
     payload = None
@@ -70,9 +85,8 @@ def _port_in_use(port: int) -> bool:
         return stream.connect_ex(("127.0.0.1", port)) == 0
 
 
-def service_status(project_root: str | Path | None = None, port: int = DEFAULT_PORT) -> dict | None:
-    """Return this installation's health, or reject an occupied foreign service."""
-    root = _root(project_root)
+def _service_health(port: int) -> dict | None:
+    """Read compatible editor identity without implicitly adopting its directory."""
     base = _url(port)
     try:
         health = _request(base + "/health")
@@ -82,16 +96,141 @@ def service_status(project_root: str | Path | None = None, port: int = DEFAULT_P
                 f"端口 {port} 已被其他程序占用，或编辑器尚未就绪；不会打开其他服务。"
             ) from exc
         return None
-    if health.get("service") != SERVICE_NAME or health.get("protocolVersion") != PROTOCOL_VERSION:
+    if (health.get("service") != SERVICE_NAME or type(health.get("protocolVersion")) is not int
+            or health["protocolVersion"] != PROTOCOL_VERSION):
         raise EditorLaunchError(f"端口 {port} 的服务不是兼容的 MaaFGO 编队编辑器")
     actual_root = health.get("projectRoot")
-    if not isinstance(actual_root, str) or os.path.normcase(str(_root(actual_root))) != os.path.normcase(str(root)):
-        raise EditorLaunchError(
-            f"端口 {port} 正在服务另一份 MaaFGO：{actual_root}；请先停止那份编辑服务。"
-        )
+    if not isinstance(actual_root, str) or not actual_root or not Path(actual_root).is_absolute():
+        raise EditorLaunchError("编辑器返回了无效的安装目录")
     if type(health.get("pid")) is not int or health["pid"] <= 0:
         raise EditorLaunchError("编辑器返回了无效的进程身份")
+    try:
+        expected_id = project_identity(_root(actual_root))
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise EditorLaunchError("编辑器返回了无效的安装目录") from exc
+    if health.get("projectId") not in (None, expected_id):
+        raise EditorLaunchError("编辑器返回的项目身份与安装目录不一致")
     return health
+
+
+def _same_root(first, second) -> bool:
+    return os.path.normcase(str(_root(first))) == os.path.normcase(str(_root(second)))
+
+
+def service_status(project_root: str | Path | None = None, port: int = DEFAULT_PORT) -> dict | None:
+    """Status/stop remain scoped to this installation, even with launch takeover."""
+    health = _service_health(port)
+    if health is not None and not _same_root(health["projectRoot"], _root(project_root)):
+        raise EditorLaunchError(f"端口 {port} 正在服务另一份 MaaFGO：{health['projectRoot']}；本目录状态查询不会接管它。")
+    return health
+
+
+@contextmanager
+def _launch_lock(port: int, timeout: float):
+    """Serialize launches across installations, without retaining a lock in the daemon."""
+    user = hashlib.sha256(getpass.getuser().encode("utf-8")).hexdigest()[:16]
+    path = Path(tempfile.gettempdir()) / f"{SERVICE_NAME}-{user}-{port}.lock"
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    acquired = False
+    try:
+        if os.fstat(descriptor).st_size == 0:
+            os.write(descriptor, b"0")
+        deadline = time.monotonic() + max(0.1, timeout)
+        while True:
+            try:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise EditorLaunchError("另一启动器正在处理此端口，请稍后重试") from exc
+                time.sleep(0.05)
+        yield
+    finally:
+        if acquired:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def _verify_backend_process(health: dict, port: int):
+    """Only a matching editor entry owning this listener may be asked to retire."""
+    try:
+        import psutil
+        process = psutil.Process(health["pid"])
+        created, command = process.create_time(), process.cmdline()
+        root = _root(health["projectRoot"])
+        entry = root / "agent" / "battle_editor" / "main.py"
+        def option(name):
+            return command[command.index(name) + 1] if name in command and command.index(name) + 1 < len(command) else None
+        if (not any(_same_root(arg, entry) for arg in command[1:] if arg and not arg.startswith("-"))
+                or option("--project-root") is None or not _same_root(option("--project-root"), root)
+                or option("--port") != str(port)):
+            raise EditorLaunchError("旧服务的启动参数不能确认为编队后端，拒绝自动停止")
+        if not any(connection.status == psutil.CONN_LISTEN and connection.laddr
+                   and connection.laddr.ip == "127.0.0.1" and connection.laddr.port == port
+                   for connection in process.net_connections(kind="tcp")):
+            raise EditorLaunchError("旧服务PID与端口监听身份不一致，拒绝自动停止")
+        if not process.is_running() or process.create_time() != created:
+            raise EditorLaunchError("旧服务进程身份已变化，请重试启动")
+        return process, created, command
+    except ImportError as exc:
+        raise EditorLaunchError("缺少psutil，无法核实旧后端身份；请手动停止旧服务") from exc
+    except (psutil.Error, OSError, ValueError) as exc:
+        raise EditorLaunchError("无法核实旧后端进程身份，未停止任何程序") from exc
+
+
+def _retire_service(health: dict, port: int, timeout: float):
+    process, created, command = _verify_backend_process(health, port)
+    import psutil
+    base = _url(port)
+    project_id = project_identity(_root(health["projectRoot"]))
+    try:
+        session = _request(base + "/api/session", project_id=project_id)
+        current = _service_health(port)
+        identity = ("pid", "projectRoot", "projectId", "startedAt")
+        if (current is None or any(current.get(key) != health.get(key) for key in identity)
+                or not process.is_running() or process.create_time() != created or process.cmdline() != command):
+            raise EditorLaunchError("旧服务身份在接管期间发生变化，未发送退出请求")
+        _request(base + "/api/shutdown", token=session["token"], body={}, project_id=project_id)
+    except (psutil.Error, OSError, ValueError, KeyError, urllib.error.URLError) as exc:
+        raise EditorLaunchError("旧后端未完成正常退出请求，未强制终止进程；请稍后重试") from exc
+    deadline = time.monotonic() + max(0.1, timeout)
+    while process.is_running():
+        try:
+            # POSIX children can be fully exited but not yet reaped by their launcher.
+            if process.status() == psutil.STATUS_ZOMBIE:
+                break
+        except psutil.NoSuchProcess:
+            break
+        except psutil.Error as exc:
+            raise EditorLaunchError("无法确认旧后端已退出，未强制终止进程；请稍后重试") from exc
+        if time.monotonic() >= deadline:
+            raise EditorLaunchError("旧后端仍在完成已接收的请求，暂不启动新服务；未强制终止进程，请稍后重试")
+        time.sleep(0.05)
+    if _port_in_use(port):
+        raise EditorLaunchError("旧后端已退出，但端口被另一程序占用；未停止该程序，请重试")
+
+
+def _check_install(root: Path):
+    entry = root / "agent" / "battle_editor" / "main.py"
+    if not entry.is_file():
+        raise EditorLaunchError(f"编辑器服务文件缺失：{entry}")
+    static_roots = (root / "assets" / "web" / "battle-editor", root / "web" / "battle-editor")
+    if not any((path / "index.html").is_file() and not (path / "src").is_dir() for path in static_roots):
+        raise EditorLaunchError("编辑器页面未构建或缺失，请在开发目录运行 npm --prefix web/battle-editor run build")
+    return entry
 
 
 def _open_browser(url: str) -> bool:
@@ -101,7 +240,7 @@ def _open_browser(url: str) -> bool:
         return False
 
 
-def open_editor(
+def _open_editor_locked(
     project_root: str | Path | None = None,
     *,
     port: int = DEFAULT_PORT,
@@ -110,24 +249,26 @@ def open_editor(
     owner_created: float | None = None,
     idle_timeout: int = 3600,
     timeout: float = 20.0,
+    replace_existing: bool = True,
 ) -> LaunchResult:
     """Start or reuse the detached server, confirm readiness, then open its UI."""
     root = _root(project_root)
     base = _url(port)
     log_path = root / "config" / "BattleEditor" / "service.log"
-    health = service_status(root, port)
+    health = _service_health(port)
+    replaced = None
+    if health is not None and not _same_root(health["projectRoot"], root):
+        if not replace_existing:
+            raise EditorLaunchError(f"端口 {port} 正在服务另一份 MaaFGO：{health['projectRoot']}；自动接管已禁用。")
+        _check_install(root)
+        _retire_service(health, port, min(timeout, 10.0))
+        replaced, health = health, None
     reused = health is not None
     if health is None:
-        entry = root / "agent" / "battle_editor" / "main.py"
-        if not entry.is_file():
-            raise EditorLaunchError(f"编辑器服务文件缺失：{entry}")
-        # Fail before launching a daemon if the player received an incomplete build.
-        static_roots = (root / "assets" / "web" / "battle-editor", root / "web" / "battle-editor")
-        if not any((path / "index.html").is_file() and not (path / "src").is_dir() for path in static_roots):
-            raise EditorLaunchError("编辑器页面未构建或缺失，请在开发目录运行 npm --prefix web/battle-editor run build")
+        entry = _check_install(root)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         args = [sys.executable, "-X", "utf8", str(entry), "--project-root", str(root), "--port", str(port),
-                "--idle-timeout", str(idle_timeout)]
+                "--idle-timeout", str(idle_timeout), "--require-project-binding"]
         if owner_pid is not None:
             args += ["--owner-pid", str(owner_pid)]
         if owner_created is not None:
@@ -184,12 +325,25 @@ def open_editor(
                     child.kill()
                     child.wait(timeout=3)
             raise EditorLaunchError(f"编辑器启动超时。{last_error or ''} 日志：{log_path}")
-    url = base + "/"
+    url = base + "/?project=" + project_identity(root)
     return LaunchResult(
         url=url, pid=int(health["pid"]), project_root=str(root),
         mode=str(health.get("mode", "standalone")), reused=reused,
         browser_opened=_open_browser(url) if open_browser else False, log_path=str(log_path),
+        replaced_pid=replaced["pid"] if replaced else None,
+        replaced_project_root=replaced["projectRoot"] if replaced else None,
     )
+
+
+def open_editor(project_root: str | Path | None = None, *, port: int = DEFAULT_PORT,
+                open_browser: bool = True, owner_pid: int | None = None,
+                owner_created: float | None = None, idle_timeout: int = 3600,
+                timeout: float = 20.0, replace_existing: bool = True) -> LaunchResult:
+    _url(port)
+    with _launch_lock(port, timeout):
+        return _open_editor_locked(project_root, port=port, open_browser=open_browser,
+            owner_pid=owner_pid, owner_created=owner_created, idle_timeout=idle_timeout,
+            timeout=timeout, replace_existing=replace_existing)
 
 
 def stop_editor(project_root: str | Path | None = None, *, port: int = DEFAULT_PORT) -> bool:
@@ -198,8 +352,9 @@ def stop_editor(project_root: str | Path | None = None, *, port: int = DEFAULT_P
         return False
     base = _url(port)
     try:
-        session = _request(base + "/api/session")
-        _request(base + "/api/shutdown", token=session["token"], body={})
+        project_id = project_identity(root)
+        session = _request(base + "/api/session", project_id=project_id)
+        _request(base + "/api/shutdown", token=session["token"], body={}, project_id=project_id)
     except (OSError, ValueError, KeyError, urllib.error.URLError) as exc:
         raise EditorLaunchError(f"停止服务失败：{exc}") from exc
     deadline = time.monotonic() + 5
@@ -220,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--owner-pid", type=int)
     parser.add_argument("--owner-created", type=float)
     parser.add_argument("--idle-timeout", type=int, default=3600)
+    parser.add_argument("--no-takeover", action="store_true", help="不自动替换另一安装目录的编辑服务")
     args = parser.parse_args(argv)
     try:
         if args.stop:
@@ -230,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
             value = asdict(open_editor(
                 args.project_root, port=args.port, open_browser=not args.no_browser,
                 owner_pid=args.owner_pid, owner_created=args.owner_created, idle_timeout=args.idle_timeout,
+                replace_existing=not args.no_takeover,
             ))
         if sys.stdout is not None:
             print(json.dumps(value, ensure_ascii=False))
