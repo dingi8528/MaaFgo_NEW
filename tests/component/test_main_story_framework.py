@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import maa
+import cv2
 import numpy as np
 from maa.controller import CustomController
 from maa.custom_action import CustomAction
@@ -63,6 +64,93 @@ class FrameworkTests(unittest.TestCase):
                 self.assertEqual(route[:5], ["巡-初始化左滑"] * 5)
                 self.assertEqual(route[-1], "巡-左4c")
                 self.assertEqual(next_names(resource.get_node_data("全局-战前吃体力")), ["全局-体力不足"])
+
+    def test_formation_start_uses_existing_start_button_templates(self):
+        for server in ("cn", "jp"):
+            with self.subTest(server=server):
+                resource = self.resource(server)
+                node = resource.get_node_data("进本-队伍确认")
+                templates = node["recognition"]["param"]["template"]
+                for template in templates:
+                    with self.subTest(template=template):
+                        path = ROOT / "assets/resource" / server / "image" / template
+                        if not path.is_file():
+                            path = ROOT / "assets/resource/base/image" / template
+                        button = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        self.assertIsNotNone(button)
+                        image = np.zeros((720, 1280, 3), np.uint8)
+                        h, w = button.shape[:2]
+                        image[720-h:720, 1280-w:1280] = button
+                        controller = ScreenController(image)
+                        self.assertTrue(controller.post_connection().wait().succeeded)
+                        outcomes, errors = [], []
+
+                        class Probe(CustomAction):
+                            def run(self, ctx, argv):
+                                try:
+                                    runner = StoryRunner(ctx.clone())
+                                    outcomes.append(runner.locate())
+                                    return True
+                                except Exception as exc:
+                                    errors.append(repr(exc))
+                                    return False
+
+                        resource.register_custom_action("formation_start_probe", Probe())
+                        tasker = Tasker()
+                        self.assertTrue(tasker.bind(resource, controller))
+                        status = tasker.post_task("formation_start_probe", {
+                            "formation_start_probe": {"action": {"type": "Custom", "param": {
+                                "custom_action": "formation_start_probe"
+                            }}}
+                        }).wait()
+                        self.assertTrue(status.succeeded, errors)
+                        self.assertEqual(outcomes, [None])
+                        self.assertEqual(controller.clicks, [])
+                        self.assertEqual(controller.swipes, [])
+
+    def test_close_fallback_recognizes_only_button_in_bottom_region(self):
+        for server in ("cn", "jp"):
+            resource = self.resource(server)
+            folder = "cn" if server == "cn" else "base"
+            path = ROOT / "assets/resource" / folder / "image/close_botton.png"
+            button = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            h, w = button.shape[:2]
+            for x, y, expected in ((600, 570, True), (100, 100, False)):
+                with self.subTest(server=server, position=(x, y)):
+                    image = np.zeros((720, 1280, 3), np.uint8)
+                    image[y:y+h, x:x+w] = button
+                    controller = ScreenController(image)
+                    self.assertTrue(controller.post_connection().wait().succeeded)
+                    hits, errors = [], []
+
+                    class Probe(CustomAction):
+                        def run(self, ctx, argv):
+                            try:
+                                runner = StoryRunner(ctx.clone())
+                                result = runner.reco("主线-编队弹窗关闭保底", image)
+                                hits.append(bool(result))
+                                if result:
+                                    runner.action("主线-编队弹窗关闭保底", result)
+                                return True
+                            except Exception as exc:
+                                errors.append(repr(exc))
+                                return False
+
+                    resource.register_custom_action("close_fallback_probe", Probe())
+                    tasker = Tasker()
+                    self.assertTrue(tasker.bind(resource, controller))
+                    status = tasker.post_task("close_fallback_probe", {
+                        "close_fallback_probe": {"action": {"type": "Custom", "param": {
+                            "custom_action": "close_fallback_probe"
+                        }}}
+                    }).wait()
+                    self.assertTrue(status.succeeded, errors)
+                    self.assertEqual(hits, [expected])
+                    self.assertEqual(len(controller.clicks), int(expected))
+                    if expected:
+                        click_x, click_y = controller.clicks[0]
+                        self.assertTrue(x <= click_x < x+w and y <= click_y < y+h)
+                    self.assertEqual(controller.swipes, [])
 
     def test_main_story_abort_fails_without_global_recovery_or_inputs(self):
         reason = "已进入编队，但关卡要求指定首发队员；请按编制限制弹窗手动调整"

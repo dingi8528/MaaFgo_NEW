@@ -1,4 +1,4 @@
-"""独立主线调度：每关重判地图/列表，战斗复用单场入口。"""
+"""独立主线调度：支持编队页继续，每关重判地图/列表，战斗复用单场入口。"""
 import html
 import time
 
@@ -120,8 +120,13 @@ class StoryRunner:
         return bool(self.reco("主线-地图菜单", image) and self.reco("主线-地图控件", image))
 
     def battle_ready(self, image):
+        self.check_formation_restriction(image)
         return any(self.reco(n, image) for n in
                    ("主线-助战界面", "进本-队伍确认", "进本-战斗主界面已出现"))
+
+    def check_formation_restriction(self, image):
+        if self.reco("主线-编制限制", image):
+            raise StoryStopped("关卡存在编成限制，需要手动调整；请按弹窗要求设置首发队员后重新启动自动推主线")
 
     def failure(self, image):
         if any(self.reco(n, image) for n in ("战斗失败_不回主界面", "失败2_不回主界面")):
@@ -129,6 +134,8 @@ class StoryRunner:
 
     def interrupt(self, image, *, entering=False, forming=False):
         """已识别事件才操作；剧情跳过分帧确认，避免切换中重复点击。"""
+        if entering or forming:
+            self.check_formation_restriction(image)
         if entering and self.reco("全局-战前吃体力", image):
             entry = self.ctx.get_node_data("全局-战前吃体力") or {}
             if next_names(entry) == ["全局-体力不足"]:
@@ -153,7 +160,8 @@ class StoryRunner:
             return True
         names = ["进本-关闭告知弹窗"]
         if entering or forming:
-            names[:0] = ["进本-自动编队确认", "进本-编成条件提示", "进本-攻略提示关闭"]
+            names[:0] = ["进本-自动编队确认", "进本-编成条件提示", "进本-攻略提示关闭",
+                         "主线-编队弹窗关闭保底"]
         if entering:
             names = ["主线-纯剧情任务开始", "进本-编队提示-点击开始",
                      "进本-点击任务开始"] + names
@@ -169,12 +177,18 @@ class StoryRunner:
         return False
 
     def locate(self):
-        """返回列表中的 NEXT；严格先列表，再当前目标，最后单步轮巡。"""
+        """返回列表中的 NEXT；已在编队页时返回 None，继续当前关卡。"""
         swipes = iter(map_swipes(self.ctx))
         empty_panels = 0
         deadline = self.clock() + self.timeout
         while self.clock() < deadline:
             image = self.frame()
+            # 弹窗可能透出开始按钮，先处理弹窗并重新截图，再交给当前关卡。
+            if self.interrupt(image, forming=True):
+                continue
+            # 弹窗处理后复用原生进本的开始按钮识别。
+            if self.reco("进本-队伍确认", image):
+                return None
             if self.panel(image):
                 result = self.find_in_panel(image)
                 if result:
@@ -201,9 +215,8 @@ class StoryRunner:
                 self.pause(1)
                 deadline = self.clock() + self.timeout
                 continue
-            if not self.interrupt(image):
-                self.pause()
-        raise StoryStopped("无法确认主线地图或副本列表，请检查当前画面")
+            self.pause()
+        raise StoryStopped("无法确认主线地图、副本列表或编队界面，请检查当前画面")
 
     def find_in_panel(self, image):
         # 先检查当前位置，再滚到顶部，随后向下有限查找。
@@ -298,8 +311,6 @@ class StoryRunner:
         formation_since = None
         while self.clock() < deadline:
             image = self.frame()
-            if self.reco("主线-编制限制", image):
-                raise StoryStopped("已进入编队，但关卡要求指定首发队员；请按编制限制弹窗手动调整")
             if self.interrupt(image, forming=True):
                 formation_since = None
                 self.pause()
@@ -395,7 +406,7 @@ class StoryRunner:
     def run(self):
         while self.completed < self.limit:
             target = self.locate()
-            kind = self.enter(target)
+            kind = "battle" if target is None else self.enter(target)
             if kind == "battle":
                 self.fight()
                 self.settle()
