@@ -20,6 +20,8 @@ _BATTLE_RESET = (
 )
 _CUSTOM_SUPPORT_NODES = ("助战action", "Chaldea助战action")
 _SUPPORT_NODES = ("进本-选择助战", *_CUSTOM_SUPPORT_NODES)
+# 补点前的二次确认超过此时间即丢弃，不能把慢识别期间的旧坐标点到助战页。
+_QUEST_RETRY_FRAME_MAX_AGE = 2.0
 
 
 class StoryStopped(RuntimeError):
@@ -372,10 +374,29 @@ class StoryRunner:
                 if self.clock() - return_since >= 3 and self.clock() >= self.skip_settle_until:
                     return "story"
             elif panel and not departed and self.clock() - last_click > 5:
-                if clicks >= 3:
-                    raise StoryStopped("主线关卡点击无效，可能存在锁定条件")
+                # 前面的逐项识别可能已耗时数秒，原截图上的列表此时可能变成助战。
+                # 重拍并重新处理进本状态，禁止用旧帧上的 NEXT 坐标直接补点。
+                image = self.frame()
+                captured_at = self.clock()
+                self.failure(image)
+                if self.battle_ready(image):
+                    return "battle"
+                is_story = bool(self.reco("跳过剧情-点击跳过", image))
+                if self.interrupt(image, entering=True):
+                    story_seen |= is_story
+                    departed |= is_story
+                    return_since = None
+                    continue
+                if not self.panel(image):
+                    # 加载或其他过渡画面不补点，下一轮继续按新截图判断。
+                    continue
                 result = self.reco("主线-列表NEXT", image)
                 if result:
+                    if self.clock() - captured_at > _QUEST_RETRY_FRAME_MAX_AGE:
+                        mfaalog.info("[自动推主线] 补点确认截图已过期，放弃本次点击并重新识别")
+                        continue
+                    if clicks >= 3:
+                        raise StoryStopped("主线关卡点击无效，可能存在锁定条件")
                     self.action("主线-列表NEXT", result)
                     clicks += 1
                     last_click = self.clock()

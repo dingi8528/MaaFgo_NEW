@@ -421,6 +421,85 @@ class RoutingTests(unittest.TestCase):
             r.enter(NS(box=[1, 1, 1, 1]))
         self.assertEqual(len(c.actions), 3)
 
+    def test_slow_list_recognition_refreshes_before_retry_at_battle_handoff(self):
+        for handoff in ("主线-助战界面", "进本-队伍确认", "进本-战斗主界面已出现"):
+            with self.subTest(handoff=handoff):
+                old = PANEL | {NEXT}
+                r, c = runner([old, {handoff}])
+                original = r.reco
+
+                def slow_reco(name, image):
+                    if image is old and name == "主线-副本列表信息":
+                        r.sleep(6)
+                    return original(name, image)
+
+                with patch.object(r, "reco", side_effect=slow_reco):
+                    self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "battle")
+                self.assertEqual([n for n, _ in c.actions], [NEXT])
+                self.assertEqual(c.tasks, [])
+
+    def test_retry_refresh_waits_through_loading_without_clicking(self):
+        old = PANEL | {NEXT}
+        r, c = runner([old, set(), {"主线-助战界面"}])
+        original = r.reco
+
+        def slow_reco(name, image):
+            if image is old and name == "主线-副本列表信息":
+                r.sleep(6)
+            return original(name, image)
+
+        with patch.object(r, "reco", side_effect=slow_reco):
+            self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "battle")
+        self.assertEqual([n for n, _ in c.actions], [NEXT])
+
+    def test_retry_refresh_handles_ap_popup_before_visible_list(self):
+        old = PANEL | {NEXT}
+        r, c = runner([old, old | {"全局-战前吃体力"}])
+        original = r.reco
+
+        def slow_reco(name, image):
+            if image is old and name == "主线-副本列表信息":
+                r.sleep(6)
+            return original(name, image)
+
+        with patch.object(r, "reco", side_effect=slow_reco):
+            with self.assertRaisesRegex(StoryStopped, "AP 不足"):
+                r.enter(NS(box=[1, 1, 1, 1]))
+        self.assertEqual([n for n, _ in c.actions], [NEXT])
+        self.assertEqual(c.tasks, [])
+
+    def test_retry_uses_target_coordinates_from_fresh_frame(self):
+        old, fresh = PANEL | {NEXT}, PANEL | {NEXT}
+        r, c = runner([old, fresh, {"主线-助战界面"}])
+        original = r.reco
+
+        def reco(name, image):
+            if image is old and name == "主线-副本列表信息":
+                r.sleep(6)
+            if image is fresh and name == NEXT:
+                return NS(hit=True, box=[900, 350, 1, 1])
+            return original(name, image)
+
+        with patch.object(r, "reco", side_effect=reco), \
+             patch.object(c, "run_action", wraps=c.run_action) as action:
+            self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "battle")
+        self.assertEqual([n for n, _ in c.actions], [NEXT, NEXT])
+        self.assertEqual(action.call_args_list[1].args[1], [900, 350, 1, 1])
+
+    def test_slow_fresh_confirmation_drops_retry_click(self):
+        old, fresh = PANEL | {NEXT}, PANEL | {NEXT}
+        r, c = runner([old, fresh, {"主线-助战界面"}])
+        original = r.reco
+
+        def slow_reco(name, image):
+            if name == "主线-副本列表信息":
+                r.sleep(6 if image is old else 3)
+            return original(name, image)
+
+        with patch.object(r, "reco", side_effect=slow_reco):
+            self.assertEqual(r.enter(NS(box=[1, 1, 1, 1])), "battle")
+        self.assertEqual([n for n, _ in c.actions], [NEXT])
+
     def test_settlement_returns_to_map_or_panel_without_home(self):
         for screen in [MAP, PANEL]:
             with self.subTest(screen=screen):
