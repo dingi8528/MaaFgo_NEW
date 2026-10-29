@@ -112,8 +112,10 @@ class FrameworkTests(FrameworkResources, unittest.TestCase):
                         self.assertEqual(controller.swipes, [])
 
     def test_close_fallback_recognizes_only_button_in_bottom_region(self):
+        node_name = "主线-编队弹窗关闭保底"
         for server in ("cn", "jp"):
             resource = self.resource(server)
+            roi = resource.get_node_data(node_name)["recognition"]["param"]["roi"]
             folder = "cn" if server == "cn" else "base"
             path = ROOT / "assets/resource" / folder / "image/close_botton.png"
             button = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -124,16 +126,19 @@ class FrameworkTests(FrameworkResources, unittest.TestCase):
                     image[y:y+h, x:x+w] = button
                     controller = ScreenController(image)
                     self.assertTrue(controller.post_connection().wait().succeeded)
-                    hits, errors = [], []
+                    hits, errors, boxes, ocr_details = [], [], [], []
 
                     class Probe(CustomAction):
                         def run(self, ctx, argv):
                             try:
                                 runner = StoryRunner(ctx.clone())
-                                result = runner.reco("主线-编队弹窗关闭保底", image)
+                                result = runner.reco(node_name, image)
                                 hits.append(bool(result))
                                 if result:
-                                    runner.action("主线-编队弹窗关闭保底", result)
+                                    box = result.box
+                                    boxes.append((box.x, box.y, box.w, box.h))
+                                    ocr_details.append(result.raw_detail)
+                                    runner.action(node_name, result)
                                 return True
                             except Exception as exc:
                                 errors.append(repr(exc))
@@ -148,11 +153,30 @@ class FrameworkTests(FrameworkResources, unittest.TestCase):
                         }}}
                     }).wait()
                     self.assertTrue(status.succeeded, errors)
-                    self.assertEqual(hits, [expected])
-                    self.assertEqual(len(controller.clicks), int(expected))
+                    diagnostic = {"server": server, "patch": (x, y, w, h), "roi": roi,
+                                  "ocr_boxes": boxes, "clicks": controller.clicks, "ocr": ocr_details}
+                    self.assertEqual(hits, [expected], diagnostic)
+                    self.assertEqual(len(controller.clicks), int(expected), diagnostic)
                     if expected:
+                        self.assertEqual(len(boxes), 1, diagnostic)
+                        bx, by, bw, bh = boxes[0]
+                        rx, ry, rw, rh = roi
+                        self.assertGreater(bw, 0, diagnostic)
+                        self.assertGreater(bh, 0, diagnostic)
+                        self.assertTrue(rx <= bx and ry <= by and bx+bw <= rx+rw and by+bh <= ry+rh,
+                                        diagnostic)
+                        # OCR can expand around tightly cropped text. Require a
+                        # localized box, rejecting an entire-ROI fallback, rather
+                        # than treating the PNG crop as the action's target box.
+                        intersection = (max(0, min(x+w, bx+bw)-max(x, bx))
+                                        * max(0, min(y+h, by+bh)-max(y, by)))
+                        union = w*h + bw*bh - intersection
+                        self.assertGreaterEqual(intersection / union, 0.5, diagnostic)
                         click_x, click_y = controller.clicks[0]
-                        self.assertTrue(x <= click_x < x+w and y <= click_y < y+h)
+                        self.assertTrue(bx <= click_x < bx+bw and by <= click_y < by+bh, diagnostic)
+                        self.assertTrue(rx <= click_x < rx+rw and ry <= click_y < ry+rh, diagnostic)
+                    else:
+                        self.assertEqual(boxes, [], diagnostic)
                     self.assertEqual(controller.swipes, [])
 
     def test_main_story_abort_fails_without_global_recovery_or_inputs(self):
