@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .special_choices import match_special_skill
+
 ORDER_CHANGE_IDS = {20, 210, 440}
 MAX_VALIDATION_ISSUES = 200
 CARD_TYPES = {1: "arts", 2: "buster", 3: "quick", "1": "arts", "2": "buster", "3": "quick", "arts": "arts", "buster": "buster", "quick": "quick"}
@@ -381,6 +383,40 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         return result()
     summary["actions"] = len(actions)
     swap_pointer = 0
+    special_pointers = {"tdTypeChanges": 0, "skillActSelectSelections": 0}
+    ambiguous_special_fields = set()
+
+    def check_special_choice(member, skill, path, loc):
+        sid = member.get("svtId") if isinstance(member, dict) else None
+        group, applicable = match_special_skill(member, skill, by_id.get(sid, {}))
+        if group is None or not isinstance(delegate, dict):
+            return
+        field = group["field"]
+        values = delegate.get(field)
+        # Missing/null/empty queues retain the native menu's existing default.
+        if not isinstance(values, list) or not values:
+            return
+        if applicable is not True:
+            ambiguous_special_fields.add(field)
+            error(path + ".skill", "special_choice_variant_unresolved",
+                  "此技能的强化版本没有已确认的选项菜单，但方案配置了同类特殊选择队列；"
+                  "当前执行器无法安全跳过该动作，请选择支持菜单的强化技能，或移除该类队列。", **loc)
+            return
+        if field in ambiguous_special_fields:
+            return
+        index = special_pointers[field]
+        special_pointers[field] += 1
+        if index >= len(values):
+            error("delegate." + field, "special_choice_exhausted",
+                  f"特殊选择队列已耗尽：此动作为 {field} 的第 {index + 1} 次选择，请补齐选项。", **loc)
+            return
+        value = values[index]
+        if field == "tdTypeChanges" and isinstance(value, str):
+            value = {"arts": 1, "buster": 2, "quick": 3}.get(value)
+        if type(value) is int and value not in [option["value"] for option in group["options"]]:
+            error(f"delegate.{field}[{index}]", "special_choice_out_of_range",
+                  "该选择值不在当前技能的菜单中，请重新选择该动作的技能效果。", **loc)
+
     trailing_skill = False
     trailing_skill_start = None
     no_np_turns: list[tuple[int, int, str]] = []
@@ -419,6 +455,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                     error(path + ".svt", "unspecified_support_actor", "该动作时点的助战未指定从者，不能安排从者技能；请先在编队中选择从者。", **loc)
                 elif requires_target(members[svt], skill) and options.get("playerTarget") is None:
                     error(path + ".options.playerTarget", "required_ally_target", "该技能的已知元数据要求选择我方目标", **loc)
+                check_special_choice(members[svt], skill, path, loc)
             else:
                 summary["masterSkills"] += 1
                 if not mystic_id:
@@ -520,6 +557,12 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
             error(path + ".type", "unsupported_action", f"当前执行器不支持动作 {kind!r}；保留原值，可存草稿或下载保真副本", **loc)
     if swap_pointer < len(swaps):
         error("delegate.replaceMemberIndexes", "unused_swap", "存在没有对应换人服技能 3 的换人配置，请检查御主礼装和动作")
+    if isinstance(delegate, dict):
+        for field, consumed in special_pointers.items():
+            values = delegate.get(field)
+            if isinstance(values, list) and len(values) > consumed and field not in ambiguous_special_fields:
+                warning("delegate." + field, "unused_special_choices",
+                        f"还有 {len(values) - consumed} 个特殊选择未能对应到已知技能动作；原值保留，请核对强化版本与动作顺序。")
     if trailing_skill:
         warning("actions", "trailing_skills", "末尾技能没有攻击边界，当前转换器将补一个回合并使用默认出卡")
         summary["turns"] += 1

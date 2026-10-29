@@ -232,6 +232,15 @@ def _determine_assist_info(formation: TeamFormation) -> Tuple[int, str, Union[st
     return assist_idx, assist_mode, assist_equip, used_servant
 
 
+def _reject_special_skill_choices(delegate) -> None:
+    if not isinstance(delegate, dict):
+        return
+    fields = [key for key in ("tdTypeChanges", "skillActSelectSelections") if delegate.get(key)]
+    if fields:
+        raise ValueError("BBC 无法无损执行 Chaldea 特殊技能选项（" + "、".join(fields)
+                         + "）；请使用原生自动战斗，不能忽略选项后转换。")
+
+
 def convert_actions_to_bbc_rounds(
     actions: List[dict],
     delegate: Optional[dict] = None,
@@ -246,6 +255,7 @@ def convert_actions_to_bbc_rounds(
     - 7-9: 从者2的技能1-3
     - 10-12: 御主技能1-3
     """
+    _reject_special_skill_choices(delegate)
     rounds_config: Dict[str, Any] = {}
     current_skills: List[Union[int, List]] = []
     current_nps: List[int] = []
@@ -340,6 +350,7 @@ def chaldea_to_bbc(share_data: dict) -> dict:
     if actions is None:
         actions = []
     delegate = share_data.get("delegate") or {}
+    _reject_special_skill_choices(delegate)
 
     if not isinstance(team_data, dict):
         logger.error("[Chaldea] team 字段类型错误")

@@ -71,10 +71,14 @@ function subject(ctx:CanvasRenderingContext2D,assets:Map<string,Asset>,person:Sh
  text(ctx,`${person.position}${person.support?' · 助战':''}`,x+61,y,width-61,12,COLOR.muted,17);
  text(ctx,person.name,x+61,y+20,width-61,19,COLOR.ink,25,true);
 }
-function skillHeight(ctx:CanvasRenderingContext2D,action:ShareSkill):number{
+function skillBodyHeight(ctx:CanvasRenderingContext2D,action:ShareSkill):number{
  let h=Math.max(subjectHeight(ctx,action.actor,245),linesHeight(ctx,action.name,240,19,25,true)+22,action.target?subjectHeight(ctx,action.target,310):0);
  if(action.swap)h=Math.max(h,...action.swap.map(person=>subjectHeight(ctx,person,248)));
- if(action.enemy)h+=24;if(action.detail)h+=linesHeight(ctx,action.detail,CONTENT-100,15,21);
+ return h;
+}
+function skillHeight(ctx:CanvasRenderingContext2D,action:ShareSkill):number{
+ let h=skillBodyHeight(ctx,action);
+ if(action.enemy)h+=24;if(action.choice)h+=linesHeight(ctx,`效果：${action.choice}`,CONTENT-100,16,23)+5;if(action.detail)h+=linesHeight(ctx,action.detail,CONTENT-100,15,21);
  return Math.ceil(h+28);
 }
 function attackHeight(ctx:CanvasRenderingContext2D,action:ShareAttack):number{
@@ -148,9 +152,10 @@ function drawSkill(ctx:CanvasRenderingContext2D,assets:Map<string,Asset>,action:
   const nameH=text(ctx,action.name,x+386,sy,240,19,COLOR.ink,25,true);text(ctx,`${action.kind==='unknown'?'待检查':`技能 ${action.number}`}  ${action.level}`,x+386,sy+nameH+3,240,13,COLOR.muted,18);
   if(action.target){text(ctx,'→',x+702,sy+14,44,30,COLOR.blue,40,true);subject(ctx,assets,action.target,x+756,sy,310);}
  }
- let extra=y+height-22;
- if(action.detail){const h=linesHeight(ctx,action.detail,w-100,15,21);extra-=h;text(ctx,action.detail,x+64,extra,w-100,15,COLOR.error,21);}
- if(action.enemy)text(ctx,`目标：${action.enemy}`,x+386,extra-22,w-440,14,COLOR.error,20);
+ let extra=y+14+skillBodyHeight(ctx,action)+4;
+ if(action.choice)extra+=text(ctx,`效果：${action.choice}`,x+64,extra,w-100,16,COLOR.blue,23)+5;
+ if(action.enemy){text(ctx,`目标：${action.enemy}`,x+64,extra,w-100,14,COLOR.error,20);extra+=24;}
+ if(action.detail)text(ctx,action.detail,x+64,extra,w-100,15,COLOR.error,21);
 }
 function drawAttack(ctx:CanvasRenderingContext2D,assets:Map<string,Asset>,action:ShareAttack,x:number,y:number,w:number){
  text(ctx,'攻击 · 回合结束',x+24,y+10,400,20,COLOR.blue,28,true);

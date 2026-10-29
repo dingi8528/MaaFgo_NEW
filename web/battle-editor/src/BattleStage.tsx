@@ -12,8 +12,11 @@ import {cardPreviewRegion as resolveCardPreviewRegion} from './npCardRequest';
 import type {CardPreviewConfig} from './npCardRequest';
 import {createManualReadyState,manualReadyKeys,syncManualReady,grantManualReady,revokeManualReady,acceptManualReadyCommit} from './manualReady';
 import type {StageCommit} from './manualReady';
+import {specialSkillChoiceFor,setEntrySpecialSkillChoice} from './specialSkillChoices';
+import type {SpecialSkillChoiceGroup} from './specialSkillChoices';
+import {SpecialSkillOptions} from './SpecialSkillOptions';
 
-interface Pending {svt:number|null;skill:number;key:string;ally?:number;enemy:number;mode:'ally'|'none'|'unknown';meta?:Json;swap?:boolean;front?:number;backup?:number}
+interface Pending {svt:number|null;skill:number;key:string;ally?:number;enemy:number;mode:'ally'|'none'|'unknown';meta?:Json;swap?:boolean;front?:number;backup?:number;specialGroup?:SpecialSkillChoiceGroup;specialValue?:number}
 const occupied=(member:Json|null|undefined)=>hasServantIdentity(member)||isUnspecifiedSupport(member);
 const remaining=(skill:PreviewSkill)=>skill.remainingMin==null||skill.remainingMax==null?'CD 未知':skill.remainingMin===skill.remainingMax?`CD ${skill.remainingMax}`:`CD ${skill.remainingMin}–${skill.remainingMax}`;
 
@@ -26,14 +29,15 @@ export function BattleStage({data,catalog,turnIndex,onAppend,onNP,onMystic,onLev
  const ready=manualReadyKeys(manualReady,data,turnIndex);
  useEffect(()=>{setManualReady(state=>syncManualReady(state,data,turnIndex));setPending(null);setMenu(null);},[data,turnIndex]);
  useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'||event.key==='Tab')setMenu(null);};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[menu]);
- const attack=turnsOf(data)[turnIndex]?.entries.find(e=>e.raw?.type==='attack')?.raw;
+ const attack=turnsOf(data,catalog)[turnIndex]?.entries.find(e=>e.raw?.type==='attack')?.raw;
  const skillClick=(svt:number|null,index:number,state:PreviewSkill,key:string)=>{
   if(svt!=null&&!hasServantIdentity(preview.front[svt]?.member)){onError('请先在编队页为这个前排位置指定从者，才能安排技能。');return;}
   if(svt==null&&!data.team?.mysticCode?.mysticCodeId){onError('请先选择御主礼装。');return;}
   if(!state.ready&&!ready.has(key))return;
   const meta=state.skill,mode=skillTargetMode(meta),swap=svt==null&&index===2&&canChange(data);
-  const next:Pending={svt,skill:index,key,enemy:2,mode,meta,swap};
-  if(swap||mode!=='none'){setPending(next);return;}
+  const actor=svt==null?undefined:preview.front[svt],specialGroup=actor?specialSkillChoiceFor(actor.member,actor.servant,index,catalog):undefined;
+  const next:Pending={svt,skill:index,key,enemy:2,mode,meta,swap,specialGroup};
+  if(swap||specialGroup||mode!=='none'){setPending(next);return;}
   commit(next);
  };
  const commit=(item:Pending)=>{
@@ -45,11 +49,24 @@ export function BattleStage({data,catalog,turnIndex,onAppend,onNP,onMystic,onLev
    if(item.svt!=null&&!hasServantIdentity(preview.front[item.svt]?.member)){onError('未指定从者，无法安排这个位置的技能。');return;}
    const options:Json={};if(item.ally!=null)options.playerTarget=item.ally;if(hasEnemyTarget(item.meta))options.enemyTarget=item.enemy;
    const raw:Json={type:'skill',svt:item.svt,skill:item.skill};if(Object.keys(options).length)raw.options=options;
-   accepted=onAppend({raw,index:0});
+   const entry:Entry={raw,index:0};
+   if(item.specialGroup){
+    if(item.specialValue==null){onError('请先选择这次特殊技能的效果。');return;}
+    setEntrySpecialSkillChoice(entry,item.specialGroup,item.specialValue);
+   }
+   accepted=onAppend(entry);
   }
   if(!accepted||accepted.previous===accepted.next)return;
   setManualReady(state=>acceptManualReadyCommit(state,accepted,{consume:item.key,resetAll:!!item.swap}));
   setPending(null);
+ };
+ const chooseSpecial=(value:number)=>{
+  if(!pending?.specialGroup)return;
+  const option=pending.specialGroup.options.find(choice=>choice.value===value);
+  if(!option)return;
+  const meta={...pending.meta,...(option.target?{target:option.target}:{}),...(option.targets?{targets:option.targets}:{})};
+  const next={...pending,specialValue:value,meta,mode:skillTargetMode(meta)};
+  if(next.mode==='none')commit(next);else setPending(next);
  };
  const appendNP=(svt:number)=>{if(!hasServantIdentity(preview.front[svt]?.member)){onError('未指定从者，无法安排这个位置的宝具。');return;}const accepted=onNP(svt);if(accepted)setManualReady(state=>acceptManualReadyCommit(state,accepted));};
  const showMenu=(key:string,name:string,event?:{clientX:number;clientY:number;preventDefault:()=>void})=>{event?.preventDefault();setMenu({key,name,x:Math.min(event?.clientX??window.innerWidth/2,window.innerWidth-245),y:Math.min(event?.clientY??window.innerHeight/2,window.innerHeight-150)});};
@@ -67,7 +84,7 @@ export function BattleStage({data,catalog,turnIndex,onAppend,onNP,onMystic,onLev
  };
  const choices=pending?allowedAllyTargets(pending.meta,pending.svt??-1,preview.roster):[];
  return <section className="battle-stage" aria-label="当前战斗技能区">
-  <div className="battle-stage-heading"><div><span className="eyebrow">COMMAND PHASE</span><h2>当前前排 <small>技能队列末尾 · 攻击之前</small></h2></div><div className="battle-preview-controls"><label><span>卡面文字</span><select aria-label="卡面文字地区，仅影响预览" value={region} onChange={event=>changeRegion(event.target.value)}>{(npCardPreview?.regions??['JP','CN']).filter(value=>value==='JP'||value==='CN').map(value=><option key={value} value={value}>{value==='JP'?'日服 JP':'国服 CN'}</option>)}</select><small>仅预览</small></label><span className="battle-phase">{turnsOf(data)[turnIndex]?`TURN ${String(turnIndex+1).padStart(2,'0')}`:'阵容预览'}</span></div></div>
+  <div className="battle-stage-heading"><div><span className="eyebrow">COMMAND PHASE</span><h2>当前前排 <small>技能队列末尾 · 攻击之前</small></h2></div><div className="battle-preview-controls"><label><span>卡面文字</span><select aria-label="卡面文字地区，仅影响预览" value={region} onChange={event=>changeRegion(event.target.value)}>{(npCardPreview?.regions??['JP','CN']).filter(value=>value==='JP'||value==='CN').map(value=><option key={value} value={value}>{value==='JP'?'日服 JP':'国服 CN'}</option>)}</select><small>仅预览</small></label><span className="battle-phase">{turnsOf(data,catalog)[turnIndex]?`TURN ${String(turnIndex+1).padStart(2,'0')}`:'阵容预览'}</span></div></div>
   <div className="battle-stage-scroll"><div className="battle-servants">{preview.front.map((entry,i)=>{
    const np=npAt(entry.member,entry.servant),selected=!!attack?.attacks?.some((c:Json)=>!isAutoAttackCard(c)&&c?.isTD&&c.svt===i),full=(attack?.attacks?.length??0)>=3&&!attack?.attacks?.slice(0,3).some(isAutoAttackCard);
    return <article className={`battle-servant ${!hasServantIdentity(entry.member)?'empty':''}`} key={entry.key}>
@@ -81,9 +98,12 @@ export function BattleStage({data,catalog,turnIndex,onAppend,onNP,onMystic,onLev
   {menu&&<div className="battle-context-backdrop" onClick={()=>setMenu(null)} onContextMenu={e=>{e.preventDefault();setMenu(null);}}><div className="battle-context-menu" role="menu" aria-label="技能操作" style={{left:Math.max(8,menu.x),top:Math.max(8,menu.y)}} onClick={e=>e.stopPropagation()}><strong>{menu.name}</strong><button role="menuitem" autoFocus onClick={()=>{setManualReady(state=>(ready.has(menu.key)?revokeManualReady:grantManualReady)(state,data,turnIndex,menu.key));setMenu(null);}}>{ready.has(menu.key)?<><X size={16}/>取消就绪</>:<><Clock3 size={16}/>在编辑器中置为就绪</>}</button><small>{ready.has(menu.key)?'仅取消此技能的临时就绪，保留已排动作。':'保留已排动作；不向游戏重置 CD。'}</small></div></div>}
   {pending&&<Modal title={pending.swap?'御主技能 3 · 换人':`${pending.svt==null?'御主':`前排 ${pending.svt+1}`} · ${pending.meta?.name??`技能 ${pending.skill+1}`}`} onClose={()=>setPending(null)}><div className="modal-content battle-target-dialog">
    {pending.swap?<><p>选择此时的前排和候补，确认后按当前顺序加入换人步骤。</p><div className="swap-choice-section"><strong>换出前排</strong><div className="target-choices">{preview.front.map((entry,i)=><button key={i} className={pending.front===i?'selected':''} disabled={!occupied(entry.member)} onClick={()=>setPending({...pending,front:i})}>{entry.servant?.image&&<img src={entry.servant.image} alt=""/>}<span>{i+1} · {memberLabel(entry.member,catalog)}</span></button>)}</div></div><ArrowLeftRight className="swap-choice-arrow" size={22}/><div className="swap-choice-section"><strong>换入候补</strong><div className="target-choices">{preview.roster.slice(3,6).map((entry,i)=><button key={i} className={pending.backup===i?'selected':''} disabled={!occupied(entry.member)} onClick={()=>setPending({...pending,backup:i})}>{entry.servant?.image&&<img src={entry.servant.image} alt=""/>}<span>{i+1} · {memberLabel(entry.member,catalog)}</span></button>)}</div></div></>:<>
-    <p>{pending.mode==='ally'?'点击当前前排头像，直接加入技能队列。':'目标元数据不完整。点击头像指定目标，或点击“不指定我方目标”直接加入；特殊技能内部选项仍按当前工程固定行为执行。'}</p>
+    {pending.specialGroup&&pending.specialValue==null?<SpecialSkillOptions group={pending.specialGroup} onSelect={chooseSpecial}/>:<>
+    {pending.specialGroup&&<div className="special-choice-heading"><span className="special-choice-selected">{pending.specialGroup.options.find(option=>option.value===pending.specialValue)?.label}</span><button className="text-button" onClick={()=>setPending({...pending,specialValue:undefined})}>重新选择效果</button></div>}
+    <p>{pending.mode==='ally'?'点击当前前排头像，直接加入技能队列。':'目标元数据不完整。点击头像指定目标，或点击“不指定我方目标”直接加入。'}</p>
     {hasEnemyTarget(pending.meta)&&<label className="field"><span>敌方目标 · 先调整，再点击我方目标加入</span><select value={pending.enemy} onChange={e=>setPending({...pending,enemy:Number(e.target.value)})}><option value={2}>敌方 1 · 左侧</option><option value={1}>敌方 2 · 中间</option><option value={0}>敌方 3 · 右侧</option></select></label>}
     <div className="target-choices">{preview.front.map((entry,i)=><button key={i} disabled={!choices.includes(i)} onClick={()=>commit({...pending,ally:i})}>{entry.servant?.image&&<img src={entry.servant.image} alt=""/>}<span>前排 {i+1}</span><strong>{memberLabel(entry.member,catalog)}</strong></button>)}</div>{pending.mode==='unknown'&&<button className="button target-unspecified" onClick={()=>commit({...pending,ally:undefined})}>不指定我方目标</button>}
+    </>}
    </>}
    <div className="modal-bottom"><button className="button" onClick={()=>setPending(null)}>取消</button>{pending.swap&&<button className="button primary" disabled={pending.front==null||pending.backup==null} onClick={()=>commit(pending)}><Check size={16}/>加入技能队列</button>}</div>
   </div></Modal>}

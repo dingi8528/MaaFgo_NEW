@@ -6,6 +6,7 @@ import {npAt} from './battlePreview';
 import {artworkColor,cardArtworkRequest,cardPreviewRegion} from './npCardRequest';
 import type {CardPreviewConfig} from './npCardRequest';
 import {partyCost} from './partyCost';
+import {specialSkillChoiceLabel} from './specialSkillChoices';
 
 export const SHARE_IMAGE_WIDTH=1200;
 export const SHARE_IMAGE_MAX_HEIGHT=12000;
@@ -16,7 +17,7 @@ export interface SharePerson {name:string;position:string;image?:string|null;cla
 export interface ShareEquip {name:string;image?:string|null;label:string;details:string;candidateIndex?:number;candidateCount?:number}
 export interface ShareMember extends SharePerson {className:string;rarity:string;details:string;skills:{name:string;icon?:string;level:string}[];append:string;grand:boolean;equips:ShareEquip[]}
 export interface ShareCard {person?:SharePerson;label:string;name:string;color:string|null;image:string|null;automatic:boolean;deckLabel:string}
-export interface ShareSkill {kind:'skill'|'swap'|'unknown';actor:SharePerson;name:string;icon?:string;number:string;level:string;target?:SharePerson;swap?:[SharePerson,SharePerson];enemy:string;detail:string}
+export interface ShareSkill {kind:'skill'|'swap'|'unknown';actor:SharePerson;name:string;icon?:string;number:string;level:string;target?:SharePerson;swap?:[SharePerson,SharePerson];enemy:string;detail:string;choice?:string}
 export interface ShareAttack {kind:'attack';cards:ShareCard[];enemy:string}
 export type ShareAction=ShareSkill|ShareAttack;
 export interface ShareTurn {number:number;actions:ShareAction[];implicitEnd:boolean}
@@ -59,7 +60,7 @@ export function shareImageModel(data:Json,catalog:Catalog,options:{region?:strin
  const roster=[...initial],notices=new Set<string>();
  const selectedRegion=cardPreviewRegion(options.region,options.cardPreviewConfig);
  const lookup=(slot:unknown):SharePerson=>validSlot(slot)?person(roster[slot],slot,catalog):{slot:null,name:'目标位置无效',position:'待修正',support:'',identified:false};
- const turns=turnsOf(data).map((turn,index):ShareTurn=>({number:index+1,implicitEnd:turn.entries.at(-1)?.raw?.type!=='attack',actions:turn.entries.map(entry=>{
+ const turns=turnsOf(data,catalog).map((turn,index):ShareTurn=>({number:index+1,implicitEnd:turn.entries.at(-1)?.raw?.type!=='attack',actions:turn.entries.map(entry=>{
   const action=entry.raw;
   if(action?.type==='attack'){
    const recorded=Array.isArray(action.attacks)?action.attacks:[];
@@ -87,6 +88,7 @@ export function shareImageModel(data:Json,catalog:Catalog,options:{region?:strin
   const frontSlot=Array.isArray(pair)?pair[0]:undefined,rawBack=Array.isArray(pair)?pair[1]:undefined,backSlot=Number.isInteger(rawBack)?rawBack<3?rawBack+3:rawBack:undefined;
   const validPair=front(frontSlot)&&validSlot(backSlot)&&backSlot>=3;
   const projected:ShareSkill={kind:swap?'swap':'skill',actor:isMaster?master:lookup(action.svt),name:swap?'换人':skill?.name??`技能 ${Number(action.skill)+1}`,icon:skill?.icon,number:validSkill?String(action.skill+1):'?',level:`Lv.${level(isMaster?data.team?.mysticCode?.level:member?.skillLvs?.[action.skill])}`,enemy:enemyLabel(action.options?.enemyTarget),detail:!isMaster&&!hasServantIdentity(member)?'未指定从者，无法安排此技能':''};
+  const choice=specialSkillChoiceLabel(entry,catalog);if(choice)projected.choice=choice;
   if(projected.detail)notices.add('存在未指定从者的技能或出卡，请先检查执行条件。');
   if(swap){
    if(validPair){projected.swap=[lookup(frontSlot),lookup(backSlot)];[roster[frontSlot],roster[backSlot]]=[roster[backSlot],roster[frontSlot]];}

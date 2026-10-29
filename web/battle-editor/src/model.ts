@@ -1,15 +1,17 @@
 import {isAutoAttackCard,setAttackCard} from './attackCards';
 import {setEquipCandidate} from './equipRequirements';
+import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoicesRebuilt} from './specialSkillChoices';
+import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
 
 export type Json = Record<string, any>;
 export interface ServantBond {tags?:string[]|null;tags_by_ascension?:Record<string,string[]>|null;tags_by_costume?:string[]|Record<string,string[]>|null;alignment?:string|null;attribute?:string|null;gender?:string|null;sub_attribute?:string|null;[key:string]:unknown}
 export interface NPFilterVariant {treasureDeviceId?:number;name_jp?:string;type?:string;card?:string;conditions_jp?:string[];[key:string]:unknown}
 export interface ServantNPFilter {types?:string[];cards?:string[];variants?:NPFilterVariant[]}
-export interface Servant { id:number; name:string; nameJp?:string; collectionNo?:number; classKey?:string; className?:string; rarity?:number;cost?:number|null; image?:string|null; portrait?:string|null; statusImage?:string|null; classIcon?:string|null; cards?:number[]; aliases?:(string|number)[]; searchAliases?:string[]; skills?:{id:number;name:string;icon?:string;target?:string;targets?:string[];coolDown?:number[]}[]; skillVariants?:Json[]; appendSkills?:Json[]; np?:Json; npVariants?:Json[];bond?:ServantBond|null;npFilter?:ServantNPFilter|null }
+export interface Servant { id:number; name:string; nameJp?:string; collectionNo?:number; classKey?:string; className?:string; rarity?:number;cost?:number|null; image?:string|null; portrait?:string|null; statusImage?:string|null; classIcon?:string|null; cards?:number[]; aliases?:(string|number)[]; searchAliases?:string[]; skills?:{id:number;num?:number;name:string;icon?:string;target?:string;targets?:string[];coolDown?:number[]}[]; skillVariants?:Json[]; appendSkills?:Json[]; np?:Json; npVariants?:Json[];bond?:ServantBond|null;npFilter?:ServantNPFilter|null }
 export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;common?:boolean;commonSources?:string[]}
 export interface Mystic {id:number;name:string;image?:string|null;skills?:Json[];orderChange?:boolean}
-export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json}
-export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number}
+export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json;specialSkillChoices?:SpecialSkillChoiceCatalog}
+export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding}
 export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
 export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[]});
@@ -171,21 +173,23 @@ export function filterCatalog(type:'servant'|'equip'|'mystic',catalog:Catalog,fi
 }
 export const canChange = (data:Json):boolean => [20,210,440].includes(data.team?.mysticCode?.mysticCodeId);
 export const isSwap = (data:Json,raw:any):boolean => canChange(data)&&raw?.type==='skill'&&raw.svt==null&&raw.skill===2;
-export function turnsOf(data:Json):Turn[] {
+export function turnsOf(data:Json,catalog?:Catalog):Turn[] {
  const turns:Turn[]=[];let current:Entry[]=[];let pair=0;
  for(const [index,raw] of (Array.isArray(data.actions)?data.actions:[]).entries()) {
   const entry:Entry={raw,index};if(isSwap(data,raw)){const replacements=data.delegate?.replaceMemberIndexes;if(Array.isArray(replacements)&&pair<replacements.length){entry.replacement=replacements[pair];entry.paired=true;}pair++;}
   current.push(entry);if(raw?.type==='attack'){turns.push({entries:current});current=[];}
- }if(current.length)turns.push({entries:current});return turns;
+ }if(current.length)turns.push({entries:current});bindSpecialSkillChoices(data,turns.flatMap(turn=>turn.entries),catalog);return turns;
 }
-export function writeTurns(data:Json,turns:Turn[]) {
+export function writeTurns(data:Json,turns:Turn[],catalog?:Catalog) {
+ const rebuilt=rebuildSpecialSkillChoices(data,turnsOf(data,catalog).flatMap(turn=>turn.entries),turns.flatMap(turn=>turn.entries),catalog);
  const oldPairs=data.delegate?.replaceMemberIndexes;const consumed=(Array.isArray(data.actions)?data.actions:[]).filter((a:any)=>isSwap(data,a)).length;
  data.actions=turns.flatMap(t=>t.entries.map(e=>e.raw));
  const replacements=turns.flatMap(t=>t.entries.filter(e=>isSwap(data,e.raw)&&e.paired).map(e=>clone(e.replacement)));
  if(Array.isArray(oldPairs)||replacements.length){data.delegate??={};data.delegate.replaceMemberIndexes=[...replacements,...(Array.isArray(oldPairs)?oldPairs.slice(consumed):[])];}
+ if(Object.keys(rebuilt.updates).length){data.delegate??={};Object.assign(data.delegate,rebuilt.updates);}markSpecialSkillChoicesRebuilt(data,rebuilt.diagnostics);return rebuilt.diagnostics;
 }
-export function appendSkillEntry(data:Json,turnIndex:number,entry:Entry):number {
- const turns=clone(turnsOf(data));
+export function appendSkillEntry(data:Json,turnIndex:number,entry:Entry,catalog?:Catalog):number {
+ const turns=clone(turnsOf(data,catalog));
  if(!Number.isInteger(turnIndex)||turnIndex<0||turnIndex>turns.length)throw new Error('回合不存在，请重新选择回合。');
  if(entry.raw?.type==='attack')throw new Error('技能步骤不能替代本回合的攻击组。');
  if(!turns[turnIndex])turns.push({entries:[{raw:{type:'attack',attacks:[]},index:Array.isArray(data.actions)?data.actions.length:0}]});
@@ -194,10 +198,10 @@ export function appendSkillEntry(data:Json,turnIndex:number,entry:Entry):number 
   const position=list[at]?.index??((list.at(-1)?.index??-1)+1),actor=entry.raw.svt;
   if(!Number.isInteger(actor)||actor<0||actor>=3||!hasServantIdentity(rosterAt(data,position)[actor]))throw new Error('请先为这个前排位置指定从者，才能安排主动技能。');
  }
- list.splice(at,0,entry);writeTurns(data,turns);return at;
+ list.splice(at,0,entry);writeTurns(data,turns,catalog);return at;
 }
 export function appendNPEntry(data:Json,turnIndex:number,svt:number,catalog:Catalog):number {
- const turns=clone(turnsOf(data));
+ const turns=clone(turnsOf(data,catalog));
  if(!Number.isInteger(turnIndex)||turnIndex<0||turnIndex>turns.length)throw new Error('回合不存在，请重新选择回合。');
  if(!turns[turnIndex])turns.push({entries:[{raw:{type:'attack',attacks:[]},index:Array.isArray(data.actions)?data.actions.length:0}]});
  const list=turns[turnIndex].entries;let at=list.findIndex(e=>e.raw?.type==='attack');
@@ -205,7 +209,7 @@ export function appendNPEntry(data:Json,turnIndex:number,svt:number,catalog:Cata
  const attack=list[at];attack.raw.attacks??=[];
  if(attack.raw.attacks.length>=3&&!attack.raw.attacks.slice(0,3).some(isAutoAttackCard))throw new Error('每回合最多安排三个出卡意图。');
  const roster=rosterAt(data,attack.index);
- setAttackCard(attack.raw,makeCard(svt,'np',roster,catalog,attack.raw.attacks));writeTurns(data,turns);return at;
+ setAttackCard(attack.raw,makeCard(svt,'np',roster,catalog,attack.raw.attacks));writeTurns(data,turns,catalog);return at;
 }
 export function rosterAt(data:Json,index:number):any[] {
  const roster=members(data);for(const turn of turnsOf(data))for(const e of turn.entries){if(e.index>=index)return roster;if(isSwap(data,e.raw)&&Array.isArray(e.replacement)){const f=e.replacement[0],b=e.replacement[1]<3?e.replacement[1]+3:e.replacement[1];if(f>=0&&f<3&&b>=3&&b<6)[roster[f],roster[b]]=[roster[b],roster[f]];}}return roster;

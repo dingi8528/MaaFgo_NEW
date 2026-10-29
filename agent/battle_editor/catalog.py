@@ -15,6 +15,8 @@ import struct
 import unicodedata
 from urllib.parse import quote
 
+from .special_choices import special_skill_catalog
+
 
 _MODULE_DIR = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location(
@@ -443,6 +445,7 @@ def build_catalog(project_root: Path | str) -> dict:
     owned_equips, equip_status = _inventory(root, "equips", {})
     return {
         "servants": servants, "equips": equips, "mysticCodes": mystics,
+        "specialSkillChoices": special_skill_catalog(),
         "inventory": {"servants": owned_servants, "equips": owned_equips,
                       "servantsStatus": servant_status, "equipsStatus": equip_status},
         "commonEquips": common_status,
