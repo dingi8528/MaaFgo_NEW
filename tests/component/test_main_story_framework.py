@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import maa
+import cv2
 import numpy as np
 from maa.controller import CustomController
 from maa.custom_action import CustomAction
@@ -40,7 +41,8 @@ class ScreenController(CustomController):
     click_key = input_text = key_down = key_up = reject
 
 
-class FrameworkTests(unittest.TestCase):
+class FrameworkResources:
+    """Share native resource setup without inheriting unrelated test methods."""
     @classmethod
     def setUpClass(cls):
         Library.open(Path(maa.__file__).parent / "bin")
@@ -54,6 +56,8 @@ class FrameworkTests(unittest.TestCase):
             self.assertTrue(resource.post_bundle(ROOT / "assets/resource" / folder).wait().succeeded)
         return resource
 
+
+class FrameworkTests(FrameworkResources, unittest.TestCase):
     def test_both_bundles_and_normalized_route(self):
         for server in ("cn", "jp"):
             with self.subTest(server=server):
@@ -63,6 +67,117 @@ class FrameworkTests(unittest.TestCase):
                 self.assertEqual(route[:5], ["巡-初始化左滑"] * 5)
                 self.assertEqual(route[-1], "巡-左4c")
                 self.assertEqual(next_names(resource.get_node_data("全局-战前吃体力")), ["全局-体力不足"])
+
+    def test_formation_start_uses_existing_start_button_templates(self):
+        for server in ("cn", "jp"):
+            with self.subTest(server=server):
+                resource = self.resource(server)
+                node = resource.get_node_data("进本-队伍确认")
+                templates = node["recognition"]["param"]["template"]
+                for template in templates:
+                    with self.subTest(template=template):
+                        path = ROOT / "assets/resource" / server / "image" / template
+                        if not path.is_file():
+                            path = ROOT / "assets/resource/base/image" / template
+                        button = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        self.assertIsNotNone(button)
+                        image = np.zeros((720, 1280, 3), np.uint8)
+                        h, w = button.shape[:2]
+                        image[720-h:720, 1280-w:1280] = button
+                        controller = ScreenController(image)
+                        self.assertTrue(controller.post_connection().wait().succeeded)
+                        outcomes, errors = [], []
+
+                        class Probe(CustomAction):
+                            def run(self, ctx, argv):
+                                try:
+                                    runner = StoryRunner(ctx.clone())
+                                    outcomes.append(runner.locate())
+                                    return True
+                                except Exception as exc:
+                                    errors.append(repr(exc))
+                                    return False
+
+                        resource.register_custom_action("formation_start_probe", Probe())
+                        tasker = Tasker()
+                        self.assertTrue(tasker.bind(resource, controller))
+                        status = tasker.post_task("formation_start_probe", {
+                            "formation_start_probe": {"action": {"type": "Custom", "param": {
+                                "custom_action": "formation_start_probe"
+                            }}}
+                        }).wait()
+                        self.assertTrue(status.succeeded, errors)
+                        self.assertEqual(outcomes, [None])
+                        self.assertEqual(controller.clicks, [])
+                        self.assertEqual(controller.swipes, [])
+
+    def test_close_fallback_recognizes_only_button_in_bottom_region(self):
+        node_name = "主线-编队弹窗关闭保底"
+        for server in ("cn", "jp"):
+            resource = self.resource(server)
+            roi = resource.get_node_data(node_name)["recognition"]["param"]["roi"]
+            folder = "cn" if server == "cn" else "base"
+            path = ROOT / "assets/resource" / folder / "image/close_botton.png"
+            button = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            h, w = button.shape[:2]
+            for x, y, expected in ((600, 570, True), (100, 100, False)):
+                with self.subTest(server=server, position=(x, y)):
+                    image = np.zeros((720, 1280, 3), np.uint8)
+                    image[y:y+h, x:x+w] = button
+                    controller = ScreenController(image)
+                    self.assertTrue(controller.post_connection().wait().succeeded)
+                    hits, errors, boxes, ocr_details = [], [], [], []
+
+                    class Probe(CustomAction):
+                        def run(self, ctx, argv):
+                            try:
+                                runner = StoryRunner(ctx.clone())
+                                result = runner.reco(node_name, image)
+                                hits.append(bool(result))
+                                if result:
+                                    box = result.box
+                                    boxes.append((box.x, box.y, box.w, box.h))
+                                    ocr_details.append(result.raw_detail)
+                                    runner.action(node_name, result)
+                                return True
+                            except Exception as exc:
+                                errors.append(repr(exc))
+                                return False
+
+                    resource.register_custom_action("close_fallback_probe", Probe())
+                    tasker = Tasker()
+                    self.assertTrue(tasker.bind(resource, controller))
+                    status = tasker.post_task("close_fallback_probe", {
+                        "close_fallback_probe": {"action": {"type": "Custom", "param": {
+                            "custom_action": "close_fallback_probe"
+                        }}}
+                    }).wait()
+                    self.assertTrue(status.succeeded, errors)
+                    diagnostic = {"server": server, "patch": (x, y, w, h), "roi": roi,
+                                  "ocr_boxes": boxes, "clicks": controller.clicks, "ocr": ocr_details}
+                    self.assertEqual(hits, [expected], diagnostic)
+                    self.assertEqual(len(controller.clicks), int(expected), diagnostic)
+                    if expected:
+                        self.assertEqual(len(boxes), 1, diagnostic)
+                        bx, by, bw, bh = boxes[0]
+                        rx, ry, rw, rh = roi
+                        self.assertGreater(bw, 0, diagnostic)
+                        self.assertGreater(bh, 0, diagnostic)
+                        self.assertTrue(rx <= bx and ry <= by and bx+bw <= rx+rw and by+bh <= ry+rh,
+                                        diagnostic)
+                        # OCR can expand around tightly cropped text. Require a
+                        # localized box, rejecting an entire-ROI fallback, rather
+                        # than treating the PNG crop as the action's target box.
+                        intersection = (max(0, min(x+w, bx+bw)-max(x, bx))
+                                        * max(0, min(y+h, by+bh)-max(y, by)))
+                        union = w*h + bw*bh - intersection
+                        self.assertGreaterEqual(intersection / union, 0.5, diagnostic)
+                        click_x, click_y = controller.clicks[0]
+                        self.assertTrue(bx <= click_x < bx+bw and by <= click_y < by+bh, diagnostic)
+                        self.assertTrue(rx <= click_x < rx+rw and ry <= click_y < ry+rh, diagnostic)
+                    else:
+                        self.assertEqual(boxes, [], diagnostic)
+                    self.assertEqual(controller.swipes, [])
 
     def test_main_story_abort_fails_without_global_recovery_or_inputs(self):
         reason = "已进入编队，但关卡要求指定首发队员；请按编制限制弹窗手动调整"

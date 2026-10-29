@@ -215,10 +215,16 @@ python -X utf8 -m unittest discover -s tests -p "test_battle_editor_*.py"
 
 `tdTypeChanges`（1=Arts、2=Buster、3=Quick）和 `skillActSelectSelections`（零起始菜单索引）
 已接入原生战斗，后端校验不再将这两个数组一律判为 `unsupported_delegate`，但非法索引、`null`空选择
-仍阻断正式保存。其余模拟随机控制仍不支持。界面保留这些字段，无新增自由选项控件。
+仍阻断正式保存。其余模拟随机控制仍不支持。
 目录及全部14组菜单见[特殊技能方案](特殊技能选项批量补全与日服实机验证方案.md)。
 队列由每场 Runtime 独立消费，按真实完成的选项节点推进；不要在导入时按动作下标或普通技能次数
 分配索引。库库明确选择消耗10星时必须保留灰态拒绝，禁止回退不消耗；以上无配置时的旧默认行为仍保留。
+
+编辑器通过 `catalog.specialSkillChoices` 读取原生 `SPECIAL_SKILL_GROUPS` 的菜单范围，前端不另存从者与菜单索引表。点击支持的技能先选效果，必要时再选目标，完成后才追加动作；既有动作在详情弹窗中修改。仅强化后有菜单的组使用明确的技能 ID 白名单，旧版本不误弹窗。前端 `Entry.specialChoice` 只用于内存中的动作配对，不进入原始动作 JSON；写回时分别重建两个 delegate 队列，并保留未知字段与未消费尾项。复制、排序、删除回合和技能必须走带 catalog 的 `turnsOf`／`writeTurns`，队伍或技能变体编辑完成后统一复核配对，不能在交换成员的中间状态重建队列。
+
+技能队列、摘要和一图流显示已绑定的选项名称。无法判定成员身份、变体或菜单时采用保守诊断，不把全局动作下标当作菜单索引，也不把无配置旧方案自动改成显式队列。新建显式选择需要补齐同队列前序默认值时，应使用对应组的默认项，避免两条独立队列串位。
+
+BBC 转换器不能表示这两类特殊选择；非空队列在两个转换入口都明确拒绝并提示使用原生自动战斗，空／null 队列保持兼容。MXU 打包校验同时要求编辑器适配模块和原生权威目录，Android 只保留原生战斗模块，仍不包含编辑器及网页。
 
 ## 默认保存文件名与命名来源（2026-10-24）
 
@@ -788,3 +794,39 @@ CI 的多行分享图测试出现完整8块仅识别7块；本机通过 `cv2.set
 固定计划只在其有效回合范围内控制技能与宝具。超过计划范围时，恢复通用技能决策、可用宝具与普通卡策略，同时停止计划模式对技能可用状态的覆盖，避免忽略冷却识别。UI 保留零回合状态；添加空回合序列化为真实 attack 边界，删除最后一回合恢复空 actions，不借用预览中的“第1回合”创建数据。导出图片及恢复流程也必须保留两种数据差异。
 
 BBC 运行端会将完全空的固定回合折叠为自由战斗，无法无损表达上述纯普通卡空回合。转换器对无累积技能且显式 attacks=[] 的攻击边界明确报错并提示原生战斗；缺失/null/空actions仍不生成round字段，沿用BBC通用策略。有技能的空attacks保留既有转换，不使用伪造动作或额外回合填充。
+
+
+## 礼装离线筛选资料与分类修正（2026-10-29）
+
+`tools/build_battle_editor_equip_filters.py` 从官方 Atlas JP Nice 数据编译工程 `agent/custom/equip_list.json` 已有的礼装，不扩充可执行清单或卡面。输出 `agent/battle_editor/data/equip_filters.json` 与 `equip_filters_sources.json`，后者记录来源 URL、版本及 SHA-256；原始整包和触发技能缓存留在忽略目录 `config/BattleEditor/equip-filter-build`。正常重建不联网，更新缓存使用 `python tools/build_battle_editor_equip_filters.py --refresh`。运行时由 `battle_editor/equip_filters.py` 读取本地索引，并投影到 catalog；服务目录有进程内缓存，更新后需重启编辑器服务。
+
+基础/满破按实际 `skillSvts.condLimitCount=0/4` 及活动绑定分组，不能单凭 strengthStatus 判断。无条件初始 NP 仅累加直接开场 gainNp；嵌套触发、助战专属、持有者、概率和活动条件独立保留。NP 充能以百分之一、普通倍率以千分制换算，暴击星为实际颗数。永久素材掉落按 `DropRateCount` 读取，与活动掉落分开。不能结构化的函数保留原文，不伪造效果或零 NP。技术性的 buff 域判定不应误标为额外触发条件。
+
+本次索引覆盖1156条工程礼装，其中472条由官方 owner/flags 确认是羁绊礼装。旧运行清单有470条被错误标为“通常”；仅修正其 `acquisition_category_jp` 与 `filter_tag` 两字段，ID、图片、important、bond 等保持。精确 ID 权威表位于 `agent/custom/equip_categories.json`，`tools/build_equip_list.py` 重建时优先读取它，避免旧源表分类再次覆盖。同步这张表与运行清单可使用 `python tools/build_battle_editor_equip_filters.py --sync-runtime-categories`；没有修改外部 CSV/Excel。Android 仅保留轻量独立分类资料，不依赖编辑器；MXU 校验效果索引、来源清单及哈希。 源清单、分类表与来源清单的生成器显式写 LF，与 Git 属性保持一致；否则 Windows 的 CRLF 原文件哈希在 Linux 检出后会变化。提交前同时核对暂存 blob 的源哈希和索引哈希，不能只检验工作目录字节。
+
+前端 `equipFilters.ts` 负责纯筛选、数值摘要、排序及未知值处理；`equipSelectorPreferences.ts` 原存储键内迁移到 v2，保留旧常用/星级/库存偏好。查询基准与条件开关不写入编队 JSON，不改变 candidates、limitBreak 或 Chaldea/BBC 转换字段。星级与来源是快捷筛选，类型及其他条件放在可折叠高级筛选；高级计数含类型、不含星级，清除高级保留星级与来源。详情入口与直接选择按钮分开。
+
+
+## MaaFramework 原生回调集成夹具补齐（2026-10-29）
+
+CI 的 `tests/run_maa_battle_editor_integration.py` 在普通回归通过后，启动临时安装报“编辑器服务提前退出（1）”。本机按原脚本复现，子进程实际异常为 `FileNotFoundError: agent/battle/core/special_skills.py`：`main → server → validation → special_choices` 在导入时读取共享特殊技能登记表，而该独立夹具只复制了 `battle_editor` 与 `servant_aliases`。正式打包清单和其他便携启动测试已包含该文件。
+
+夹具现补复制同一权威单文件，不复制整个战斗运行时；失败时在临时目录被清理前输出服务日志，继续保留原始失败。真实 MaaFramework + 本地 dummy controller 的启动、复用、任务结束后服务存活、停止四项已通过；反向漏文件探针确认仍失败，并将实际缺文件 traceback 保留在输出中。没有连接设备或修改打包版。
+
+
+## Linux CI 的 OCR 模型目录大小写（2026-10-29）
+
+92114fb1 的组件回归中，底部关闭按钮的国/日服正例各失败一次，又因战后剧情测试继承测试类重复执行，合计4次失败。MaaFramework 5.10.4 的 ResourceMgr::load_bundle 固定加载 `model/ocr`；仓库原目录却为 `assets/resource/base/model/OCR`。Windows 文件系统忽略大小写而本机通过，Linux 会跳过模型，资源包本身仍可加载成功，随后的OCR没有命中。官方依据：https://github.com/MaaXYZ/MaaFramework/blob/v5.10.4/source/MaaFramework/Resource/ResourceMgr.cpp#L664 。
+
+将模型目录按 Git 实际路径改为小写 `ocr`，4个文件的SHA256均保持不变；不替换模型、不改识别节点、区域、正则或置信度阈值。新增目录和模型文件准确大小写的静态单测，通过实际枚举文件名使Windows也能提前发现问题。共享资源初始化移到非测试基类，战后剧情测试仅复用初始化，不再继承主线测试方法。编辑器图片导入的模型兜底同时识别规范小写目录并保留旧大写目录兼容。
+
+验证在仅含暂存修复的Git归档快照中执行：完整组件套件216项通过（另含静态检查），模型大小写检查1项及图片识别路径20项通过，真实MaaFramework编辑器启动/复用/停止通过。组件数量由219减至216是移除了子类意外重复继承的3个主线测试，原始真实OCR正例、顶部负例与点击边界均保留。证据在`.workbuddy/runtime/close-fallback-ci-20261029/`，未连接设备或同步打包版。
+
+
+## 底部关闭按钮 OCR 框与随机点击断言（2026-10-30）
+
+1265c159 修复目录大小写后，Linux组件检查只剩国服正例的点击范围断言失败。真实OCR返回的框包含检测扩边，不能假定与紧裁PNG相等：国服76×41文字图得到91×53识别框，日服97×36得到104×42，置信度均约0.9999。MaaFramework的随机点击严格限定在识别框内；各100次内存点击验证点击均在实际OCR框与底部ROI内，但部分正常采样会越出原始PNG边界。此处并非识别失败或点击偏移。
+
+组件断言改为同时检查：OCR框为正尺寸且完整位于配置ROI、与已知文字patch的IoU至少0.5以拒绝整块ROI等退化定位、实际点击位于OCR框及ROI内；顶部负例继续要求未命中、零点击。失败时附实际框、配置ROI、点击点、OCR文本/分数，保留真实OCR和实际Click，没有修改生产节点的区域、正则、阈值或动作。Maa5.10.4的采样依据：https://github.com/MaaXYZ/MaaFramework/blob/v5.10.4/source/MaaFramework/Task/Component/Actuator.cpp#L136 。采样证据在`.workbuddy/runtime/close-fallback-ci-20261030/sampled-click-boundaries.json`。
+
+本次修正在仅含暂存改动的Git归档快照中完成完整组件216项与静态检查，另用真实框架验证两服各100次随机采样边界，均通过；未连接模拟器。组件日志保存在同目录component.log。

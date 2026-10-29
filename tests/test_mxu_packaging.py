@@ -31,6 +31,8 @@ class MxuPackagingTests(unittest.TestCase):
             "agent/battle_editor/launcher.py", "agent/battle_editor/server.py",
             "agent/battle_editor/catalog.py", "agent/battle_editor/storage.py",
             "agent/battle_editor/validation.py", "agent/battle_editor/bond_optimizer.py",
+            "agent/battle_editor/special_choices.py", "agent/battle/core/special_skills.py",
+            "agent/battle_editor/equip_filters.py",
             "agent/battle_editor/np_cards.py", "agent/battle_editor/np_card_metadata.py",
             "agent/battle_editor/screenshot_import.py", "agent/battle/perception/formation_candidates.py",
             "agent/battle_editor/share_image.py",
@@ -65,6 +67,11 @@ class MxuPackagingTests(unittest.TestCase):
         self.document("agent/battle_editor/data/np_cards.json", {
             "schema": 1, "assets": {"frame": {"pack": "base", "relative": "_composition/shared/frame.png",
                                                **self.metadata(b"np-fixture")}}})
+        self.document("agent/battle_editor/data/equip_filters.json", {"schemaVersion": 1, "equips": {"100": {}}})
+        filter_bytes = (self.data / "equip_filters.json").read_bytes()
+        self.document("agent/battle_editor/data/equip_filters_sources.json", {
+            "schemaVersion": 1, "indexSha256": hashlib.sha256(filter_bytes).hexdigest()})
+        self.document("agent/custom/equip_categories.json", {"schemaVersion": 1, "equips": {}})
 
     @staticmethod
     def metadata(raw):

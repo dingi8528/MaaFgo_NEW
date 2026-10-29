@@ -52,6 +52,10 @@ def main():
                         ignore=shutil.ignore_patterns("data", "__pycache__"))
         (root / "agent/chaldea").mkdir()
         shutil.copy2(ROOT / "agent/chaldea/servant_aliases.py", root / "agent/chaldea")
+        # The offline editor reads the native special-skill registry by file.
+        # Keep this isolated installation complete without copying battle runtime.
+        (root / "agent/battle/core").mkdir(parents=True)
+        shutil.copy2(ROOT / "agent/battle/core/special_skills.py", root / "agent/battle/core")
         (root / "web/battle-editor").mkdir(parents=True)
         (root / "web/battle-editor/index.html").write_text("<!doctype html><title>Integration</title>")
         bundle = root / "resource"
@@ -84,6 +88,14 @@ def main():
                 assert tasker.post_task("打开编队与战斗编辑器", override).wait().succeeded
                 assert service_status(root, port) is None
             print(json.dumps({"ok": True, "pipeline": "real MaaFramework", "controller": "local dummy", "checks": ["start", "reuse", "task return keeps service", "stop"]}, ensure_ascii=False))
+        except Exception:
+            # TemporaryDirectory is removed on failure too; preserve the actual
+            # child-process traceback in CI instead of only an expired log path.
+            log_path = root / "config/BattleEditor/service.log"
+            if log_path.is_file():
+                print("\nEditor service log:\n" + log_path.read_text(encoding="utf-8", errors="replace"),
+                      file=sys.stderr, flush=True)
+            raise
         finally:
             if service_status(root, port) is not None:
                 stop_editor(root, port=port)

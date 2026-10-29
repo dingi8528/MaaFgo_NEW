@@ -137,7 +137,9 @@ class _Reader:
 @lru_cache(maxsize=2)
 def _reader(root):
     root = Path(root)
-    for relative in ('resource/model/ocr', 'assets/resource/model/ocr', 'resource/base/model/OCR', 'assets/resource/base/model/OCR'):
+    for relative in ('resource/model/ocr', 'assets/resource/model/ocr',
+                     'resource/base/model/ocr', 'assets/resource/base/model/ocr',
+                     'resource/base/model/OCR', 'assets/resource/base/model/OCR'):
         directory = root / relative
         if (directory / 'rec.onnx').is_file() and (directory / 'keys.txt').is_file():
             try:

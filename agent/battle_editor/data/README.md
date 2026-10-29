@@ -29,3 +29,6 @@ python tools/build_battle_editor_catalog.py --refresh
 从者高级筛选另从既有 `agent/custom/servant_list.json` 投影 `bond` 和 `npFilter`，不覆盖这里的 Atlas `np/npVariants`。这些羁绊、宝具类型与色卡记录已和用户 `servant_list.csv` 核对，运行时不依赖外部 CSV；更新资料前先比较精确 ID 和原始字段。类型与色卡须由同一条宝具记录满足，灵基/灵衣条件独立保留，不做无依据的全局并集。具体规则、来源哈希及维护回归见 `docs/HTML编队与战斗编辑器维护说明.md`。
 
 数据来源：[Atlas Academy API](https://api.atlasacademy.io/docs)。图片为 Fate/Grand Order 游戏资产，沿用工程现有游戏资源使用方式；Atlas 的公开数据接口不意味着游戏图片版权归本工程所有。
+
+
+礼装筛选另使用 `equip_filters.json`（基础/满破效果、条件、类型/来源、属性与羁绊持有者）及 `equip_filters_sources.json`（官方来源版本与哈希）。维护运行 `python tools/build_battle_editor_equip_filters.py` 离线重建，`--refresh` 更新官方缓存；仅处理运行清单既有的礼装，不下载图片。原始整包缓存不随包发布，用户运行完全离线。470条旧羁绊分类的两字段修正通过 `agent/custom/equip_categories.json` 精确映射维护，源 CSV/Excel 本次未修改；完整规则见编辑器维护说明。

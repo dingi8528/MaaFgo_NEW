@@ -15,6 +15,9 @@ import struct
 import unicodedata
 from urllib.parse import quote
 
+from .special_choices import special_skill_catalog
+from .equip_filters import catalog_filter_metadata, equip_filter_facts, read_equip_filters
+
 
 _MODULE_DIR = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location(
@@ -405,6 +408,7 @@ def build_catalog(project_root: Path | str) -> dict:
 
     recognized = {str(item["id"]): item for item in _read(custom / "equip_list.json", {}).get("equips", [])}
     equip_meta = {str(item["id"]): item for item in source.get("equips", [])}
+    equip_filter_index = read_equip_filters(root)
     cn_names = _read(names_dir / "equip_names_CN.json", {})
     jp_names = _read(names_dir / "equip_names_JP.json", {})
     equips = []
@@ -424,6 +428,7 @@ def build_catalog(project_root: Path | str) -> dict:
             "rarity": item.get("rarity", extra.get("rarity")), "cost": equip_costs.get(key),
             "recognizable": key in recognized and image is not None,
             "image": image, "imageWidth": image_width, "imageHeight": image_height,
+            "filters": equip_filter_facts(equip_filter_index, key) if key in recognized else None,
         })
     equips.sort(key=lambda item: (item["collectionNo"] or 0, item["id"]))
     raw_names = ([{"id": key, "name": value} for key, value in cn_names.items()]
@@ -443,6 +448,8 @@ def build_catalog(project_root: Path | str) -> dict:
     owned_equips, equip_status = _inventory(root, "equips", {})
     return {
         "servants": servants, "equips": equips, "mysticCodes": mystics,
+        "specialSkillChoices": special_skill_catalog(),
+        "equipFilters": catalog_filter_metadata(equip_filter_index),
         "inventory": {"servants": owned_servants, "equips": owned_equips,
                       "servantsStatus": servant_status, "equipsStatus": equip_status},
         "commonEquips": common_status,

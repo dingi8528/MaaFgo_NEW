@@ -43,6 +43,11 @@ class Context:
     def get_node_data(self, name):
         return copy.deepcopy(self.nodes.get(name, {}))
 
+    def clone(self):
+        child = copy.copy(self)
+        child.nodes = copy.deepcopy(self.nodes)
+        return child
+
     def run_recognition(self, name, image):
         self.recognitions.append(name)
         return NS(hit=name in image, box=[700, 200, 1, 1])
@@ -188,11 +193,68 @@ class RoutingTests(unittest.TestCase):
 
     def test_special_formation_popup_stops_before_generic_battle_flow(self):
         r, c = runner([{"进本-选择助战"},
-                       {"主线-编制限制", "进本-队伍确认"}])
-        with self.assertRaisesRegex(StoryStopped, "编制限制"):
+                       {"主线-编制限制", "进本-队伍确认"}],
+                      {"auto_handle_restrictions": False})
+        with self.assertRaisesRegex(StoryStopped, "需要手动调整"):
             r.fight()
         self.assertEqual([n for n, _ in c.actions], ["进本-选择助战"])
         self.assertEqual(c.tasks, [])
+
+    def test_restriction_stops_immediately_at_start_and_during_entry(self):
+        popup = {"主线-编制限制", "进本-队伍确认", "进本-关闭告知弹窗",
+                 "主线-编队弹窗关闭保底"}
+        for mode in ("native", "bbc"):
+            for method in ("run", "wait_after_quest_click", "reach_formation"):
+                with self.subTest(mode=mode, method=method):
+                    r, c = runner([popup], {"battle_mode": mode, "auto_handle_restrictions": False})
+                    with self.assertRaisesRegex(StoryStopped, "手动调整"):
+                        getattr(r, method)()
+                    self.assertLess(r.clock(), 1)
+                    self.assertEqual(c.actions, [])
+                    self.assertEqual(c.tasks, [])
+                    self.assertEqual((r.completed, r.battles), (0, 0))
+
+    def test_start_from_formation_uses_native_flow_and_counts_current_quest(self):
+        formation = {"进本-队伍确认"}
+        r, c = runner([formation] * 4 + [{"进本-战斗主界面已出现"}, MAP, MAP],
+                      {"quest_limit": 1})
+        r.run()
+        self.assertEqual([n for n, _ in c.tasks], ["进本流程", "原生自动战斗入口"])
+        self.assertEqual(c.actions, [])
+        self.assertNotIn("主线-列表NEXT", c.recognitions)
+        self.assertEqual((r.completed, r.battles), (1, 1))
+
+    def test_start_from_formation_bbc_remains_single_battle(self):
+        r, c = runner([{"进本-队伍确认"}, MAP, MAP],
+                      {"quest_limit": 1, "battle_mode": "bbc"})
+        r.run()
+        self.assertEqual(c.tasks, [("bbc战斗", {
+            "执行BBC任务": {"attach": {"run_count": 1, "battle_type": 0}}
+        })])
+        self.assertEqual(c.actions, [])
+        self.assertEqual((r.completed, r.battles), (1, 1))
+
+    def test_start_from_formation_returns_to_next_locator_after_current_quest(self):
+        r, c = runner([{"进本-队伍确认"}, MAP | {"主线-地图NEXT"},
+                       PANEL | {NEXT}, PANEL | {NEXT}], {"quest_limit": 2})
+        with patch.object(r, "fight") as fight, patch.object(r, "settle") as settle, \
+             patch.object(r, "enter", return_value="story") as enter:
+            r.run()
+        self.assertEqual(fight.call_count, 1)
+        self.assertEqual(settle.call_count, 1)
+        self.assertEqual(enter.call_count, 1)
+        self.assertEqual([n for n, _ in c.actions], ["主线-地图NEXT"])
+        self.assertEqual((r.completed, r.battles), (2, 1))
+
+    def test_start_from_formation_handles_auto_formation_popup(self):
+        popup, formation = "进本-自动编队确认", "进本-队伍确认"
+        decide = "主线限制-编队决定"
+        r, c = runner([{popup}, {decide}, {formation}], {"quest_limit": 1})
+        with patch.object(r, "fight"), patch.object(r, "settle"):
+            r.run()
+        self.assertEqual([n for n, _ in c.actions], [popup, decide])
+        self.assertEqual(c.tasks, [])
+        self.assertEqual((r.completed, r.battles), (1, 1))
 
     def test_normal_support_reaches_formation_then_reuses_entry_flow(self):
         for support_name in ("进本-选择助战", "助战action", "Chaldea助战action"):
@@ -215,14 +277,16 @@ class RoutingTests(unittest.TestCase):
     def test_auto_formation_popup_has_priority_over_visible_formation(self):
         popup = "进本-自动编队确认"
         formation = "进本-队伍确认"
+        decide = "主线限制-编队决定"
         for support in ("进本-选择助战", "助战action", "Chaldea助战action"):
             with self.subTest(support=support):
-                r, c = runner([{support}, {popup, formation},
+                r, c = runner([{support}, {popup, formation}, {decide},
                                {formation}, {formation}, {formation}])
                 c.nodes["进本流程"]["next"] = [support, formation]
                 r.reach_formation()
                 self.assertEqual([n for n, _ in c.actions].count(popup), 1)
-                self.assertEqual([n for n, _ in c.tasks].count("自动编队-编队决定"), 1)
+                self.assertEqual([n for n, _ in c.actions].count(decide), 1)
+                self.assertTrue(r.current_restricted)
                 self.assertNotIn("进本流程", [n for n, _ in c.tasks])
 
     def test_auto_formation_not_handled_during_settlement(self):
@@ -230,24 +294,31 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(r.interrupt({"进本-自动编队确认"}))
         self.assertEqual(c.actions, [])
         self.assertTrue(r.interrupt({"进本-自动编队确认"}, entering=True))
-        self.assertEqual([n for n, _ in c.actions], ["进本-自动编队确认"])
-        self.assertEqual([n for n, _ in c.tasks], ["自动编队-编队决定"])
+        self.assertTrue(r.interrupt({"主线限制-编队决定"}, entering=True))
+        self.assertEqual([n for n, _ in c.actions], ["进本-自动编队确认", "主线限制-编队决定"])
+        self.assertEqual(c.tasks, [])
 
     def test_auto_formation_decide_failure_stops_handoff(self):
-        r, c = runner([{"进本-自动编队确认"}, {"进本-队伍确认"}])
-        with patch.object(c, 'run_task', return_value=NS(status=NS(succeeded=False))):
-            with self.assertRaisesRegex(StoryStopped, "自动编队-编队决定"):
+        r, c = runner([{"进本-自动编队确认"}, {"主线限制-编队决定"}])
+        original = c.run_action
+        def action(name, *args, **kwargs):
+            if name == "主线限制-编队决定":
+                return NS(success=False)
+            return original(name, *args, **kwargs)
+        with patch.object(c, 'run_action', side_effect=action):
+            with self.assertRaisesRegex(StoryStopped, "主线限制-编队决定"):
                 r.reach_formation()
 
     def test_formation_notice_and_auto_popup_can_appear_in_either_order(self):
         notice, auto, formation = "进本-编成条件提示", "进本-自动编队确认", "进本-队伍确认"
         for order in ((notice, auto), (auto, notice), (notice,)):
             with self.subTest(order=order):
-                r, c = runner([{n, formation} for n in order] + [{formation}] * 4)
+                decide = "主线限制-编队决定"
+                middle = [{decide}] if auto in order else []
+                r, c = runner([{n, formation} for n in order] + middle + [{formation}] * 4)
                 r.reach_formation()
-                self.assertEqual([n for n, _ in c.actions], list(order))
-                expected_tasks = ["自动编队-编队决定"] if auto in order else []
-                self.assertEqual([n for n, _ in c.tasks], expected_tasks)
+                self.assertEqual([n for n, _ in c.actions], list(order) + ([decide] if auto in order else []))
+                self.assertEqual(c.tasks, [])
 
     def test_formation_notice_is_not_closed_during_settlement(self):
         r, c = runner()
@@ -268,6 +339,52 @@ class RoutingTests(unittest.TestCase):
         self.assertTrue(r.interrupt(popup,entering=True))
         self.assertTrue(r.interrupt(popup,forming=True))
         self.assertEqual([n for n,_ in c.actions],["进本-攻略提示关闭"]*2)
+
+    def test_formation_close_fallback_repeats_until_stable_formation(self):
+        popup, formation = "主线-编队弹窗关闭保底", "进本-队伍确认"
+        r, c = runner([{popup, formation}, set(), {popup}, {popup, formation}]
+                      + [{formation}] * 4)
+        r.reach_formation()
+        self.assertEqual([n for n, _ in c.actions], [popup] * 3)
+        self.assertEqual(c.tasks, [])
+
+    def test_formation_close_fallback_runs_before_startup_handoff(self):
+        popup, formation = "主线-编队弹窗关闭保底", "进本-队伍确认"
+        r, c = runner([{popup, formation}] * 3 + [{formation}])
+        self.assertIsNone(r.locate())
+        self.assertEqual([n for n, _ in c.actions], [popup] * 3)
+        self.assertEqual(c.tasks, [])
+
+    def test_formation_close_fallback_is_only_used_during_entry(self):
+        popup = "主线-编队弹窗关闭保底"
+        r, c = runner()
+        self.assertFalse(r.interrupt({popup}))
+        self.assertNotIn(popup, c.recognitions)
+        self.assertTrue(r.interrupt({popup}, entering=True))
+        self.assertTrue(r.interrupt({popup}, forming=True))
+        self.assertEqual([n for n, _ in c.actions], [popup] * 2)
+
+    def test_formation_close_fallback_never_overrides_manual_restriction(self):
+        r, c = runner(config={"auto_handle_restrictions": False})
+        popup = {"主线-编制限制", "主线-编队弹窗关闭保底"}
+        for flags in ({"entering": True}, {"forming": True}):
+            with self.subTest(flags=flags):
+                with self.assertRaisesRegex(StoryStopped, "需要手动调整"):
+                    r.interrupt(popup, **flags)
+        self.assertEqual(c.actions, [])
+
+    def test_known_formation_hint_has_priority_over_close_fallback(self):
+        hint, fallback, formation = "进本-攻略提示关闭", "主线-编队弹窗关闭保底", "进本-队伍确认"
+        r, c = runner([{hint, fallback, formation}, {fallback, formation}]
+                      + [{formation}] * 4)
+        r.reach_formation()
+        self.assertEqual([n for n, _ in c.actions], [hint, fallback])
+
+    def test_close_fallback_precedes_generic_notice_dispatch(self):
+        fallback = "主线-编队弹窗关闭保底"
+        r, c = runner()
+        self.assertTrue(r.interrupt({fallback, "进本-关闭告知弹窗"}, forming=True))
+        self.assertEqual([n for n, _ in c.actions], [fallback])
 
     def test_ambiguous_support_configuration_stops_before_click(self):
         r, c = runner([{"进本-选择助战", "助战action"}])
@@ -364,7 +481,7 @@ class RoutingTests(unittest.TestCase):
         original = r.task
         tokens = []
         def task(name, override=None):
-            token = c.override["编队身份-会话"]["attach"]["session_id"]
+            token = r.ctx.override["编队身份-会话"]["attach"]["session_id"]
             if name == "助战action":
                 tokens.append(token)
                 sessions.set_support_fallback(c.get_task_job().job_id, token, True)

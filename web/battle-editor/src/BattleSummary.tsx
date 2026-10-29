@@ -9,6 +9,8 @@ import {CardArtwork} from './NPCardPreview';
 import {cardPreviewRegion,artworkColor} from './npCardRequest';
 import type {CardPreviewConfig} from './npCardRequest';
 import './battleSummary.css';
+import {specialSkillChoiceLabel} from './specialSkillChoices';
+import './specialSkillChoices.css';
 
 function SummaryPortrait({src,label}:{src?:string|null;label:string}) {
  const [failed,setFailed]=useState(false);
@@ -73,6 +75,7 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
   {master?<span className="summary-person" title={mystic?.name??'御主礼装未指定'}><SummaryPortrait src={mystic?.image} label="御主"/><span>御主</span></span>:<SummaryMember roster={roster} slot={raw.svt} catalog={catalog}/>}
   <span className="summary-muted">{swap?'使用':'使用技能'}</span>
   <span className="summary-skill" title={name}>{validSkill&&actorPresent?<SkillIcon skill={meta?{...meta,name}:undefined} index={raw.skill}/>:<Shield size={24} aria-hidden="true"/>}<span>{name}</span></span>
+  {specialSkillChoiceLabel(entry,catalog)&&<span className="special-choice-badge">{specialSkillChoiceLabel(entry,catalog)}</span>}
   {swap?<span className="summary-swap-pair">
    {validFront(front)&&backup!=null&&backup>=3&&backup<6?<><SummaryMember roster={roster} slot={front} catalog={catalog}/><ArrowLeftRight size={16} className="summary-arrow" aria-label="交换"/><SummaryMember roster={roster} slot={backup} backup catalog={catalog}/></>:<span className="summary-unresolved">换人位置未配对或无效</span>}
   </span>:<>
@@ -83,7 +86,7 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
 }
 
 export function BattleSummary({data,catalog,cardPreviewRegion:preference,npCardPreview}:{data:Json;catalog:Catalog;cardPreviewRegion?:string;npCardPreview?:CardPreviewConfig}) {
- const turns=turnsOf(data),region=cardPreviewRegion(preference,npCardPreview);
+ const turns=turnsOf(data,catalog),region=cardPreviewRegion(preference,npCardPreview);
  return <div className="summary-panel visual-battle-summary">
   <div className="subsection-title">打法摘要 <small>共 {turns.length} 回合</small></div>
   {turns.length?turns.map((turn,i)=><div className="summary-turn" key={i}><span>{String(i+1).padStart(2,'0')}</span><div className="summary-turn-content"><b>第 {i+1} 回合</b><div className="summary-actions">{turn.entries.map(entry=><SummaryEntry entry={entry} data={data} catalog={catalog} region={region} config={npCardPreview} key={entry.index}/>)}</div></div></div>):<p className="muted">未设置回合逻辑，全程使用通用自动战斗。</p>}

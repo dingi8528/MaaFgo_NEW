@@ -29,6 +29,20 @@ test('share projection keeps zero turns distinct from an explicit empty attack',
  assert.deepEqual(data.team,original.team);assert.deepEqual(data.actions,[{type:'attack',attacks:[]}]);
 });
 
+test('share skill rows include their own special choice after ordinary skills and an order change',()=>{
+ const withChoices:Catalog={...catalog,specialSkillChoices:{schemaVersion:1,groups:[
+  {id:'test-np-color',servantIds:[100],skillNumbers:[2],field:'tdTypeChanges',defaultValue:1,options:[{value:1,label:'Arts 宝具'},{value:2,label:'Buster 宝具'},{value:3,label:'Quick 宝具'}]},
+  {id:'test-option',servantIds:[200],skillNumbers:[1],field:'skillActSelectSelections',defaultValue:0,options:[{value:0,label:'不消耗'},{value:1,label:'消耗 10 个暴击星'}]},
+ ]}};
+ const data=team();data.actions=[{type:'skill',svt:0,skill:0},{type:'skill',svt:0,skill:1},{type:'skill',svt:null,skill:2},{type:'skill',svt:0,skill:0},{type:'attack',attacks:[]}];
+ data.delegate={replaceMemberIndexes:[[0,0]],tdTypeChanges:['quick'],skillActSelectSelections:[1],unknownKeep:{value:true}};
+ const before=structuredClone(data),rows=shareImageModel(data,withChoices).turns[0].actions;
+ assert.equal(rows[0].kind,'skill');assert.equal(rows[0].choice,undefined);
+ if(rows[1].kind==='attack'||rows[3].kind==='attack')throw new Error('expected skills');
+ assert.match(rows[1].choice!,/Quick 宝具/);assert.match(rows[3].choice!,/消耗 10 个暴击星/);
+ assert.equal(rows[3].actor.name,'候补乙');assert.deepEqual(data,before);
+});
+
 test('share rows resolve aliases and use the roster at the exact action point after a swap',()=>{
  const data=team();data.actions=[{type:'skill',svt:0,skill:0,options:{playerTarget:0}},{type:'skill',svt:null,skill:2},{type:'skill',svt:0,skill:1,options:{playerTarget:0,enemyTarget:2}},{type:'attack',attacks:[{isTD:true,svt:0}]}];
  data.delegate.replaceMemberIndexes=[[0,0]];
