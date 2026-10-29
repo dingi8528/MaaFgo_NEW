@@ -14,6 +14,8 @@ import test_mxu_packaging as mxu_tests
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSED_MODULE = 'agent/battle/perception/composed_card.py'
 SPECIAL_CHOICE_MODULES = ('agent/battle_editor/special_choices.py', 'agent/battle/core/special_skills.py')
+EQUIP_FILTER_FILES = ('agent/battle_editor/equip_filters.py', 'agent/battle_editor/data/equip_filters.json',
+                      'agent/battle_editor/data/equip_filters_sources.json', 'agent/custom/equip_categories.json')
 RUNTIME_MANIFESTS = (
     'assets/resource/base/image/CommandCards/manifest',
     'assets/resource/base/image/CommandCards/_composition/manifest',
@@ -39,7 +41,7 @@ class RuntimeBundleGuardTests(unittest.TestCase):
 
     def test_mxu_guard_rejects_missing_runtime_module_and_manifests(self):
         mxu_tests.mxu.validate_editor_bundle(self.fixture.source)
-        for relative in (COMPOSED_MODULE, *SPECIAL_CHOICE_MODULES, *RUNTIME_MANIFESTS):
+        for relative in (COMPOSED_MODULE, *SPECIAL_CHOICE_MODULES, *EQUIP_FILTER_FILES, *RUNTIME_MANIFESTS):
             with self.subTest(relative=relative):
                 path = self.fixture.source / relative
                 original = path.read_bytes()
@@ -134,12 +136,17 @@ assert not (root / 'agent/battle_editor/data/np_cards.json').exists()
 from battle.runtime.runtime import AutoBattleRuntime
 from battle.perception import perception, composed_card
 from battle.core import special_skills
+import json
 from battle.data.servant_identity import canonical_servant_id
 from platform_waits import is_android
 assert is_android()
 assert Path(composed_card.__file__).resolve().is_relative_to(root / 'agent')
 assert Path(special_skills.__file__).resolve().is_relative_to(root / 'agent')
 assert len(special_skills.SPECIAL_SKILL_GROUPS) == 14
+categories = json.loads((root / 'agent/custom/equip_categories.json').read_text(encoding='utf-8'))
+assert categories['equips']['9300070']['filter_tag'] == '羁绊礼装'
+equips = json.loads((root / 'agent/custom/equip_list.json').read_text(encoding='utf-8'))['equips']
+assert next(row for row in equips if row['id'] == '9300070')['filter_tag'] == '羁绊礼装'
 recognizer = composed_card.ComposedCardRecognizer.default()
 assert recognizer.root == root
 assert recognizer.composer.roots == (root / 'resource/base/image/CommandCards',)

@@ -794,3 +794,21 @@ CI 的多行分享图测试出现完整8块仅识别7块；本机通过 `cv2.set
 固定计划只在其有效回合范围内控制技能与宝具。超过计划范围时，恢复通用技能决策、可用宝具与普通卡策略，同时停止计划模式对技能可用状态的覆盖，避免忽略冷却识别。UI 保留零回合状态；添加空回合序列化为真实 attack 边界，删除最后一回合恢复空 actions，不借用预览中的“第1回合”创建数据。导出图片及恢复流程也必须保留两种数据差异。
 
 BBC 运行端会将完全空的固定回合折叠为自由战斗，无法无损表达上述纯普通卡空回合。转换器对无累积技能且显式 attacks=[] 的攻击边界明确报错并提示原生战斗；缺失/null/空actions仍不生成round字段，沿用BBC通用策略。有技能的空attacks保留既有转换，不使用伪造动作或额外回合填充。
+
+
+## 礼装离线筛选资料与分类修正（2026-10-29）
+
+`tools/build_battle_editor_equip_filters.py` 从官方 Atlas JP Nice 数据编译工程 `agent/custom/equip_list.json` 已有的礼装，不扩充可执行清单或卡面。输出 `agent/battle_editor/data/equip_filters.json` 与 `equip_filters_sources.json`，后者记录来源 URL、版本及 SHA-256；原始整包和触发技能缓存留在忽略目录 `config/BattleEditor/equip-filter-build`。正常重建不联网，更新缓存使用 `python tools/build_battle_editor_equip_filters.py --refresh`。运行时由 `battle_editor/equip_filters.py` 读取本地索引，并投影到 catalog；服务目录有进程内缓存，更新后需重启编辑器服务。
+
+基础/满破按实际 `skillSvts.condLimitCount=0/4` 及活动绑定分组，不能单凭 strengthStatus 判断。无条件初始 NP 仅累加直接开场 gainNp；嵌套触发、助战专属、持有者、概率和活动条件独立保留。NP 充能以百分之一、普通倍率以千分制换算，暴击星为实际颗数。永久素材掉落按 `DropRateCount` 读取，与活动掉落分开。不能结构化的函数保留原文，不伪造效果或零 NP。技术性的 buff 域判定不应误标为额外触发条件。
+
+本次索引覆盖1156条工程礼装，其中472条由官方 owner/flags 确认是羁绊礼装。旧运行清单有470条被错误标为“通常”；仅修正其 `acquisition_category_jp` 与 `filter_tag` 两字段，ID、图片、important、bond 等保持。精确 ID 权威表位于 `agent/custom/equip_categories.json`，`tools/build_equip_list.py` 重建时优先读取它，避免旧源表分类再次覆盖。同步这张表与运行清单可使用 `python tools/build_battle_editor_equip_filters.py --sync-runtime-categories`；没有修改外部 CSV/Excel。Android 仅保留轻量独立分类资料，不依赖编辑器；MXU 校验效果索引、来源清单及哈希。 源清单、分类表与来源清单的生成器显式写 LF，与 Git 属性保持一致；否则 Windows 的 CRLF 原文件哈希在 Linux 检出后会变化。提交前同时核对暂存 blob 的源哈希和索引哈希，不能只检验工作目录字节。
+
+前端 `equipFilters.ts` 负责纯筛选、数值摘要、排序及未知值处理；`equipSelectorPreferences.ts` 原存储键内迁移到 v2，保留旧常用/星级/库存偏好。查询基准与条件开关不写入编队 JSON，不改变 candidates、limitBreak 或 Chaldea/BBC 转换字段。星级与来源是快捷筛选，类型及其他条件放在可折叠高级筛选；高级计数含类型、不含星级，清除高级保留星级与来源。详情入口与直接选择按钮分开。
+
+
+## MaaFramework 原生回调集成夹具补齐（2026-10-29）
+
+CI 的 `tests/run_maa_battle_editor_integration.py` 在普通回归通过后，启动临时安装报“编辑器服务提前退出（1）”。本机按原脚本复现，子进程实际异常为 `FileNotFoundError: agent/battle/core/special_skills.py`：`main → server → validation → special_choices` 在导入时读取共享特殊技能登记表，而该独立夹具只复制了 `battle_editor` 与 `servant_aliases`。正式打包清单和其他便携启动测试已包含该文件。
+
+夹具现补复制同一权威单文件，不复制整个战斗运行时；失败时在临时目录被清理前输出服务日志，继续保留原始失败。真实 MaaFramework + 本地 dummy controller 的启动、复用、任务结束后服务存活、停止四项已通过；反向漏文件探针确认仍失败，并将实际缺文件 traceback 保留在输出中。没有连接设备或修改打包版。

@@ -2,15 +2,17 @@ import {isAutoAttackCard,setAttackCard} from './attackCards';
 import {setEquipCandidate} from './equipRequirements';
 import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoicesRebuilt} from './specialSkillChoices';
 import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
+import {matchEquipAdvanced} from './equipFilters';
+import type {EquipAdvancedFilters,EquipFilterCatalog,EquipFilterMetadata} from './equipFilters';
 
 export type Json = Record<string, any>;
 export interface ServantBond {tags?:string[]|null;tags_by_ascension?:Record<string,string[]>|null;tags_by_costume?:string[]|Record<string,string[]>|null;alignment?:string|null;attribute?:string|null;gender?:string|null;sub_attribute?:string|null;[key:string]:unknown}
 export interface NPFilterVariant {treasureDeviceId?:number;name_jp?:string;type?:string;card?:string;conditions_jp?:string[];[key:string]:unknown}
 export interface ServantNPFilter {types?:string[];cards?:string[];variants?:NPFilterVariant[]}
 export interface Servant { id:number; name:string; nameJp?:string; collectionNo?:number; classKey?:string; className?:string; rarity?:number;cost?:number|null; image?:string|null; portrait?:string|null; statusImage?:string|null; classIcon?:string|null; cards?:number[]; aliases?:(string|number)[]; searchAliases?:string[]; skills?:{id:number;num?:number;name:string;icon?:string;target?:string;targets?:string[];coolDown?:number[]}[]; skillVariants?:Json[]; appendSkills?:Json[]; np?:Json; npVariants?:Json[];bond?:ServantBond|null;npFilter?:ServantNPFilter|null }
-export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;common?:boolean;commonSources?:string[]}
+export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;common?:boolean;commonSources?:string[];filters?:EquipFilterMetadata}
 export interface Mystic {id:number;name:string;image?:string|null;skills?:Json[];orderChange?:boolean}
-export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json;specialSkillChoices?:SpecialSkillChoiceCatalog}
+export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json;specialSkillChoices?:SpecialSkillChoiceCatalog;equipFilters?:EquipFilterCatalog}
 export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding}
 export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
@@ -164,12 +166,16 @@ export function matchServantAdvanced(servant:Servant,filters:ServantAdvancedFilt
  }
  return {matches:matchedForms.length>0,conditionalOnly:!baseMatches&&matchedForms.length>0,matchedForms};
 }
-export interface CatalogFilters {query?:string;classKey?:string;rarity?:string;owned?:boolean;common?:boolean;advanced?:ServantAdvancedFilters}
+export interface CatalogFilters {query?:string;classKey?:string;rarity?:string;owned?:boolean;common?:boolean;advanced?:ServantAdvancedFilters;equipKind?:string;equipSource?:string;equipAdvanced?:EquipAdvancedFilters}
 export function filterCatalog(type:'servant'|'equip'|'mystic',catalog:Catalog,filters:CatalogFilters):(Servant|Equip|Mystic)[] {
- const list=type==='servant'?catalog.servants:type==='equip'?catalog.equips.filter(e=>e.recognizable===true&&!!e.image):catalog.mysticCodes;
+ const list=type==='servant'?catalog.servants:type==='equip'?catalog.equips.filter(e=>e.recognizable===true&&!!e.image&&(!filters.equipKind||(e.filters?.kind??'unknown')===filters.equipKind)&&(!filters.equipSource||(e.filters?.source??'unknown')===filters.equipSource)&&(!filters.equipAdvanced||matchEquipAdvanced(e,filters.equipAdvanced).matches)):catalog.mysticCodes;
  const ownIds=type==='equip'?catalog.inventory?.equips:catalog.inventory?.servants;
  const query=filters.query?.trim().toLowerCase();
- return list.filter(item=>{const s=item as Servant;return (!query||`${item.name} ${s.nameJp??''} ${item.id} ${s.collectionNo??''} ${s.searchAliases?.join(' ')??''}`.toLowerCase().includes(query))&&(!filters.classKey||s.classKey===filters.classKey)&&(!filters.rarity||String(s.rarity)===filters.rarity)&&(!filters.common||type!=='equip'||(item as Equip).common===true)&&(!filters.owned||ownIds?.includes(item.id)||s.aliases?.some(alias=>ownIds?.includes(Number(alias))))&&(type!=='servant'||!filters.advanced||matchServantAdvanced(s,filters.advanced).matches);});
+ return list.filter(item=>{
+  const s=item as Servant,bondOwner=type==='equip'?(item as Equip).filters?.bondOwner:undefined,owner=query&&bondOwner?servantFor(catalog,bondOwner):undefined;
+  const searchText=`${item.name} ${s.nameJp??''} ${item.id} ${s.collectionNo??''} ${s.searchAliases?.join(' ')??''} ${bondOwner??''} ${owner?.name??''} ${owner?.nameJp??''} ${owner?.id??''} ${owner?.aliases?.join(' ')??''} ${owner?.searchAliases?.join(' ')??''}`;
+  return (!query||searchText.toLowerCase().includes(query))&&(!filters.classKey||s.classKey===filters.classKey)&&(!filters.rarity||String(s.rarity)===filters.rarity)&&(!filters.common||type!=='equip'||(item as Equip).common===true)&&(!filters.owned||ownIds?.includes(item.id)||s.aliases?.some(alias=>ownIds?.includes(Number(alias))))&&(type!=='servant'||!filters.advanced||matchServantAdvanced(s,filters.advanced).matches);
+ });
 }
 export const canChange = (data:Json):boolean => [20,210,440].includes(data.team?.mysticCode?.mysticCodeId);
 export const isSwap = (data:Json,raw:any):boolean => canChange(data)&&raw?.type==='skill'&&raw.svt==null&&raw.skill===2;

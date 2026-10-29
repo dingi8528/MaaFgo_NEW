@@ -79,6 +79,7 @@ def validate_editor_bundle(root, *, packaged=False):
         "agent/battle_editor/catalog.py", "agent/battle_editor/storage.py",
         "agent/battle_editor/validation.py", "agent/battle_editor/bond_optimizer.py",
         "agent/battle_editor/special_choices.py", "agent/battle/core/special_skills.py",
+        "agent/battle_editor/equip_filters.py",
         "agent/battle_editor/np_cards.py", "agent/battle_editor/np_card_metadata.py",
         "agent/battle_editor/screenshot_import.py", "agent/battle/perception/formation_candidates.py",
         "agent/battle_editor/share_image.py",
@@ -95,6 +96,15 @@ def validate_editor_bundle(root, *, packaged=False):
                      "agent/custom/bond_completion_costs.json"):
         document(root / relative)
     document(data / "catalog.json")
+    filter_path = data / "equip_filters.json"
+    filters = document(filter_path)
+    filter_sources = document(data / "equip_filters_sources.json")
+    categories = document(root / "agent/custom/equip_categories.json")
+    if (filters.get("schemaVersion") != 1 or not isinstance(filters.get("equips"), dict) or not filters["equips"]
+            or filter_sources.get("schemaVersion") != 1
+            or filter_sources.get("indexSha256") != hashlib.sha256(filter_path.read_bytes()).hexdigest()
+            or categories.get("schemaVersion") != 1 or not isinstance(categories.get("equips"), dict)):
+        raise RuntimeError("编队编辑器礼装筛选索引或来源校验不完整")
     commands = resource / "base/image/CommandCards"
     portraits = document(commands / "manifest")
     if not isinstance(portraits.get("servants"), dict) or not portraits["servants"]:
