@@ -812,3 +812,12 @@ BBC 运行端会将完全空的固定回合折叠为自由战斗，无法无损�
 CI 的 `tests/run_maa_battle_editor_integration.py` 在普通回归通过后，启动临时安装报“编辑器服务提前退出（1）”。本机按原脚本复现，子进程实际异常为 `FileNotFoundError: agent/battle/core/special_skills.py`：`main → server → validation → special_choices` 在导入时读取共享特殊技能登记表，而该独立夹具只复制了 `battle_editor` 与 `servant_aliases`。正式打包清单和其他便携启动测试已包含该文件。
 
 夹具现补复制同一权威单文件，不复制整个战斗运行时；失败时在临时目录被清理前输出服务日志，继续保留原始失败。真实 MaaFramework + 本地 dummy controller 的启动、复用、任务结束后服务存活、停止四项已通过；反向漏文件探针确认仍失败，并将实际缺文件 traceback 保留在输出中。没有连接设备或修改打包版。
+
+
+## Linux CI 的 OCR 模型目录大小写（2026-10-29）
+
+92114fb1 的组件回归中，底部关闭按钮的国/日服正例各失败一次，又因战后剧情测试继承测试类重复执行，合计4次失败。MaaFramework 5.10.4 的 ResourceMgr::load_bundle 固定加载 `model/ocr`；仓库原目录却为 `assets/resource/base/model/OCR`。Windows 文件系统忽略大小写而本机通过，Linux 会跳过模型，资源包本身仍可加载成功，随后的OCR没有命中。官方依据：https://github.com/MaaXYZ/MaaFramework/blob/v5.10.4/source/MaaFramework/Resource/ResourceMgr.cpp#L664 。
+
+将模型目录按 Git 实际路径改为小写 `ocr`，4个文件的SHA256均保持不变；不替换模型、不改识别节点、区域、正则或置信度阈值。新增目录和模型文件准确大小写的静态单测，通过实际枚举文件名使Windows也能提前发现问题。共享资源初始化移到非测试基类，战后剧情测试仅复用初始化，不再继承主线测试方法。编辑器图片导入的模型兜底同时识别规范小写目录并保留旧大写目录兼容。
+
+验证在仅含暂存修复的Git归档快照中执行：完整组件套件216项通过（另含静态检查），模型大小写检查1项及图片识别路径20项通过，真实MaaFramework编辑器启动/复用/停止通过。组件数量由219减至216是移除了子类意外重复继承的3个主线测试，原始真实OCR正例、顶部负例与点击边界均保留。证据在`.workbuddy/runtime/close-fallback-ci-20261029/`，未连接设备或同步打包版。

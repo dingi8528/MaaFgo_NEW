@@ -41,7 +41,8 @@ class ScreenController(CustomController):
     click_key = input_text = key_down = key_up = reject
 
 
-class FrameworkTests(unittest.TestCase):
+class FrameworkResources:
+    """Share native resource setup without inheriting unrelated test methods."""
     @classmethod
     def setUpClass(cls):
         Library.open(Path(maa.__file__).parent / "bin")
@@ -55,6 +56,8 @@ class FrameworkTests(unittest.TestCase):
             self.assertTrue(resource.post_bundle(ROOT / "assets/resource" / folder).wait().succeeded)
         return resource
 
+
+class FrameworkTests(FrameworkResources, unittest.TestCase):
     def test_both_bundles_and_normalized_route(self):
         for server in ("cn", "jp"):
             with self.subTest(server=server):

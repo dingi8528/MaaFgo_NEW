@@ -111,6 +111,18 @@ class ChaldeaImageTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'chaldea_ocr_unavailable')
         self.assertIn('Team ID', caught.exception.message)
 
+    def test_base_models_load_from_canonical_and_legacy_directories(self):
+        for relative in ('resource/base/model/ocr', 'assets/resource/base/model/ocr',
+                         'resource/base/model/OCR', 'assets/resource/base/model/OCR'):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary) / relative
+                directory.mkdir(parents=True)
+                for name in ('rec.onnx', 'keys.txt'):
+                    (directory / name).write_bytes(b'fixture')
+                with patch('agent.battle_editor.chaldea_image._Reader') as reader:
+                    self.assertIs(_reader(temporary), reader.return_value)
+                    reader.assert_called_once_with(directory / 'rec.onnx', directory / 'keys.txt')
+
     def run_mocked_image(self, readings):
         crops = [(np.ones((40, 400, 3), np.uint8), [20, y, 400, 40]) for y in (150, 100, 50)]
         reader = Mock()
