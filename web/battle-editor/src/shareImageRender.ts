@@ -9,6 +9,9 @@ export interface EncodedShareImage {schema:1;format:'maafgo-share-image';digest?
 export interface ShareImageOptions {data:Json;catalog:Catalog;encoded:EncodedShareImage;region?:string;cardPreviewConfig?:CardPreviewConfig;signal?:AbortSignal;validation?:Json;costLimit?:number}
 export interface RenderedShareImage {blob:Blob;width:number;height:number;warnings:string[]}
 const W=SHARE_IMAGE_WIDTH,PAD=40,CONTENT=W-PAD*2,QR_PIXEL=5;
+const BRAND_HEIGHT=168,BRAND_GAP=20;
+const BRAND_ICON=new URL('../../../assets/resource/icon.png',import.meta.url).href;
+const PROJECT_URL='https://github.com/xlxyvergil/MaaFgo';
 const COLOR={background:'#edf4f8',paper:'#ffffff',ink:'#102e43',muted:'#5e7b8f',line:'#c5d8e5',blue:'#146b91',deep:'#124b6b',gold:'#b88d35',faint:'#f4f8fb',error:'#b73e42',amber:'#8b611a'};
 const FONT='"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif';
 const abort=(signal?:AbortSignal)=>{if(signal?.aborted)throw new DOMException('导出已取消','AbortError');};
@@ -107,7 +110,7 @@ function layout(ctx:CanvasRenderingContext2D,model:ShareImageModel,encoded:Encod
  const qrTile=qrSize+70;
  const noticeHeight=model.notices.reduce((h,notice)=>h+linesHeight(ctx,notice,CONTENT-48,15,22)+6,0);
  const footer=148+Math.ceil(encoded.markers.length/qrColumns)*qrTile+noticeHeight+64;
- const height=PAD+header+20+formation+20+mystic+28+(turns.length?turns.reduce((sum,h)=>sum+h+20,0):100)+footer+PAD;
+ const height=PAD+header+20+formation+20+mystic+28+(turns.length?turns.reduce((sum,h)=>sum+h+20,0):100)+footer+BRAND_GAP+BRAND_HEIGHT+PAD;
  if(height>SHARE_IMAGE_MAX_HEIGHT||height*W>SHARE_IMAGE_MAX_PIXELS)throw new Error(`当前内容需要约 ${W}×${Math.ceil(height)} 像素，超出单张图片限制。请减少回合或拆分方案后导出，不会截掉内容。`);
  return {height:Math.ceil(height),header,formation,mystic,turns,footer,qrColumns,qrTile,qrSize};
 }
@@ -188,7 +191,7 @@ async function loadAssets(urls:string[],signal?:AbortSignal):Promise<{assets:Map
  async function worker(){while(pointer<urls.length){abort(signal);const source=urls[pointer++];const controller=new AbortController(),cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});const timer=setTimeout(cancel,15000);
   try{
    const url=new URL(source,window.location.href);
-   if(url.origin!==window.location.origin||url.username||url.password||!/^\/(?:media\/|api\/(?:np-card|command-card)\?)/.test(url.pathname+url.search))throw new Error('非本地图标');
+   if(url.origin!==window.location.origin||url.username||url.password||(!/^\/(?:media\/|api\/(?:np-card|command-card)\?)/.test(url.pathname+url.search)&&url.href!==BRAND_ICON))throw new Error('非本地图标');
    let blob:Blob;
    if(url.pathname.startsWith('/api/'))blob=(await apiPNG(url.pathname+url.search,controller.signal)).blob;
    else{const response=await fetch(url.pathname+url.search,{credentials:'same-origin',signal:controller.signal});if(!response.ok)throw new Error('图标加载失败');blob=await response.blob();}
@@ -200,7 +203,7 @@ async function loadAssets(urls:string[],signal?:AbortSignal):Promise<{assets:Map
  catch(error){for(const asset of assets.values())asset.close();throw error;}
 }
 function imageSources(model:ShareImageModel):string[]{
- const urls=new Set<string>();const add=(url?:string|null)=>{if(url)urls.add(url);};
+ const urls=new Set<string>([BRAND_ICON]);const add=(url?:string|null)=>{if(url)urls.add(url);};
  model.members.forEach(member=>{add(member.image);add(member.classIcon);member.skills.forEach(skill=>add(skill.icon));member.equips.forEach(equip=>add(equip.image));});
  add(model.mystic.image);model.mystic.skills.forEach(skill=>add(skill.icon));
  const subject=(person?:SharePerson)=>add(person?.image);
@@ -256,6 +259,12 @@ export async function renderShareImage(options:ShareImageOptions):Promise<Render
   qrY+=Math.ceil(options.encoded.markers.length/geometry.qrColumns)*geometry.qrTile;
   for(const notice of model.notices)qrY+=text(ctx,notice,PAD+24,qrY+4,CONTENT-48,15,COLOR.amber,22)+6;
   text(ctx,'本图仅记录固定回合计划，实际技能、NP及选卡以游戏为准。未指定面卡和不可用宝具由当前策略补齐。',PAD+24,qrY+10,CONTENT-48,14,COLOR.muted,21);
+  top+=geometry.footer+BRAND_GAP;
+  box(ctx,PAD,top,CONTENT,BRAND_HEIGHT,COLOR.paper,COLOR.line,10);
+  image(ctx,assets,BRAND_ICON,PAD+24,top+24,120,120,'MaaFGO','contain');
+  text(ctx,'MaaFGO',PAD+172,top+24,CONTENT-196,29,COLOR.deep,40,true);
+  text(ctx,`GitHub：${PROJECT_URL}`,PAD+172,top+72,CONTENT-196,21,COLOR.muted,30);
+  text(ctx,'B站搜索：是kumi啦',PAD+172,top+111,CONTENT-196,23,COLOR.blue,32,true);
   abort(options.signal);
   const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('图片编码失败，请重试。')),'image/png'));
   abort(options.signal);

@@ -860,3 +860,9 @@ BBC 文本脚本没有自然退场标记的等价语义，转换器遇到 `retir
 最终验收：完整 `python tools/run_tests.py --suite all` 通过，前端 308 项、TypeScript/Vite 构建通过；MXU 8 项、运行时打包 5 项及 `validate_editor_bundle` 通过，真实 MaaFramework 本地 dummy controller 启动／复用／停止集成通过。浏览器验证头像右键、递补者技能、连续退场、上下排序、删除及撤销身份保持、红色检查和正式保存阻止；有效方案正式保存成功，实际 HTTP 对退场旧技能返回 422 且未创建文件。实际下载的一图流经过二维码识别，回导数据与保存 JSON 深层完全一致。截图、分享图与接口验收记录位于 `.workbuddy/runtime/editor-retirement-20261030/`，使用独立 Battle／草稿目录，未写用户正式方案。未连接模拟器验证退场动画，未同步打包目录。
 
 旧服务联调：用户页面遇到 `actor` 未知字段和 `retire` 未支持动作时，确认后台缺少 `features.retirement`，而磁盘页面已更新。备份181份方案／草稿后原模式重启，文件哈希全部保持；同一用户草稿由12项提示变为0项，`valid=true`。重启后旧页面应先重新连接获取新会话，再重新检查，无需刷新或删除退场数据。证据位于 `.workbuddy/runtime/editor-service-refresh-20261030-204920/`。
+
+## 分享一图流项目页脚（2026-10-30）
+
+所有回导码及说明之后新增独立品牌页脚，显示工程 `assets/resource/icon.png`、MaaFGO、`https://github.com/xlxyvergil/MaaFgo` 和“B站搜索：是kumi啦”。图标由 Vite 纳入静态发布资源，加载白名单仅额外允许该图标的精确同源 URL；导出不访问 GitHub 或 B站。页脚168px及20px间距计入总高度、像素和文件大小限制，不覆盖二维码，也不改变回导协议或原方案数据。
+
+前端308项、TypeScript/Vite构建、MXU打包8项和资源完整性校验通过。浏览器实际下载1200×2523 PNG，品牌图标无加载失败；真实二维码解码后与原始方案完全相同。独立验收截图、成品与结果位于 `.workbuddy/runtime/share-branding-20261030/`，未写用户方案或重启主编辑服务。
