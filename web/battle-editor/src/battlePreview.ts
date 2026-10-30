@@ -1,5 +1,6 @@
 import {members,servantFor,skillAt,turnsOf,isSwap,hasServantIdentity,isUnspecifiedSupport} from './model';
 import type {Catalog,Json,Mystic,Servant} from './model';
+import {advanceActionRoster,isRetire,resolveActionActor} from './actionRoster';
 
 /** Display-only cooldown information. This module never edits BattleShareData. */
 export interface CooldownBounds {
@@ -22,9 +23,10 @@ export interface PreviewMember {
   member:Json|null;
   servant:Servant|undefined;
   skills:PreviewSkill[];
+  retired:boolean;
 }
 export interface PreviewWarning {
-  code:'repeat-skill'|'cooldown-skill'|'unknown-cooldown'|'invalid-swap'|'missing-actor';
+  code:'repeat-skill'|'cooldown-skill'|'unknown-cooldown'|'invalid-swap'|'missing-actor'|'invalid-actor'|'retired-actor'|'actor-mismatch'|'invalid-retire'|'missing-replacement';
   actionIndex:number;
   message:string;
 }
@@ -106,7 +108,7 @@ export function previewTurn(data:Json,catalog:Catalog,turnIndex:number):BattlePr
   const selected=Math.max(0,Math.min(Math.max(0,turns.length-1),Number.isInteger(turnIndex)?turnIndex:0));
   const roster:PreviewMember[]=members(data).map((member,initialSlot)=>{
     const actorPresent=hasServantIdentity(member),servant=actorPresent?servantFor(catalog,member?.svtId):undefined;
-    return {key:`initial:${initialSlot}`,initialSlot,slot:initialSlot,member,servant,
+    return {key:`initial:${initialSlot}`,initialSlot,slot:initialSlot,member,servant,retired:false,
       skills:[0,1,2].map(index=>initialSkill(actorPresent?skillAt(member??undefined,servant,index):undefined,index,member?.skillLvs?.[index],actorPresent))};
   });
   const mystic=catalog.mysticCodes.find(code=>code.id===data.team?.mysticCode?.mysticCodeId);
@@ -125,10 +127,16 @@ export function previewTurn(data:Json,catalog:Catalog,turnIndex:number):BattlePr
         for(const actor of roster)for(const state of actor.skills)state.usedThisTurn=false;
         continue;
       }
+      if(isRetire(action)){
+        const issue=advanceActionRoster(data,roster,entry);roster.forEach((actor,slot)=>{actor.slot=slot;if(actor.retired)for(const state of actor.skills)state.ready=false;});
+        if(issue)warnings.push({...issue,actionIndex:entry.index});continue;
+      }
       if(action?.type!=='skill')continue;
       const skillIndex=action.skill;
       if(!Number.isInteger(skillIndex)||skillIndex<0||skillIndex>2)continue;
       const isMaster=action.svt==null;
+      const binding=!isMaster?resolveActionActor(roster,action,entry.actorBinding):undefined;
+      if(binding?.issue){warnings.push({...binding.issue,actionIndex:entry.index});continue;}
       const actor=!isMaster&&Number.isInteger(action.svt)&&action.svt>=0&&action.svt<3?roster[action.svt]:undefined;
       const state=isMaster?master.skills[skillIndex]:hasServantIdentity(actor?.member)?actor?.skills[skillIndex]:undefined;
       if(!state){warnings.push({code:'missing-actor',actionIndex:entry.index,message:isUnspecifiedSupport(actor?.member)?'该技能引用仅要求礼装的助战，未指定从者，无法安排技能。':'该技能动作时点的从者槽位为空或未指定有效从者。'});continue;}
@@ -141,14 +149,10 @@ export function previewTurn(data:Json,catalog:Catalog,turnIndex:number):BattlePr
       state.ready=false;
       if(state.remainingMax==null)warnings.push({code:'unknown-cooldown',actionIndex:entry.index,message:'缺少可靠技能或等级 CD 元数据；冷却保持未知，可手动右键就绪。'});
       if(isSwap(data,action)){
-        const pair=entry.replacement;
-        const front=Array.isArray(pair)?pair[0]:undefined;
-        const back=Array.isArray(pair)?(pair[1]<3?pair[1]+3:pair[1]):undefined;
-        const occupied=(index:number)=>hasServantIdentity(roster[index]?.member)||isUnspecifiedSupport(roster[index]?.member);
-        if(Number.isInteger(front)&&front>=0&&front<3&&Number.isInteger(back)&&back>=3&&back<6&&occupied(front)&&occupied(back)){
-          [roster[front],roster[back]]=[roster[back],roster[front]];
-          roster[front].slot=front;roster[back].slot=back;
-        }else warnings.push({code:'invalid-swap',actionIndex:entry.index,message:'换人配对缺失、无效或包含空槽；不推测换人后的成员。'});
+        const pair=entry.replacement,front=pair?.[0],back=pair?.[1]<3?pair[1]+3:pair?.[1];
+        if(!roster[front]?.member||!roster[back]?.member){warnings.push({code:'invalid-swap',actionIndex:entry.index,message:'换人配对缺失、无效或包含空槽；不推测换人后的成员。'});continue;}
+        const issue=advanceActionRoster(data,roster,entry);roster.forEach((actor,slot)=>{actor.slot=slot;});
+        if(issue)warnings.push({...issue,actionIndex:entry.index});
       }
     }
   }

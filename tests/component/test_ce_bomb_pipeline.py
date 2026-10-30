@@ -7,6 +7,7 @@ safety-boundary checks, not game screenshot calibration.
 from copy import deepcopy
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import threading
@@ -71,6 +72,19 @@ class CeBombPipelineTests(unittest.TestCase):
         cls.ce = json.loads((ROOT / "assets/resource/base/pipeline/搓丸子.json").read_text("utf-8"))
         cls.shared = json.loads((ROOT / "assets/resource/base/pipeline/强化从者.json").read_text("utf-8"))
         cls.shared.update(json.loads((ROOT / "assets/resource/base/pipeline/搓丸子网络.json").read_text("utf-8")))
+
+    def test_qp_shortage_requires_an_explicit_negative_phrase(self):
+        patterns = self.ce[PREFIX + "QP不足提示"]["recognition"]["param"]["expected"]
+        for text, expected in (
+            ("所持QP：2,882,907,116", False),
+            ("強化に必要なQP：90", False),
+            ("QPは足りています", False),
+            ("QPが不足しています", True),
+            ("QPが足りません", True),
+            ("强化所需量子不足", True),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(any(re.search(pattern, text) for pattern in patterns), expected)
 
     def run_graph(self, entry, hits=(), *, overrides=None, on_action=None,
                   state=None, cancel=False, nested_override=None):
@@ -686,7 +700,10 @@ class CeBombPipelineTests(unittest.TestCase):
                     self.assertIsInstance(child, dict)
                     child["recognition"] = preserve_composites(child["recognition"], wanted_template)
                 return source
-            box = expected_box if source.get("param", {}).get("template") == wanted_template else guard_box
+            templates = source.get("param", {}).get("template", [])
+            if isinstance(templates, str):
+                templates = [templates]
+            box = expected_box if wanted_template in templates else guard_box
             return {"type": "Custom", "param": {"custom_recognition": "ce_box",
                     "custom_recognition_param": {"box": box}}}
 

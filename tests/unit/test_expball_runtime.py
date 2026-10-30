@@ -363,23 +363,89 @@ class ExpballRuntimeTests(unittest.TestCase):
                 self.assertEqual(overrides[NETWORK_EXHAUSTED]["on_error"], [])
                 self.assertEqual(c.hits[NETWORK_EXHAUSTED], 0)
 
-    def test_card_presence_uses_positive_empty_probe_after_list_identity(self):
-        for empty in (False, True):
-            with self.subTest(empty=empty):
-                runner, _ = self.runner()
+    def test_card_presence_requires_level_evidence_after_empty_probe_misses(self):
+        for empty, level, expected in ((True, True, False), (False, True, True),
+                                        (False, False, False)):
+            with self.subTest(empty=empty, level=level):
+                runner, context = self.runner()
+                context.nodes["搓丸子-候选等级标志"] = {
+                    "recognition": {"param": {"roi": [74, 190, 117, 38]}}}
                 runner.frame = Mock(return_value="same-frame")
-                runner.reco = Mock(side_effect=lambda name, **kw: True if name == "搓丸子-列表标志" else empty)
+                values = {"搓丸子-列表标志": True, "搓丸子-候选为空": empty,
+                          "搓丸子-候选等级标志": level}
+                runner.reco = Mock(side_effect=lambda name, **kw: values[name])
                 box = [74, 190, 117, 128]
-                self.assertEqual(runner._has_card(box), not empty)
+                self.assertEqual(runner._has_card(box), expected)
+                names = ["搓丸子-列表标志", "搓丸子-候选为空"]
+                if not empty:
+                    names.append("搓丸子-候选等级标志")
                 self.assertEqual([call.args[0] for call in runner.reco.call_args_list],
-                                 ["搓丸子-列表标志", "搓丸子-候选为空"])
-                self.assertEqual(runner.reco.call_args.kwargs["override"]["搓丸子-候选为空"]["recognition"]["param"]["roi"], box)
+                                 names)
+                for call in runner.reco.call_args_list:
+                    self.assertEqual(call.kwargs["image"], "same-frame")
+                probe = names[-1]
+                expected_roi = box if empty else [74, 190, 117, 38]
+                self.assertEqual(runner.reco.call_args.kwargs["override"][probe]["recognition"]["param"]["roi"], expected_roi)
         runner, _ = self.runner()
         runner.frame = Mock(return_value="unknown-page")
         runner.reco = Mock(return_value=None)
         with self.assertRaisesRegex(runtime.ExpballFailure, "列表身份"):
             runner._has_card([74, 190, 117, 128])
         self.assertEqual(runner.reco.call_count, 1)
+
+    def test_missing_card_header_probe_stops_without_previewing(self):
+        runner, context = self.runner()
+        runner.frame = Mock(return_value="same-frame")
+        runner.reco = Mock(side_effect=[True, None])
+        with self.assertRaisesRegex(runtime.ExpballFailure, "缺少候选等级识别区域"):
+            runner._has_card([207, 332, 117, 128])
+        self.assertEqual(context.tasks, [])
+
+    def test_cancelled_base_is_relocated_once_without_material_submission(self):
+        for always_cancel in (False, True):
+            with self.subTest(always_cancel=always_cancel):
+                runner, _ = self.runner()
+                base = CardObservation("20", 1, 1, 10, False, False)
+                game = CeGameModel(runner, bases=[base])
+                selections = []
+
+                def select(entry, terminals, override=None):
+                    terminal = game.pipeline(entry, terminals, override)
+                    if entry == "搓丸子-选定底卡":
+                        selections.append(override[entry]["action"]["param"]["target"])
+                        if len(selections) == 1 or always_cancel:
+                            return "搓丸子-底卡已取消"
+                    return terminal
+
+                runner.task.side_effect = select
+                if always_cancel:
+                    with self.assertRaisesRegex(runtime.ExpballFailure, "连续取消选中"):
+                        runner.select_base()
+                else:
+                    self.assertEqual(runner.select_base(), base)
+                self.assertEqual(len(selections), 2)
+                self.assertEqual(sum(entry == "搓丸子-制作一轮" for entry, _, _ in game.events), 2)
+                self.assertFalse(any(entry in ("搓丸子-打开素材列表", "搓丸子-提交强化")
+                                     for entry, _, _ in game.events))
+
+    def test_already_selected_base_closes_list_instead_of_tapping_remove(self):
+        runner, _ = self.runner()
+        base = CardObservation("20", 1, 1, 10, False, False)
+        game = CeGameModel(runner, bases=[base])
+        runner.reco = lambda name, **kwargs: name == "搓丸子-候选为当前底卡"
+
+        def select(entry, terminals, override=None):
+            if entry == "搓丸子-复用当前底卡":
+                game.events.append((entry, {}, 0))
+                return "搓丸子-底卡选定"
+            return game.pipeline(entry, terminals, override)
+
+        runner.task.side_effect = select
+        self.assertEqual(runner.select_base(), base)
+        entries = [entry for entry, _, _ in game.events]
+        self.assertIn("搓丸子-复用当前底卡", entries)
+        self.assertNotIn("搓丸子-选定底卡", entries)
+        self.assertNotIn("搓丸子-提交强化", entries)
 
     def test_rejects_hundred_with_target_before_input_or_capture(self):
         context = FakeContext()

@@ -193,6 +193,7 @@ def _build_plan_from_share(share: dict) -> BattlePlan | None:
         actions,
         delegate=delegate,
         mystic_code_id=mystic_code_id,
+        initial_servant_ids=_roster_from_share(share),
     )
     mfaalog.info(f"[auto_battle] chaldea_share -> plan turns={len(plan.turns) if plan is not None else 0}")
     return plan

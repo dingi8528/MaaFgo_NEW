@@ -236,8 +236,18 @@ class ExpballRunner:
         image = self.frame()
         if not self.reco("搓丸子-列表标志", image=image):
             raise ExpballFailure("候选列表身份未确认")
-        return not bool(self.reco("搓丸子-候选为空", image=image, override={
-            "搓丸子-候选为空": {"enabled": True, "recognition": {"param": {"roi": box}}}}))
+        if self.reco("搓丸子-候选为空", image=image, override={
+                "搓丸子-候选为空": {"enabled": True, "recognition": {"param": {"roi": box}}}}):
+            return False
+        # 空白背景有动画，旧空位模板未命中不能证明存在卡片。
+        # 先由 Pipeline 正向确认当前格的等级文字，再允许预览或选择。
+        probe = self.ctx.get_node_data("搓丸子-候选等级标志") or {}
+        header_roi = probe.get("recognition", {}).get("param", {}).get("roi", [])
+        if len(header_roi) != 4 or header_roi[3] <= 0:
+            raise ExpballFailure("缺少候选等级识别区域，未预览或选择卡片")
+        header = [*box[:3], min(box[3], header_roi[3])]
+        return bool(self.reco("搓丸子-候选等级标志", image=image, override={
+            "搓丸子-候选等级标志": {"recognition": {"param": {"roi": header}}}}))
 
     def visible_pages(self, grid=None, *, prefix="搓丸子"):
         """只有 Pipeline 明确检测到底才结束扫描，未知状态和页数上限均报错。"""
@@ -445,25 +455,39 @@ class ExpballRunner:
             self.store_ball(actual)
         return "completed"
 
-    def make_one(self):
-        state = self.task("搓丸子-制作一轮", ["搓丸子-底卡候选就绪", "搓丸子-无底卡", "搓丸子-识别失败"], self.base_overrides())
-        if state == "搓丸子-无底卡":
-            return "no_base"
-        base = None
-        for _page, boxes in self.visible_pages():
-            for box in boxes:
-                if not self._has_card(box):
-                    continue
-                candidate = self._preview(box)
-                if (candidate.rarity == self.config.ball_star and not candidate.complete
-                        and not candidate.locked and not candidate.marked and candidate.current == 1
-                        and candidate.identity not in self.protected):
-                    base = candidate
-                    self.task("搓丸子-选定底卡", ["搓丸子-底卡选定", "搓丸子-识别失败"], {
-                        "搓丸子-选定底卡": {"enabled": True, "action": {"param": {"target": box}}}})
+    def select_base(self):
+        for _attempt in range(2):
+            state = self.task("搓丸子-制作一轮", ["搓丸子-底卡候选就绪", "搓丸子-无底卡", "搓丸子-识别失败"], self.base_overrides())
+            if state == "搓丸子-无底卡":
+                return None
+            base = None
+            for _page, boxes in self.visible_pages():
+                for box in boxes:
+                    if not self._has_card(box):
+                        continue
+                    candidate = self._preview(box)
+                    if (candidate.rarity == self.config.ball_star and not candidate.complete
+                            and not candidate.locked and not candidate.marked and candidate.current == 1
+                            and candidate.identity not in self.protected):
+                        base = candidate
+                        terminals = ["搓丸子-底卡选定", "搓丸子-底卡已取消", "搓丸子-识别失败"]
+                        if self.reco("搓丸子-候选为当前底卡", override={
+                                "搓丸子-候选为当前底卡": {"recognition": {"param": {"roi": box}}}}):
+                            state = self.task("搓丸子-复用当前底卡", terminals)
+                        else:
+                            state = self.task("搓丸子-选定底卡", terminals, {
+                                "搓丸子-选定底卡": {"enabled": True, "action": {"param": {"target": box}}}})
+                        break
+                if base is not None:
                     break
-            if base is not None:
-                break
+            if base is None:
+                return None
+            if state == "搓丸子-底卡选定":
+                return base
+        raise ExpballFailure("底卡连续取消选中，已停止；未提交强化")
+
+    def make_one(self):
+        base = self.select_base()
         if base is None:
             return "no_base"
         selected_identity = base.identity

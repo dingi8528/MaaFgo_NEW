@@ -5,7 +5,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 
 from .enums import PrimitiveKind, Scene
-from .models import (BattleAction, BattleState, OrderChangeAction,
+from .models import (ActorBinding, BattleAction, BattleState, OrderChangeAction, RetireAction,
                      ServantSkillAction, is_slot)
 from .policy import StrategyProfile
 
@@ -27,7 +27,7 @@ def skip_unusable_servant_skills(
 ) -> tuple[BattleAction, tuple[str, ...]]:
     """跳过无法确认可执行的从者技能，保留结构非法动作给 Validator 拒绝。"""
     ordered_swap = (
-        any(isinstance(step, OrderChangeAction) for step in action.skill_sequence)
+        any(isinstance(step, (OrderChangeAction, RetireAction)) for step in action.skill_sequence)
         and sum(isinstance(step, ServantSkillAction) for step in action.skill_sequence)
         == len(action.servant_skills)
     )
@@ -52,7 +52,7 @@ def skip_unusable_servant_skills(
         skipped = []
         after_swap = False
         for step in action.skill_sequence:
-            if isinstance(step, OrderChangeAction):
+            if isinstance(step, (OrderChangeAction, RetireAction)):
                 after_swap = True
             if isinstance(step, ServantSkillAction) and not after_swap:
                 field = f"servant[{step.servant_slot}].skill[{step.skill_index}].available"
@@ -184,7 +184,14 @@ def validate_main_action(
     post_swap_flags = []
     after_swap = False
     for step in action.skill_sequence:
-        if isinstance(step, OrderChangeAction):
+        if isinstance(step, RetireAction) and (
+            not is_slot(step.servant_slot, 1, 3)
+            or not isinstance(step.actor, ActorBinding)
+            or type(step.actor.initial_slot) is not int or not 0 <= step.actor.initial_slot <= 5
+            or not step.actor.servant_id
+        ):
+            return Verdict(False, "invalid_retirement")
+        if isinstance(step, (OrderChangeAction, RetireAction)):
             after_swap = True
         elif isinstance(step, ServantSkillAction):
             post_swap_flags.append(after_swap)

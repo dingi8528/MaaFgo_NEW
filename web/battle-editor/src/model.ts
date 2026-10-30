@@ -4,6 +4,9 @@ import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoic
 import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
 import {matchEquipAdvanced} from './equipFilters';
 import type {EquipAdvancedFilters,EquipFilterCatalog,EquipFilterMetadata} from './equipFilters';
+import {actionRosterAt,actorBinding,availableActionActor,bindActionActors,isRetire,materializeActionActors,resolveActionActor,usesActorGuards,validActorBinding} from './actionRoster';
+import type {ActionActor,ActorCardBinding} from './actionRoster';
+export {isRetire} from './actionRoster';
 
 export type Json = Record<string, any>;
 export interface ServantBond {tags?:string[]|null;tags_by_ascension?:Record<string,string[]>|null;tags_by_costume?:string[]|Record<string,string[]>|null;alignment?:string|null;attribute?:string|null;gender?:string|null;sub_attribute?:string|null;[key:string]:unknown}
@@ -13,7 +16,7 @@ export interface Servant { id:number; name:string; nameJp?:string; collectionNo?
 export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;common?:boolean;commonSources?:string[];filters?:EquipFilterMetadata}
 export interface Mystic {id:number;name:string;image?:string|null;skills?:Json[];orderChange?:boolean}
 export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json;specialSkillChoices?:SpecialSkillChoiceCatalog;equipFilters?:EquipFilterCatalog}
-export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding}
+export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding;actorBinding?:ActionActor;cardActorBindings?:ActorCardBinding[]}
 export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
 export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[]});
@@ -184,13 +187,15 @@ export function turnsOf(data:Json,catalog?:Catalog):Turn[] {
  for(const [index,raw] of (Array.isArray(data.actions)?data.actions:[]).entries()) {
   const entry:Entry={raw,index};if(isSwap(data,raw)){const replacements=data.delegate?.replaceMemberIndexes;if(Array.isArray(replacements)&&pair<replacements.length){entry.replacement=replacements[pair];entry.paired=true;}pair++;}
   current.push(entry);if(raw?.type==='attack'){turns.push({entries:current});current=[];}
- }if(current.length)turns.push({entries:current});bindSpecialSkillChoices(data,turns.flatMap(turn=>turn.entries),catalog);return turns;
+ }if(current.length)turns.push({entries:current});const entries=turns.flatMap(turn=>turn.entries);bindActionActors(data,entries);bindSpecialSkillChoices(data,entries,catalog);return turns;
 }
 export function writeTurns(data:Json,turns:Turn[],catalog?:Catalog) {
- const rebuilt=rebuildSpecialSkillChoices(data,turnsOf(data,catalog).flatMap(turn=>turn.entries),turns.flatMap(turn=>turn.entries),catalog);
+ const oldEntries=turnsOf(data,catalog).flatMap(turn=>turn.entries),nextEntries=clone(turns.flatMap(turn=>turn.entries));
+ materializeActionActors(data,nextEntries,usesActorGuards(data)||usesActorGuards({actions:nextEntries.map(entry=>entry.raw)}));
+ const rebuilt=rebuildSpecialSkillChoices(data,oldEntries,nextEntries,catalog);
  const oldPairs=data.delegate?.replaceMemberIndexes;const consumed=(Array.isArray(data.actions)?data.actions:[]).filter((a:any)=>isSwap(data,a)).length;
- data.actions=turns.flatMap(t=>t.entries.map(e=>e.raw));
- const replacements=turns.flatMap(t=>t.entries.filter(e=>isSwap(data,e.raw)&&e.paired).map(e=>clone(e.replacement)));
+ data.actions=nextEntries.map(entry=>entry.raw);
+ const replacements=nextEntries.filter(e=>isSwap(data,e.raw)&&e.paired).map(e=>clone(e.replacement));
  if(Array.isArray(oldPairs)||replacements.length){data.delegate??={};data.delegate.replaceMemberIndexes=[...replacements,...(Array.isArray(oldPairs)?oldPairs.slice(consumed):[])];}
  if(Object.keys(rebuilt.updates).length){data.delegate??={};Object.assign(data.delegate,rebuilt.updates);}markSpecialSkillChoicesRebuilt(data,rebuilt.diagnostics);return rebuilt.diagnostics;
 }
@@ -215,10 +220,33 @@ export function appendNPEntry(data:Json,turnIndex:number,svt:number,catalog:Cata
  const attack=list[at];attack.raw.attacks??=[];
  if(attack.raw.attacks.length>=3&&!attack.raw.attacks.slice(0,3).some(isAutoAttackCard))throw new Error('每回合最多安排三个出卡意图。');
  const roster=rosterAt(data,attack.index);
- setAttackCard(attack.raw,makeCard(svt,'np',roster,catalog,attack.raw.attacks));writeTurns(data,turns,catalog);return at;
+ const card=makeCard(svt,'np',roster,catalog,attack.raw.attacks);bindCardActor(card,data,attack.index);setAttackCard(attack.raw,card);writeTurns(data,turns,catalog);return at;
 }
 export function rosterAt(data:Json,index:number):any[] {
- const roster=members(data);for(const turn of turnsOf(data))for(const e of turn.entries){if(e.index>=index)return roster;if(isSwap(data,e.raw)&&Array.isArray(e.replacement)){const f=e.replacement[0],b=e.replacement[1]<3?e.replacement[1]+3:e.replacement[1];if(f>=0&&f<3&&b>=3&&b<6)[roster[f],roster[b]]=[roster[b],roster[f]];}}return roster;
+ return actionRosterAt(data,index).map(actor=>actor.member);
+}
+export function actionMemberAt(data:Json,index:number,raw:any=data.actions?.[index]):Json|null {
+ if(validActorBinding(raw?.actor)){const member=members(data)[raw.actor.initialSlot]??null;return raw.actor.svtId!==undefined&&member?.svtId!==raw.actor.svtId?{svtId:raw.actor.svtId}:member;}
+ return actionRosterAt(data,index)[raw?.svt]?.member??null;
+}
+export function bindEntryActor(entry:Entry,data:Json,svt:number|null):void {
+ const old=entry.actorBinding??entry.raw.actor;entry.raw.svt=svt;
+ if(svt===null){delete entry.raw.actor;delete entry.actorBinding;delete entry.specialChoice;return;}
+ const binding=actorBinding(actionRosterAt(data,entry.index)[svt]);
+ if(!binding)throw new Error('当前前排没有可绑定的从者，请重新选择。');
+ if(old?.initialSlot!==binding.initialSlot||old?.svtId!==binding.svtId)delete entry.specialChoice;
+ entry.actorBinding=binding;
+ if(Object.hasOwn(entry.raw,'actor')||usesActorGuards(data))entry.raw.actor=clone(binding);
+}
+export function bindCardActor(card:Json,data:Json,index:number):void {
+ if(isAutoAttackCard(card))return;
+ const binding=actorBinding(actionRosterAt(data,index)[card.svt]);
+ if(!binding)throw new Error('当前前排没有可绑定的出卡从者。');
+ if(Object.hasOwn(card,'actor')||usesActorGuards(data))card.actor=clone(binding);
+}
+export function retirementInfoAt(data:Json,index:number,_catalog?:Catalog):{slot:number;member:Json|null;replacement:Json|null;initialSlot:number|null;replacementInitialSlot:number|null;valid:boolean;error?:string}{
+ const raw=data.actions?.[index],roster=actionRosterAt(data,index),resolved=resolveActionActor(roster,raw),replacement=roster.find((actor,slot)=>slot>=3&&availableActionActor(actor)),error=!isRetire(raw)?'不是退场动作':resolved.issue?.message??(!availableActionActor(resolved.actor)?'退场位置没有从者':!replacement?'没有可递补的未退场候补成员':undefined);
+ return {slot:raw?.svt,member:actionMemberAt(data,index,raw),replacement:replacement?.retired?null:replacement?.member??null,initialSlot:resolved.actor?.initialSlot??null,replacementInitialSlot:replacement?.retired?null:replacement?.initialSlot??null,valid:!error,...(error?{error}:{})};
 }
 export const titleOf=(data:Json)=>String(data.team?.name||'未命名方案');
 export const colorOf=(value:any):number => ({arts:1,buster:2,quick:3} as any)[String(value).toLowerCase()]??Number(value);
@@ -264,13 +292,14 @@ export function makeCard(svt:number,type:number|'np',roster:any[],catalog:Catalo
 }
 export function move<T>(array:T[],from:number,to:number):T[] {const a=[...array];if(to<0||to>=a.length)return a;const [v]=a.splice(from,1);a.splice(to,0,v);return a;}
 export function actionTitle(entry:Entry,data:Json,catalog:Catalog):string {
- const a=entry.raw;if(a?.type==='attack')return '攻击 · 回合结束';if(isSwap(data,a))return '御主技能 3 · 换人';if(a?.type!=='skill')return `保留动作 · ${a?.type??'未知类型'}`;
- if(a.svt==null){const skills=catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId)?.skills;const skill=skills?.find(s=>s.num===a.skill+1)??skills?.find((s,i)=>s.num==null&&i===a.skill);return `御主 · ${skill?.name??`技能 ${Number(a.skill)+1}`}`;}const member=rosterAt(data,entry.index)[a.svt],servant=servantFor(catalog,member?.svtId);const name=memberLabel(member,catalog);if(!hasServantIdentity(member))return `前排 ${Number(a.svt)+1} · ${name} · 未指定从者，无法安排技能`;return `前排 ${Number(a.svt)+1} · ${name} · ${skillAt(member,servant,a.skill)?.name??`技能 ${Number(a.skill)+1}`}`;
+ const a=entry.raw;if(a?.type==='attack')return '攻击 · 回合结束';if(isRetire(a))return `${memberLabel(actionMemberAt(data,entry.index,a),catalog)} · 从者退场`;if(isSwap(data,a))return '御主技能 3 · 换人';if(a?.type!=='skill')return `保留动作 · ${a?.type??'未知类型'}`;
+ if(a.svt==null){const skills=catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId)?.skills;const skill=skills?.find(s=>s.num===a.skill+1)??skills?.find((s,i)=>s.num==null&&i===a.skill);return `御主 · ${skill?.name??`技能 ${Number(a.skill)+1}`}`;}const member=actionMemberAt(data,entry.index,a),servant=servantFor(catalog,member?.svtId);const name=memberLabel(member,catalog);if(!hasServantIdentity(member))return `前排 ${Number(a.svt)+1} · ${name} · 未指定从者，无法安排技能`;return `前排 ${Number(a.svt)+1} · ${name} · ${skillAt(member,servant,a.skill)?.name??`技能 ${Number(a.skill)+1}`}`;
 }
 export function remapSlots(data:Json,first:number,second:number) { // Only safe while no order changes or unknown actions exist.
  if((data.actions??[]).some((a:any)=>!['attack','skill'].includes(a?.type)||isSwap(data,a)))throw new Error('存在换人或未知动作，不能可靠重映射角色。请使用保留槽位指向。');
  if(first>=3||second>=3) {if((data.actions??[]).length)throw new Error('前排与候补交换会改变执行资格，不能自动重映射。请逐项检查后保留槽位指向。');}
  const map=(n:any)=>n===first?second:n===second?first:n;
- for(const a of data.actions??[]){if(a.type==='skill'){if(a.svt!=null)a.svt=map(a.svt);if(a.options?.playerTarget!=null)a.options.playerTarget=map(a.options.playerTarget);}else if(a.type==='attack')for(const card of a.attacks??[])if(!isAutoAttackCard(card))card.svt=map(card.svt);}
+ const remapActor=(raw:any)=>{if(validActorBinding(raw?.actor))raw.actor.initialSlot=map(raw.actor.initialSlot);};
+ for(const a of data.actions??[]){if(a.type==='skill'){if(a.svt!=null)a.svt=map(a.svt);remapActor(a);if(a.options?.playerTarget!=null)a.options.playerTarget=map(a.options.playerTarget);}else if(a.type==='attack')for(const card of a.attacks??[])if(!isAutoAttackCard(card)){card.svt=map(card.svt);remapActor(card);}}
  const roster=members(data);setMember(data,first,roster[second]);setMember(data,second,roster[first]);
 }

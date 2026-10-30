@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 from collections import Counter
 
-from ..core.models import OrderChangeAction, ServantSkillAction
+from ..core.models import OrderChangeAction, RetireAction, ServantSkillAction
 from ..core.special_skills import SPECIAL_SKILL_GROUPS, TD, SpecialSkillChoiceError
 
 
@@ -33,6 +33,13 @@ class SpecialSkillDispatcher:
             if isinstance(step, OrderChangeAction):
                 front, back = step.starting_member_idx - 1, step.sub_member_idx - 1
                 roster[front], roster[back] = roster[back], roster[front]
+            elif isinstance(step, RetireAction):
+                front = step.servant_slot - 1
+                back = next((i for i in range(3, 6) if roster[i] is not None), None)
+                if back is not None:
+                    # Retired identities cannot return as candidates here.
+                    roster[front] = roster.pop(back)
+                    roster.append(None)
             if not isinstance(step, ServantSkillAction):
                 continue
             if kept[step]:

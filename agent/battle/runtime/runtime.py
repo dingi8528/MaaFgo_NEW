@@ -17,8 +17,8 @@ from ..core.decider import Decider
 from ..core.special_skills import SpecialSkillChoiceError
 from .special_skills import SpecialSkillDispatcher
 from ..core.enums import PrimitiveKind, Scene
-from ..core.models import (BattlePlan, BattleState, CardPick, InitialFormation,
-                           MasterSkillAction, OrderChangeAction,
+from ..core.models import (ActorBinding, BattlePlan, BattleState, CardPick, InitialFormation,
+                           MasterSkillAction, OrderChangeAction, RetireAction,
                            ServantSkillAction, VERIFIED_FORMATION_SOURCE, is_slot)
 from ..core.policy import BattlePolicy, StrategyProfile
 from ..core.validator import (
@@ -102,6 +102,9 @@ class AutoBattleRuntime:
             roster_servant_ids = (None,) * 6
         self.roster_servant_ids = tuple(roster_servant_ids)
         self.candidate_servant_ids = self.roster_servant_ids
+        self._initial_servant_ids = self.roster_servant_ids
+        self._member_order = list(range(6))
+        self._retired_instances = set()
         self._special_skill_servant_ids, self._special_skill_scope_reason = self._special_skill_roster()
         self.servant_recognizer = None
         self.executor = Executor(context, controller)
@@ -243,6 +246,8 @@ class AutoBattleRuntime:
                 return BattleResult.fail("unexpected_order_change_scene", turns)
 
             if scene is Scene.COMMAND_SELECTION:
+                if not self._check_card_actor_bindings():
+                    return BattleResult.fail("card_actor_identity_mismatch", turns)
                 mfaalog.info(f"[AutoBattle] ========== Turn {turns+1} ==========")
                 self._selection_cards = state.cards
                 cards_text = " | ".join(
@@ -564,7 +569,7 @@ class AutoBattleRuntime:
                 self._special_choice_dispatcher = SpecialSkillDispatcher(plan.special_choices)
             try:
                 self._special_choice_dispatcher.check_skipped(
-                    plan.turns[self._turn_index], action, self.roster_servant_ids,
+                    plan.turns[self._turn_index], action, self._semantic_roster(),
                 )
             except SpecialSkillChoiceError as exc:
                 mfaalog.error(f"[AutoBattle] Chaldea 特殊技能选择失败: {exc}")
@@ -574,7 +579,7 @@ class AutoBattleRuntime:
             *action.servant_skills, *action.master_skills,
             *((action.order_change,) if action.order_change is not None else ()),
         )
-        if action.servant_skills or action.master_skills or action.order_change:
+        if sequence:
             parts = []
             for step in sequence:
                 if isinstance(step, ServantSkillAction):
@@ -587,11 +592,19 @@ class AutoBattleRuntime:
                     parts.append(f"御主技能{step.skill_index}{target}")
                 elif isinstance(step, OrderChangeAction):
                     parts.append(f"换人: {step.starting_member_idx}↔{step.sub_member_idx}")
+                elif isinstance(step, RetireAction):
+                    parts.append(f"等待从者{step.servant_slot}自然退场")
             mfaalog.info(f"[AutoBattle] 执行技能队列: {' | '.join(parts)}")
 
         for index, step in enumerate(sequence):
+            if isinstance(step, RetireAction):
+                if not self._execute_retirement(step):
+                    return False
+                continue
             if isinstance(step, ServantSkillAction):
                 sk = step
+                if not self._actor_matches(sk.actor, sk.servant_slot):
+                    return False
                 if not (
                     is_slot(sk.servant_slot, 1, 3)
                     and is_slot(sk.skill_index, 1, 3)
@@ -651,6 +664,10 @@ class AutoBattleRuntime:
             ):
                 mfaalog.info(f"[AutoBattle] invalid order change skipped: {oc}")
                 continue
+            self._ensure_member_tracking()
+            if self._member_order[oc.sub_member_idx - 1] in self._retired_instances:
+                mfaalog.error("[AutoBattle] 已退场从者不能再次换入；未点击换人")
+                return False
             mfaalog.info(f"[AutoBattle] order_change(starting={oc.starting_member_idx}, sub={oc.sub_member_idx})")
             # 换人技能已由前面的 master_skills 触发（御主换人服技能）
             # 等待换人界面出现
@@ -667,6 +684,8 @@ class AutoBattleRuntime:
                 return False
             front = oc.starting_member_idx - 1
             back = oc.sub_member_idx - 1
+            self._ensure_member_tracking()
+            self._member_order[front], self._member_order[back] = self._member_order[back], self._member_order[front]
             roster = list(self.roster_servant_ids)
             roster[front], roster[back] = roster[back], roster[front]
             self.roster_servant_ids = tuple(roster)
@@ -686,11 +705,105 @@ class AutoBattleRuntime:
             return self._ensure_enemy_target(action.target_enemy, label="restore_attack_enemy", required=False)
         return True
 
-    def _wait_order_change_settled(self) -> bool:
+    def _ensure_member_tracking(self):
+        if not hasattr(self, "_member_order"):
+            self._member_order = list(range(6))
+            self._retired_instances = set()
+            self._initial_servant_ids = tuple(self.roster_servant_ids)
+
+    def _semantic_roster(self):
+        self._ensure_member_tracking()
+        return tuple(self._initial_servant_ids[i] if i not in self._retired_instances else None
+                     for i in self._member_order)
+
+    def _actor_matches(self, actor, slot, *, check_visible=True):
+        if actor is None:
+            return True  # Legacy imports describe current UI positions.
+        if not isinstance(actor, ActorBinding):
+            return False
+        self._ensure_member_tracking()
+        initial = actor.initial_slot
+        expected = canonical_servant_id(actor.servant_id)
+        ok = (expected is not None and is_slot(slot, 1, 3) and type(initial) is int and 0 <= initial <= 5
+              and initial not in self._retired_instances and self._member_order[slot - 1] == initial
+              and canonical_servant_id(self._initial_servant_ids[initial]) == expected
+              and (not check_visible or canonical_servant_id(self.roster_servant_ids[slot - 1]) == expected))
+        if not ok:
+            mfaalog.error(f"[AutoBattle] 动作绑定从者不在当前槽位或已退场；停止，未点击技能/卡片: slot={slot}, actor={actor}")
+        return ok
+
+    def _check_card_actor_bindings(self):
+        plan = getattr(self.decider, "plan", None)
+        turn = plan.active_turn(self._turn_index) if isinstance(plan, BattlePlan) else None
+        return turn is None or all(self._actor_matches(card.actor, card.servant_slot)
+                                   for card in turn.card_sequence if card.actor is not None)
+
+    def _execute_retirement(self, step):
+        """Confirm a natural replacement without sending any game action."""
+        if (not isinstance(step.actor, ActorBinding)
+                or not self._actor_matches(step.actor, step.servant_slot, check_visible=False)):
+            return False
+        self._ensure_member_tracking()
+        front = step.servant_slot - 1
+        back = next((i for i in range(3, 6)
+                     if self._member_order[i] not in self._retired_instances
+                     and self._initial_servant_ids[self._member_order[i]] is not None), None)
+        if back is None:
+            mfaalog.error("[AutoBattle] 从者退场没有已确认身份的存活候补；停止")
+            return False
+        order = list(self._member_order)
+        outgoing = order[front]
+        order[front] = order.pop(back)
+        order.append(outgoing)
+        expected = canonical_servant_id(self._initial_servant_ids[order[front]])
+        if expected == canonical_servant_id(step.actor.servant_id):
+            mfaalog.error("[AutoBattle] 同名从者递补缺少可区分的视觉身份，不能确认退场；停止")
+            return False
+        self.servant_recognizer = None
+        self._selection_cards = ()
+        self._selection_np_cards = ()
+        deadline = time.monotonic() + _ORDER_CHANGE_RETURN_TIMEOUT_S
+        while not self.ctx.tasker.stopping and time.monotonic() < deadline:
+            if not self._wait_order_change_settled(timeout=max(0.0, deadline - time.monotonic())):
+                return False
+            if self.ctx.tasker.stopping:
+                return False
+            state = self._observe()
+            if self.ctx.tasker.stopping or time.monotonic() >= deadline:
+                return False
+            servant = next((s for s in state.servants if s.slot == step.servant_slot), None)
+            if (state.scene is Scene.MAIN_BATTLE and servant is not None
+                    and servant.confidence.passes(self.profile.min_skill_confidence)
+                    and canonical_servant_id(servant.servant_id) == expected):
+                self._member_order = order
+                self._retired_instances.add(outgoing)
+                # Use initial instances, not _observe's already-updated reserve;
+                # this also handles a death observed during the preceding skill.
+                observed = {s.slot: s for s in state.servants}
+                frontline = tuple(
+                    canonical_servant_id(observed[slot].servant_id)
+                    if slot in observed and observed[slot].confidence.passes(self.profile.min_skill_confidence)
+                    else None for slot in (1, 2, 3)
+                )
+                # Another member may have died during the same animation.
+                # The marker only advances its declared instance: never turn
+                # missing/different live identities back into plan evidence.
+                self.roster_servant_ids = frontline + tuple(self._initial_servant_ids[i] for i in order[3:])
+                self.candidate_servant_ids = tuple(self._initial_servant_ids[i]
+                                                   for i in order if i not in self._retired_instances)
+                self._selection_cards = ()
+                self._selection_np_cards = ()
+                self.servant_recognizer = None
+                mfaalog.info(f"[AutoBattle] 自然退场已确认: initialSlot={outgoing}, incoming={expected}, order={order}")
+                return True
+        mfaalog.error("[AutoBattle] 未确认预期候补入场；保留画面停止，不发送后续技能")
+        return False
+
+    def _wait_order_change_settled(self, *, timeout=None) -> bool:
         """只为换人等待主界面/技能栏稳定；失败或停止时不提交新阵容。"""
         if self.ctx.tasker.stopping:
             return False
-        deadline = time.monotonic() + _ORDER_CHANGE_RETURN_TIMEOUT_S
+        deadline = time.monotonic() + (_ORDER_CHANGE_RETURN_TIMEOUT_S if timeout is None else timeout)
         try:
             mfaalog.info("[AutoBattle] order change waiting for stable skill bar")
             detail = self.ctx.run_task("战斗_换人后等待技能栏稳定")

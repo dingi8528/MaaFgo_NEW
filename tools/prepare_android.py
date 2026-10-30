@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "Android" / "assets"
@@ -252,13 +253,20 @@ def compatibility_report(source: dict, converted: dict) -> dict:
 def adapt_interface(data: dict, assets: Path) -> dict:
     data = copy.deepcopy(data)
     # The local desktop editor is not served by the APK. Keep mobile descriptions
-    # free of loopback links while preserving every unrelated guide and option.
+    # free of loopback and local CMD links while preserving unrelated guides.
+    editor_link_markers = ("http://127.0.0.1:18765/", "./打开编队编辑器.cmd")
+
+    def has_editor_link(text):
+        decoded = unquote(text).lower()
+        return any(marker in decoded for marker in editor_link_markers)
+
     def remove_desktop_editor_links(value):
         if isinstance(value, dict):
             description = value.get("description")
-            if isinstance(description, str) and "http://127.0.0.1:18765/" in description:
+            if isinstance(description, str) and has_editor_link(description):
                 value["description"] = "\n".join(
-                    line for line in description.splitlines() if "http://127.0.0.1:18765/" not in line
+                    line for line in description.splitlines()
+                    if not has_editor_link(line)
                 ).strip()
             for item in value.values():
                 remove_desktop_editor_links(item)
@@ -320,6 +328,8 @@ def adapt_interface(data: dict, assets: Path) -> dict:
         for field in option.get("inputs", []):
             if field.get("input_type") == "file":
                 field.pop("input_type")
+                field.pop("file_dialog_dir", None)
+                field.pop("file_dialog_filters", None)
                 field.setdefault("pipeline_type", "string")
                 field["description"] = "可粘贴分享链接、队伍/关卡 ID，或填写手机上可读取的 JSON 路径、已缓存的队伍文件名。"
                 option["description"] = "直接输入或粘贴导入来源；本地文件使用手机路径，缓存文件可只填文件名。"

@@ -1,4 +1,5 @@
-import {assertEditable,hasServantIdentity,isSwap,memberLabel,members,servantFor,skillAt,turnsOf} from './model';
+import {actionMemberAt,assertEditable,hasServantIdentity,isSwap,memberLabel,members,retirementInfoAt,servantFor,skillAt,turnsOf} from './model';
+import {actionRosterAt,isRetire,resolveActionActor} from './actionRoster';
 import type {Catalog,Json} from './model';
 import {equipCandidatesForDisplay} from './equipRequirements';
 import {isAutoAttackCard} from './attackCards';
@@ -17,7 +18,7 @@ export interface SharePerson {name:string;position:string;image?:string|null;cla
 export interface ShareEquip {name:string;image?:string|null;label:string;details:string;candidateIndex?:number;candidateCount?:number}
 export interface ShareMember extends SharePerson {className:string;rarity:string;details:string;skills:{name:string;icon?:string;level:string}[];append:string;grand:boolean;equips:ShareEquip[]}
 export interface ShareCard {person?:SharePerson;label:string;name:string;color:string|null;image:string|null;automatic:boolean;deckLabel:string}
-export interface ShareSkill {kind:'skill'|'swap'|'unknown';actor:SharePerson;name:string;icon?:string;number:string;level:string;target?:SharePerson;swap?:[SharePerson,SharePerson];enemy:string;detail:string;choice?:string}
+export interface ShareSkill {kind:'skill'|'swap'|'retire'|'unknown';actor:SharePerson;name:string;icon?:string;number:string;level:string;target?:SharePerson;swap?:[SharePerson,SharePerson];enemy:string;detail:string;choice?:string}
 export interface ShareAttack {kind:'attack';cards:ShareCard[];enemy:string}
 export type ShareAction=ShareSkill|ShareAttack;
 export interface ShareTurn {number:number;actions:ShareAction[];implicitEnd:boolean}
@@ -57,22 +58,28 @@ export function shareImageModel(data:Json,catalog:Catalog,options:{region?:strin
  const initial=members(data),mystic=catalog.mysticCodes.find(item=>item.id===data.team?.mysticCode?.mysticCodeId);
  if(initial.some(member=>Array.isArray(member?.appendLvs)&&member.appendLvs.length>SHARE_IMAGE_MAX_TEXT/2))rejectLongText();
  const master:SharePerson={slot:null,name:mystic?.name??'御主礼装未指定',position:'御主',image:mystic?.image,support:'',identified:true};
- const roster=[...initial],notices=new Set<string>();
+ let roster=[...initial];const notices=new Set<string>();
  const selectedRegion=cardPreviewRegion(options.region,options.cardPreviewConfig);
  const lookup=(slot:unknown):SharePerson=>validSlot(slot)?person(roster[slot],slot,catalog):{slot:null,name:'目标位置无效',position:'待修正',support:'',identified:false};
  const turns=turnsOf(data,catalog).map((turn,index):ShareTurn=>({number:index+1,implicitEnd:turn.entries.at(-1)?.raw?.type!=='attack',actions:turn.entries.map(entry=>{
   const action=entry.raw;
+  roster=actionRosterAt(data,entry.index).map(actor=>actor.member);
+  if(isRetire(action)){
+   const info=retirementInfoAt(data,entry.index,catalog);if(info.error)notices.add(info.error);
+   return {kind:'retire',actor:person(info.member,front(action.svt)?action.svt:null,catalog),name:'从者退场',number:'',level:'',enemy:'',detail:info.error??'等待从者自然退场后递补，不会主动使从者死亡。',...(info.replacement?{target:person(info.replacement,front(action.svt)?action.svt:null,catalog)}:{})};
+  }
   if(action?.type==='attack'){
    const recorded=Array.isArray(action.attacks)?action.attacks:[];
    const cards:ShareCard[]=Array.from({length:Math.max(3,recorded.length)},(_,cardIndex)=>{
     const card=recorded[cardIndex];
     if(card==null||isAutoAttackCard(card))return {label:'默认普通卡',name:'按当前策略补齐',color:null,image:null,automatic:true,deckLabel:''};
-    const member=front(card.svt)?roster[card.svt]:undefined;
+    const member=front(card.svt)?actionMemberAt(data,entry.index,card):undefined;
     const servant=hasServantIdentity(member)?servantFor(catalog,member.svtId):undefined;
     const np=card.isTD?npAt(member,servant):undefined,color=card.isTD?np?.cardType:card.cardType;
     const normalized=artworkColor(color),request=cardArtworkRequest({member,np,color,kind:card.isTD?'np':'face',region:selectedRegion,config:options.cardPreviewConfig});
     if(!hasServantIdentity(member))notices.add('存在未指定从者的技能或出卡，请先检查执行条件。');
-    return {person:lookup(card.svt),label:card.isTD?'宝具 NP':normalized?`${normalized==='buster'?'Buster · 红卡':normalized==='arts'?'Arts · 蓝卡':'Quick · 绿卡'}`:'未知普通卡',name:card.isTD?np?.name??'宝具资料未知':memberLabel(member,catalog),color:normalized,image:request.url,automatic:false,deckLabel:!card.isTD&&Number.isInteger(card.card)&&card.card>=0&&card.card<5?`牌组第 ${card.card+1} 张`:''};
+    const issue=resolveActionActor(actionRosterAt(data,entry.index),card).issue;if(issue)notices.add(issue.message);
+    return {person:person(member??null,front(card.svt)?card.svt:null,catalog),label:card.isTD?'宝具 NP':normalized?`${normalized==='buster'?'Buster · 红卡':normalized==='arts'?'Arts · 蓝卡':'Quick · 绿卡'}`:'未知普通卡',name:card.isTD?np?.name??'宝具资料未知':memberLabel(member,catalog),color:normalized,image:request.url,automatic:false,deckLabel:!card.isTD&&Number.isInteger(card.card)&&card.card>=0&&card.card<5?`牌组第 ${card.card+1} 张`:''};
    });
    return {kind:'attack',cards,enemy:enemyLabel(action.options?.enemyTarget)};
   }
@@ -80,14 +87,15 @@ export function shareImageModel(data:Json,catalog:Catalog,options:{region?:strin
    notices.add('图片包含当前执行器未支持的动作；完整记录仍保留在回导标记中。');
    return {kind:'unknown',actor:{slot:null,name:'保留动作',position:'未支持动作',support:'',identified:false},name:typeof action?.type==='string'?action.type:'未知动作',number:'?',level:'',enemy:'',detail:'请在编辑器中检查这条动作。'};
   }
-  const isMaster=action.svt==null,member=front(action.svt)?roster[action.svt]:undefined;
+  const isMaster=action.svt==null,member=front(action.svt)?actionMemberAt(data,entry.index,action):undefined;
   const servant=hasServantIdentity(member)?servantFor(catalog,member.svtId):undefined;
   const validSkill=Number.isInteger(action.skill)&&action.skill>=0&&action.skill<3;
-  const skill=validSkill?(isMaster?mystic?.skills?.find(item=>item.num===action.skill+1)??mystic?.skills?.find((item,i)=>item.num==null&&i===action.skill):skillAt(member,servant,action.skill)):undefined;
+  const skill=validSkill?(isMaster?mystic?.skills?.find(item=>item.num===action.skill+1)??mystic?.skills?.find((item,i)=>item.num==null&&i===action.skill):skillAt(member??undefined,servant,action.skill)):undefined;
   const swap=isSwap(data,action),pair=entry.replacement;
   const frontSlot=Array.isArray(pair)?pair[0]:undefined,rawBack=Array.isArray(pair)?pair[1]:undefined,backSlot=Number.isInteger(rawBack)?rawBack<3?rawBack+3:rawBack:undefined;
   const validPair=front(frontSlot)&&validSlot(backSlot)&&backSlot>=3;
-  const projected:ShareSkill={kind:swap?'swap':'skill',actor:isMaster?master:lookup(action.svt),name:swap?'换人':skill?.name??`技能 ${Number(action.skill)+1}`,icon:skill?.icon,number:validSkill?String(action.skill+1):'?',level:`Lv.${level(isMaster?data.team?.mysticCode?.level:member?.skillLvs?.[action.skill])}`,enemy:enemyLabel(action.options?.enemyTarget),detail:!isMaster&&!hasServantIdentity(member)?'未指定从者，无法安排此技能':''};
+  const actorIssue=isMaster?undefined:resolveActionActor(actionRosterAt(data,entry.index),action).issue;
+  const projected:ShareSkill={kind:swap?'swap':'skill',actor:isMaster?master:person(member??null,front(action.svt)?action.svt:null,catalog),name:swap?'换人':skill?.name??`技能 ${Number(action.skill)+1}`,icon:skill?.icon,number:validSkill?String(action.skill+1):'?',level:`Lv.${level(isMaster?data.team?.mysticCode?.level:member?.skillLvs?.[action.skill])}`,enemy:enemyLabel(action.options?.enemyTarget),detail:actorIssue?.message??(!isMaster&&!hasServantIdentity(member)?'未指定从者，无法安排此技能':'')};
   const choice=specialSkillChoiceLabel(entry,catalog);if(choice)projected.choice=choice;
   if(projected.detail)notices.add('存在未指定从者的技能或出卡，请先检查执行条件。');
   if(swap){

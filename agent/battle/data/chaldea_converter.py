@@ -27,8 +27,8 @@ import mfaalog
 
 from ..core.enums import CardColor, PrimitiveKind
 from ..core.special_skills import parse_special_skill_choices
-from ..core.models import (BattlePlan, MasterSkillAction, OrderChangeAction,
-                           PlannedCard, ServantSkillAction, TurnPlan)
+from ..core.models import (ActorBinding, BattlePlan, MasterSkillAction, OrderChangeAction,
+                           PlannedCard, RetireAction, ServantSkillAction, TurnPlan)
 
 # 换人服 mysticCodeId（与 agent/chaldea/servant_types.py 保持一致）
 _ORDER_CHANGE_MYSTIC_CODE_IDS = {20, 210, 440}
@@ -107,6 +107,7 @@ def convert_chaldea_actions_to_battle_plan(
     actions: Optional[List[dict]],
     delegate: Optional[dict] = None,
     mystic_code_id: Optional[int] = None,
+    *, initial_servant_ids: Optional[tuple[str | None, ...]] = None,
 ) -> Optional[BattlePlan]:
     """把 Chaldea actions 转成 BattlePlan。
 
@@ -151,7 +152,29 @@ def convert_chaldea_actions_to_battle_plan(
     cur_cards: List[PlannedCard] = []
     cur_enemy: Optional[int] = None
     cur_order_change: Optional[OrderChangeAction] = None
-    cur_sequence: list[ServantSkillAction | MasterSkillAction | OrderChangeAction] = []
+    cur_sequence: list[ServantSkillAction | MasterSkillAction | OrderChangeAction | RetireAction] = []
+    member_order = list(range(6))
+    retired: set[int] = set()
+    bound_ids: dict[int, str] = {}
+    occupied = (tuple(sid is not None for sid in initial_servant_ids)
+                if initial_servant_ids is not None and len(initial_servant_ids) == 6 else (True,) * 6)
+
+    def actor_binding(raw, slot, *, required=False):
+        if raw is None and not required:
+            return None
+        if (not isinstance(raw, dict) or type(raw.get("initialSlot")) is not int
+                or not 0 <= raw["initialSlot"] <= 5 or type(raw.get("svtId")) is not int
+                or raw["svtId"] <= 0):
+            raise ValueError("从者动作的 actor 必须指定初始槽位 initialSlot 0–5 和正整数 svtId")
+        initial, sid = raw["initialSlot"], str(raw["svtId"])
+        if initial in retired:
+            raise ValueError("从者已退场，不能继续使用其技能或出卡")
+        if member_order[slot] != initial:
+            raise ValueError("动作绑定的从者与当前前排实例不一致；不能将原从者技能改为递补从者技能")
+        if initial in bound_ids and bound_ids[initial] != sid:
+            raise ValueError("同一初始从者实例出现了冲突的 svtId")
+        bound_ids[initial] = sid
+        return ActorBinding(initial, sid)
 
     def _flush() -> None:
         """把当前累积的回合内容结算成 TurnPlan。"""
@@ -204,6 +227,10 @@ def convert_chaldea_actions_to_battle_plan(
                     master = MasterSkillAction(skill_idx + 1, target_enemy=enemy_target)
                     cur_masters.append(master)
                     cur_sequence.extend((master, cur_order_change))
+                    front, back = front_slot - 1, sub_slot - 1
+                    if member_order[back] in retired:
+                        raise ValueError("已退场的从者不能通过换人重新入场")
+                    member_order[front], member_order[back] = member_order[back], member_order[front]
                 else:
                     master = MasterSkillAction(skill_idx + 1, target_ally=target,
                                                target_enemy=enemy_target)
@@ -215,9 +242,25 @@ def convert_chaldea_actions_to_battle_plan(
                     skill_index=skill_idx + 1,
                     target_ally=target,
                     target_enemy=enemy_target,
+                    actor=actor_binding(action.get("actor"), svt_idx),
                 )
                 cur_skills.append(servant)
                 cur_sequence.append(servant)
+
+        elif action_type == "retire":
+            slot = action.get("svt")
+            if type(slot) is not int or not 0 <= slot <= 2:
+                raise ValueError("从者退场必须指定当前前排 svt 0–2")
+            binding = actor_binding(action.get("actor"), slot, required=True)
+            incoming = next((i for i in range(3, 6)
+                             if member_order[i] not in retired and occupied[member_order[i]]), None)
+            if incoming is None:
+                raise ValueError("从者退场后没有存活候补可以递补")
+            cur_sequence.append(RetireAction(slot + 1, binding))
+            outgoing = member_order[slot]
+            member_order[slot] = member_order.pop(incoming)
+            member_order.append(outgoing)
+            retired.add(outgoing)
 
         elif action_type == "attack":
             cur_enemy = _parse_enemy_target(action.get("options"))
@@ -241,15 +284,16 @@ def convert_chaldea_actions_to_battle_plan(
                     svt_pos = atk.get("svt")
                     if type(svt_pos) is not int or not 0 <= svt_pos <= 2:
                         continue
+                    binding = actor_binding(atk.get("actor"), svt_pos)
                     if atk.get("isTD", False):
                         np_slot = svt_pos + 1
                         if np_slot not in cur_np:
                             cur_np.append(np_slot)
-                            cur_cards.append(PlannedCard(PrimitiveKind.SELECT_NP, np_slot))
+                            cur_cards.append(PlannedCard(PrimitiveKind.SELECT_NP, np_slot, actor=binding))
                     else:
                         color = _parse_card_color(atk.get("cardType"))
                         if color is not None:
-                            cur_cards.append(PlannedCard(PrimitiveKind.SELECT_CARD, svt_pos + 1, color))
+                            cur_cards.append(PlannedCard(PrimitiveKind.SELECT_CARD, svt_pos + 1, color, binding))
                         else:
                             mfaalog.warning(
                                 "[chaldea_converter] 忽略不支持的面卡色种: "
@@ -258,7 +302,7 @@ def convert_chaldea_actions_to_battle_plan(
             _flush()
 
     # 末尾未结算的技能 -> 补最后一回合
-    if cur_skills or cur_masters or cur_np or cur_order_change is not None:
+    if cur_sequence or cur_skills or cur_masters or cur_np or cur_order_change is not None:
         _flush()
 
     return BattlePlan(turns=tuple(turns), special_choices=parse_special_skill_choices(delegate)) if turns else None

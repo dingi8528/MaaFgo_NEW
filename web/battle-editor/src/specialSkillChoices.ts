@@ -1,4 +1,5 @@
 import type {Catalog,Entry,Json,Servant} from './model';
+import {advanceActionRoster,initialActionRoster,isRetire,resolveActionActor} from './actionRoster';
 
 export type SpecialSkillChoiceField='tdTypeChanges'|'skillActSelectSelections';
 export interface SpecialSkillChoiceOption {value:number;label:string;target?:'ally'|'none';targets?:string[]}
@@ -49,7 +50,7 @@ interface Event {entry:Entry;group:SpecialSkillChoiceGroup;actionIndex:number}
 interface Projection {events:Record<SpecialSkillChoiceField,Event[]>;uncertain:Set<SpecialSkillChoiceField>;diagnostics:SpecialSkillChoiceDiagnostic[]}
 function project(data:Json,entries:Entry[],catalog?:Catalog,bind=false):Projection {
  const result:Projection={events:{tdTypeChanges:[],skillActSelectSelections:[]},uncertain:new Set(),diagnostics:[]};
- const groups=groupsOf(catalog),roster=rosterOf(data);
+ const groups=groupsOf(catalog),roster=initialActionRoster(data),retirementPlan=entries.some(entry=>isRetire(entry.raw))||(data.actions??[]).some(isRetire);
  const enabled=fields.filter(field=>active(data.delegate?.[field])||entries.some(e=>e.specialChoice?.field===field&&e.specialChoice.source==='explicit'));
  if(!groups.length){
   for(const field of enabled)result.uncertain.add(field);
@@ -59,7 +60,7 @@ function project(data:Json,entries:Entry[],catalog?:Catalog,bind=false):Projecti
  for(const [actionIndex,entry] of entries.entries()){
   const raw=entry.raw;
   if(raw?.type==='skill'&&raw.svt!=null){
-   const member=roster[raw.svt],servant=servantOf(member,catalog);
+   const member=resolveActionActor(roster,raw,retirementPlan?entry.actorBinding:undefined).actor?.member,servant=servantOf(member,catalog);
    if(!Number.isInteger(raw.svt)||raw.svt<0||raw.svt>2||!positive(member?.svtId)){
     for(const field of enabled)result.uncertain.add(field);
     if(enabled.length)result.diagnostics.push({code:'special_actor_unresolved',severity:'error',message:'无法确定技能执行者，不能安全配对后续特殊技能选项。',actionIndex});
@@ -75,13 +76,10 @@ function project(data:Json,entries:Entry[],catalog?:Catalog,bind=false):Projecti
     }
    }
   }
-  if(swapAction(data,raw)){
-   const pair=entry.replacement,front=pair?.[0],back=pair?.[1]<3?pair[1]+3:pair?.[1];
-   if(entry.paired&&Array.isArray(pair)&&pair.length===2&&Number.isInteger(front)&&front>=0&&front<3&&Number.isInteger(back)&&back>=3&&back<6)[roster[front],roster[back]]=[roster[back],roster[front]];
-   else{
+  const lifecycleIssue=advanceActionRoster(data,roster,entry);
+  if(lifecycleIssue&&lifecycleIssue.code!=='retired-actor'&&lifecycleIssue.code!=='actor-mismatch'){
     for(const field of enabled)result.uncertain.add(field);
-    if(enabled.length)result.diagnostics.push({code:'special_swap_unresolved',severity:'error',message:'换人步骤缺少可靠的换人位置，不能安全配对后续特殊技能选项。',actionIndex});
-   }
+    if(enabled.length)result.diagnostics.push({code:'special_roster_unresolved',severity:'error',message:lifecycleIssue.message,actionIndex});
   }
  }
  return result;
@@ -106,7 +104,7 @@ export function specialSkillChoiceDiagnostics(data:Json,catalog?:Catalog):Specia
  return diagnostics;
 }
 function signature(data:Json,entries:Entry[]):string {
- return JSON.stringify({roster:rosterOf(data).map(member=>member&&({svtId:member.svtId,skillIds:member.skillIds,transformVal:member.transformVal,limitCount:member.limitCount})),mystic:data.team?.mysticCode?.mysticCodeId,skills:entries.filter(entry=>entry.raw?.type==='skill').map(entry=>({raw:entry.raw,replacement:entry.replacement,paired:entry.paired}))});
+ return JSON.stringify({roster:rosterOf(data).map(member=>member&&({svtId:member.svtId,skillIds:member.skillIds,transformVal:member.transformVal,limitCount:member.limitCount})),mystic:data.team?.mysticCode?.mysticCodeId,skills:entries.filter(entry=>entry.raw?.type==='skill'||entry.raw?.type==='retire').map(entry=>({raw:entry.raw,replacement:entry.replacement,paired:entry.paired}))});
 }
 export function rebuildSpecialSkillChoices(before:Json,oldEntries:Entry[],nextEntries:Entry[],catalog?:Catalog,after:Json=before):{updates:Partial<Record<SpecialSkillChoiceField,unknown[]>>;diagnostics:SpecialSkillChoiceDiagnostic[]} {
  const oldProjection=project(before,oldEntries,catalog),nextProjection=project(after,nextEntries,catalog),updates:Partial<Record<SpecialSkillChoiceField,unknown[]>>={},diagnostics=[...nextProjection.diagnostics];
