@@ -866,3 +866,9 @@ BBC 文本脚本没有自然退场标记的等价语义，转换器遇到 `retir
 所有回导码及说明之后新增独立品牌页脚，显示工程 `assets/resource/icon.png`、MaaFGO、`https://github.com/xlxyvergil/MaaFgo` 和“B站搜索：是kumi啦”。图标由 Vite 纳入静态发布资源，加载白名单仅额外允许该图标的精确同源 URL；导出不访问 GitHub 或 B站。页脚168px及20px间距计入总高度、像素和文件大小限制，不覆盖二维码，也不改变回导协议或原方案数据。
 
 前端308项、TypeScript/Vite构建、MXU打包8项和资源完整性校验通过。浏览器实际下载1200×2523 PNG，品牌图标无加载失败；真实二维码解码后与原始方案完全相同。独立验收截图、成品与结果位于 `.workbuddy/runtime/share-branding-20261030/`，未写用户方案或重启主编辑服务。
+
+## Kingprotea·Alter 完整立绘补齐（2026-10-30）
+
+1102300的从者与技能资料齐全，但本地FGO整包缺少该ID的CharaGraph与NarrowFigure纹理，UI manifest因此没有portrait；编队卡退回使用小头像，形成上方放大头像、下方留空。此次通过Atlas该ID的原始第三灵基明确URL补齐完整卡图，原始451,940字节PNG匹配源站SHA1，转换为358×507 RGB WebP Q90/method6，成品50,092字节。manifest补精确来源、元数据及文件哈希、选中灵基、缺失列表与统计；其余633个素材哈希保持不变，不改运行时技能数据或识别模板。
+
+UI素材25项、目录47项（跳过2项）及真实发布资源完整性检查通过。浏览器实际加载 `formation_1102300_df6c2eb9a73f6516.webp`，naturalWidth/Height为358×507，卡片使用full-portrait布局且无加载错误。备份182份用户方案／草稿后重启原模式编辑服务，所有文件哈希保持，新服务目录与图像HTTP校验通过；旧页面重新连接即可获取新目录。原图、增量记录、独立界面截图及日志位于 `.workbuddy/runtime/kingprotea-alter-portrait-20261030/`。

@@ -32,4 +32,6 @@ python tools/build_battle_editor_ui_assets.py --source-root "F:\Game_AUTO\MaaFGO
 
 完整卡面先按宽高70%缩至358×507，随后正式切换不透明RGB WebP Q90/method6。当前目录为462张WebP与170张保留PNG，共632张、30,302,972字节。WebP卡面为26,995,872字节，较缩小后的P图45,919,791字节再减少41.211%；其他170张PNG字节/mtime不变，旧卡面PNG已按准确manifest和哈希归档到`.workbuddy/editor-evidence/webp-migration-20261024/retired-palette-png/`。原源RGBA裁区先丢错误Alpha再缩放，修复深色区域漏浅底；不修改源整包、必要窄图的透明通道或识别模板。完整配方、哈希及验证记录见该证据目录。
 
+2026-10-30增量补齐 Kingprotea·Alter（1102300／图鉴479）的完整编队立绘。本地整包没有该ID的CharaGraph纹理，虽有从者和技能资料，原清单仍登记缺图，页面因此回退到小头像。此次按Atlas JP该ID明确声明的第三灵基 `1102300b@1.png` 补齐，保留358×507、RGB、WebP Q90/method6配方；原图与元数据保存在 `.workbuddy/runtime/kingprotea-alter-portrait-20261030/`，官方SHA1及输入输出SHA256均经校验，manifest记录 `source.kind=atlas` 与精确来源。当前登记464张WebP、170张PNG，总计634张、30,419,160字节。其余633个文件字节保持不变；只清除此ID的完整卡图缺失记录，未伪造窄图来源。
+
 游戏素材版权归 TYPE-MOON / FGO PROJECT 等原权利方所有，本目录不改变其授权。
