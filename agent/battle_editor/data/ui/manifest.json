@@ -15,6 +15,10 @@
     "incremental/JP_servant_406000": {
       "url": "https://api.atlasacademy.io/nice/JP/servant/483",
       "sha256": "1c5c26b996e34b83ee11bd63984a445cec65c5d5e074dbb2472ff350369d15ab"
+    },
+    "incremental/JP_servant_1102300": {
+      "url": "https://api.atlasacademy.io/nice/JP/servant/1102300",
+      "sha256": "7fc8630671be969811be10dc6221777e8a252f1fe7768a5113236d8c0b52cb67"
     }
   },
   "files": {
@@ -19278,6 +19282,43 @@
           "mode": "RGB"
         }
       }
+    },
+    "formation_1102300_df6c2eb9a73f6516.webp": {
+      "width": 358,
+      "height": 507,
+      "sha256": "22e2b2a1bda386d47adb4db2eda27efcc35c27338f25b8911820f492089cd260",
+      "source": {
+        "kind": "atlas",
+        "path": "https://static.atlasacademy.io/JP/CharaGraph/1102300/1102300b@1.png",
+        "sha256": "a0c95acc6f5e89983da228b15698288355e26a9b39358ba8ebbd05ce2bc9c4b5",
+        "crop": [
+          0,
+          0,
+          512,
+          724
+        ],
+        "resize": {
+          "width": 358,
+          "height": 507,
+          "scale": 0.7,
+          "resample": "LANCZOS",
+          "mode": "RGB"
+        },
+        "atlasURL": "https://static.atlasacademy.io/JP/CharaGraph/1102300/1102300b@1.png",
+        "ascension": 3,
+        "width": 512,
+        "height": 724
+      },
+      "mode": "RGB",
+      "encoding": {
+        "format": "WEBP",
+        "lossless": false,
+        "quality": 90,
+        "method": 6,
+        "libwebp_version": "1.5.0",
+        "input_mode": "RGB",
+        "alpha": "discardBeforeResizePreserveRGB"
+      }
     }
   },
   "servants": {
@@ -37710,7 +37751,9 @@
           "nameJp": "スキル再装填",
           "icon": "skill_00613.png"
         }
-      ]
+      ],
+      "formationPortrait": "formation_1102300_df6c2eb9a73f6516.webp",
+      "formationPortraitAscension": 3
     },
     "1000200": {
       "activeSkills": [
@@ -50911,7 +50954,6 @@
       205600,
       506000,
       2301200,
-      1102300,
       9935530,
       705300,
       405900,
@@ -50963,14 +51005,14 @@
   },
   "stats": {
     "portraits": 1,
-    "formationPortraits": 463,
+    "formationPortraits": 464,
     "servants": 474,
     "addedEquipImages": 0,
     "activeSkillMappings": 1786,
     "appendSkillMappings": 2355,
     "classes": 17,
     "classVariantMappings": 102,
-    "mediaFiles": 633,
-    "mediaBytes": 30369068
+    "mediaFiles": 634,
+    "mediaBytes": 30419160
   }
 }
