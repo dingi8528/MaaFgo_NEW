@@ -166,12 +166,6 @@ _CARD_TEXT_MAP = {
     "quick": CardColor.QUICK,
 }
 
-# The enemy TARGET marker can overlap the left edge of an absent NP's title
-# ROI. OCR then returns a clipped suffix such as ET/GET with high confidence;
-# one coincidental frame-edge match must not turn that scenery into a card.
-_NP_BACKGROUND_TITLES = frozenset({"目标", "目標", *("target"[i:] for i in range(5))})
-
-
 def _detect_card(context, img, ui_slot: int) -> CommandCard:
     # 国服卡牌文字为中文，日服为英文；只接受完整卡色词，不猜测 OCR 噪声。
     node = config.CARD_NODE.format(ui_slot=ui_slot)
@@ -203,28 +197,18 @@ def _detect_np(context, img, servant_slot: int, owner=None) -> Optional[NpCard]:
             owner_confidence=owner.confidence,
             owner_template=owner.matched_template,
         )
-    visual = _reco(context, config.NP_VISUAL_NODE.format(servant_slot=servant_slot), img)
-    title = getattr(getattr(visual, "best_result", None), "text", "") or ""
-    title = title.strip()
-    normalized_title = "".join(char for char in title.casefold() if char.isalnum())
-    title_present = bool(visual and visual.hit and len(normalized_title) >= 2
-                         and float(getattr(visual.best_result, "score", 0.0) or 0.0) >= config.MIN_NP_CONFIDENCE
-                         and normalized_title not in _NP_BACKGROUND_TITLES)
     owner_matches = bool(owner and getattr(owner, "visual_present", True)
                          and owner.owner_slot == servant_slot
                          and owner.best_score >= config.MIN_NP_CONFIDENCE)
     blocked = _reco(context, config.NP_BLOCKED_NODE.format(servant_slot=servant_slot), img)
     is_blocked = bool(blocked and blocked.hit)
     if not (owner_matches or is_blocked):
-        # Scenery text is not a card. When identity evidence is unavailable,
-        # require the shared NP frame as well as its visible title.
-        frame = _reco(context, config.NP_FRAME_NODE.format(servant_slot=servant_slot), img) if title_present else None
-        if not (frame and frame.hit):
-            return None
+        # CN palace scenery was read as CE with a coincidental frame-edge hit.
+        # Arbitrary text/borders cannot prove an NP exists without card identity.
+        return None
 
     # Availability comes only from the visible card and its restriction overlay.
     score = max(
-        float(getattr(getattr(visual, "best_result", None), "score", 0.0) or 0.0) if title_present else 0.0,
         owner.best_score if owner_matches else 0.0,
         1.0 if is_blocked else 0.0,
     )
