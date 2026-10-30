@@ -275,6 +275,9 @@ def convert_actions_to_bbc_rounds(
 
         action_type = action.get("type", "")
 
+        if action_type == "retire":
+            raise ValueError("BBC 无法无损执行从者退场标记及其身份校验；请使用原生自动战斗。")
+
         if action_type == "skill":
             svt_idx = action.get("svt")
             skill_idx = action.get("skill", 0)

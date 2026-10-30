@@ -184,6 +184,13 @@ class CardPick:
 
 
 @dataclass(frozen=True)
+class ActorBinding:
+    """An instance in the initial formation, independent of its current slot."""
+    initial_slot: int             # 0..5, matching the editor JSON
+    servant_id: str
+
+
+@dataclass(frozen=True)
 class PlannedCard:
     """攻略中的出卡意图；面卡位置由当前截图的从者归属与卡色解析。
 
@@ -193,6 +200,7 @@ class PlannedCard:
     kind: PrimitiveKind
     servant_slot: int
     color: CardColor | None = None
+    actor: ActorBinding | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +209,7 @@ class ServantSkillAction:
     skill_index: int              # 1..3
     target_ally: Optional[int] = None   # 1..3
     target_enemy: Optional[int] = None  # 1..3，施放此技能前切换敌方目标
+    actor: ActorBinding | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +226,13 @@ class OrderChangeAction:
 
 
 @dataclass(frozen=True)
+class RetireAction:
+    """Wait for a declared natural departure; never click to kill a servant."""
+    servant_slot: int             # 1..3
+    actor: ActorBinding
+
+
+@dataclass(frozen=True)
 class TurnPlan:
     """单个回合的固定计划。"""
     servant_skills: Tuple[ServantSkillAction, ...] = ()
@@ -224,7 +240,7 @@ class TurnPlan:
     order_change: Optional[OrderChangeAction] = None
     np_order: Tuple[int, ...] = ()       # 希望释放的宝具（从者槽位，1..3）
     target_enemy: Optional[int] = None   # 需要选中的敌人目标
-    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction, ...] = ()
+    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction | RetireAction, ...] = ()
     card_sequence: Tuple[PlannedCard, ...] = ()
 
 
@@ -257,7 +273,7 @@ class BattleAction:
     master_skills: Tuple[MasterSkillAction, ...] = ()
     order_change: Optional[OrderChangeAction] = None
     rationale_tag: str = ""
-    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction, ...] = ()
+    skill_sequence: Tuple[ServantSkillAction | MasterSkillAction | OrderChangeAction | RetireAction, ...] = ()
 
 
 @dataclass(frozen=True)

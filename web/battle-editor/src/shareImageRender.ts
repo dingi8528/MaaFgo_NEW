@@ -146,6 +146,11 @@ function drawSkill(ctx:CanvasRenderingContext2D,assets:Map<string,Asset>,action:
   image(ctx,assets,action.icon,x+330,sy+2,42,42,action.number,'contain');
   text(ctx,'换人',x+382,sy+4,120,22,COLOR.blue,28,true);text(ctx,action.level,x+382,sy+34,120,13,COLOR.muted,18);
   if(action.swap){subject(ctx,assets,action.swap[0],x+520,sy,248);text(ctx,'⇄',x+775,sy+14,42,30,COLOR.gold,40,true);subject(ctx,assets,action.swap[1],x+830,sy,248);}
+ }else if(action.kind==='retire'){
+  subject(ctx,assets,action.actor,x+64,sy,245);
+  text(ctx,'从者退场',x+330,sy+3,280,22,COLOR.error,29,true);
+  text(ctx,'移至队伍末尾',x+330,sy+35,280,14,COLOR.muted,20);
+  if(action.target){text(ctx,'→',x+702,sy+14,44,30,COLOR.blue,40,true);subject(ctx,assets,action.target,x+756,sy,310);}
  }else{
   subject(ctx,assets,action.actor,x+64,sy,245);
   image(ctx,assets,action.icon,x+330,sy+2,42,42,action.number,'contain');

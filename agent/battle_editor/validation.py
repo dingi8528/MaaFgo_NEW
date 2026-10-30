@@ -57,7 +57,7 @@ def _has_support_equip_filter(member: dict) -> bool:
 def validate_battle(data: Any, catalog: dict | None = None) -> dict:
     """Return an actionable report, preserving every field and JSON value supplied."""
     issues: list[dict] = []
-    summary = {"turns": 0, "actions": 0, "skills": 0, "masterSkills": 0, "orderChanges": 0, "noblePhantasms": 0, "cards": 0, "servants": 0}
+    summary = {"turns": 0, "actions": 0, "skills": 0, "masterSkills": 0, "orderChanges": 0, "retirements": 0, "noblePhantasms": 0, "cards": 0, "servants": 0}
 
     def issue(severity, path, code, message, **location):
         if len(issues) < MAX_VALIDATION_ISSUES:
@@ -383,8 +383,37 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         return result()
     summary["actions"] = len(actions)
     swap_pointer = 0
+    initial_members = tuple(members)
+    member_order = list(range(6))
+    retired = set()
     special_pointers = {"tdTypeChanges": 0, "skillActSelectSelections": 0}
     ambiguous_special_fields = set()
+
+    def canonical_id(sid):
+        meta = by_id.get(sid, {}) if type(sid) is int else {}
+        return meta.get("id", sid)
+
+    def check_actor(raw, slot, path, loc, required=False):
+        if raw is None and not required:
+            return True
+        if (not isinstance(raw, dict) or type(raw.get("initialSlot")) is not int
+                or not 0 <= raw["initialSlot"] <= 5 or type(raw.get("svtId")) is not int
+                or raw["svtId"] <= 0):
+            error(path + ".actor", "invalid_actor_binding", "从者实例需要初始槽位 initialSlot 0–5 和正整数 svtId", **loc)
+            return False
+        unknown(raw, {"initialSlot", "svtId"}, path + ".actor", **loc)
+        initial = raw["initialSlot"]
+        if initial in retired:
+            error(path + ".actor", "retired_actor", "该从者已经退场，不能继续使用其技能或出卡；请删除原动作或为递补者重新添加。", **loc)
+            return False
+        if member_order[slot] != initial:
+            error(path + ".actor", "actor_position_mismatch", "动作仍绑定原从者，当前槽位已由其他成员占用；请为当前从者重新添加动作。", **loc)
+            return False
+        member = initial_members[initial]
+        if not _identified_member(member) or canonical_id(raw["svtId"]) != canonical_id(member["svtId"]):
+            error(path + ".actor", "actor_identity_mismatch", "动作绑定身份与初始编队不一致，请重新添加该动作。", **loc)
+            return False
+        return True
 
     def check_special_choice(member, skill, path, loc):
         sid = member.get("svtId") if isinstance(member, dict) else None
@@ -425,7 +454,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         if not isinstance(action, dict):
             error(path, "invalid_action", "动作必须是对象", **loc)
             continue
-        unknown(action, {"type", "svt", "skill", "attacks", "options"}, path, **loc)
+        unknown(action, {"type", "svt", "skill", "attacks", "options", "actor"}, path, **loc)
         kind = action.get("type")
         options = action.get("options")
         if options is not None and not isinstance(options, dict):
@@ -449,6 +478,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                 error(path + ".svt", "invalid_front_slot", "技能执行者必须是当前前排 0–2，御主技能省略 svt", **loc)
             elif svt is not None:
                 summary["skills"] += 1
+                check_actor(action.get("actor"), svt, path, loc)
                 if not members[svt]:
                     error(path + ".svt", "empty_actor", "该动作时点的前排槽位为空", **loc)
                 elif not _identified_member(members[svt]):
@@ -470,13 +500,44 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                         swap_pointer += 1
                         if swap:
                             front, back = swap
+                            if member_order[back] in retired:
+                                error(path, "retired_swap", "已退场的从者不能通过换人重新入场", **loc)
+                                continue
                             if not members[front] or not members[back]:
                                 error(path, "empty_swap", "换人双方必须在此动作时点都有从者", **loc)
                             members[front], members[back] = members[back], members[front]
+                            member_order[front], member_order[back] = member_order[back], member_order[front]
                             summary["orderChanges"] += 1
             target = options.get("playerTarget")
             if type(target) is int and 0 <= target <= 2 and not members[target]:
                 error(path + ".options.playerTarget", "empty_target", "该动作时点的我方目标槽位为空", **loc)
+        elif kind == "retire":
+            svt = action.get("svt")
+            if type(svt) is not int or not 0 <= svt <= 2:
+                error(path + ".svt", "invalid_front_slot", "退场者必须是当前前排 0–2", **loc)
+                continue
+            if not check_actor(action.get("actor"), svt, path, loc, required=True):
+                continue
+            if not _identified_member(members[svt]):
+                error(path, "empty_retirement_actor", "退场标记需要明确的当前前排从者", **loc)
+                continue
+            incoming = next((i for i in range(3, 6) if members[i] and member_order[i] not in retired), None)
+            if incoming is None:
+                error(path, "no_retirement_replacement", "退场后没有存活候补可以递补，请先配置候补从者。", **loc)
+                continue
+            if not _identified_member(members[incoming]):
+                error(path, "unknown_retirement_replacement", "递补者未指定从者，无法确认自然退场完成，请先指定候补身份。", **loc)
+            elif canonical_id(members[incoming]["svtId"]) == canonical_id(members[svt]["svtId"]):
+                error(path, "ambiguous_retirement_replacement", "退场者与递补者为同名从者，当前识别无法安全确认递补，暂不支持此退场标记。", **loc)
+            outgoing, outgoing_member = member_order[svt], members[svt]
+            member_order[svt], members[svt] = member_order.pop(incoming), members.pop(incoming)
+            member_order.append(outgoing)
+            members.append(outgoing_member)
+            retired.add(outgoing)
+            summary["retirements"] += 1
+            if not trailing_skill:
+                trailing_skill_start = ai
+            trailing_skill = True
         elif kind == "attack":
             summary["turns"] += 1
             trailing_skill = False
@@ -501,7 +562,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                 if not isinstance(card, dict):
                     error(cp, "invalid_card", "出卡意图必须是对象", **loc)
                     continue
-                unknown(card, {"svt", "card", "isTD", "critical", "cardType", "isAuto"}, cp, **loc)
+                unknown(card, {"svt", "card", "isTD", "critical", "cardType", "isAuto", "actor"}, cp, **loc)
                 if "isAuto" in card and type(card["isAuto"]) is not bool:
                     error(cp + ".isAuto", "invalid_boolean", "isAuto 必须是布尔值", **loc)
                     continue
@@ -520,6 +581,8 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                     error(cp + ".svt", "empty_actor", "出卡时的前排槽位为空", **loc)
                 elif not _identified_member(members[svt]):
                     error(cp + ".svt", "unspecified_support_actor", "出卡时的助战未指定从者，不能安排宝具或指定普通卡；请先在编队中选择从者。", **loc)
+                if type(svt) is int and 0 <= svt <= 2:
+                    check_actor(card.get("actor"), svt, cp, loc)
                 if card.get("isTD") is True:
                     summary["noblePhantasms"] += 1
                     if type(svt) is int:
