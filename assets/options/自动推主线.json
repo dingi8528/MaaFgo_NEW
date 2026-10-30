@@ -1,5 +1,15 @@
 {
   "option": {
+    "主线-是否自动使用灵脉石": {
+      "type": "switch",
+      "label": "是否自动使用灵脉石",
+      "description": "战败后使用灵脉石续战，每关最多3次；无道具或识别不确定时停止。续战改用默认战斗逻辑，不使用令咒或圣晶石。",
+      "default_case": "No",
+      "cases": [
+        {"name": "No", "label": "关闭", "pipeline_override": {"主线-配置": {"attach": {"use_spirit_stone": false}}}},
+        {"name": "Yes", "label": "开启", "pipeline_override": {"主线-配置": {"attach": {"use_spirit_stone": true}}}}
+      ]
+    },
     "主线-自动处理编队限制": {
       "type": "switch",
       "label": "自动处理编队限制情况",
@@ -40,6 +50,7 @@
           "name": "native",
           "label": "原生自动战斗",
           "option": [
+            "主线-是否自动使用灵脉石",
             "主线-自动处理编队限制",
             "原生自动战斗使用Chaldea队伍",
             "原生自动战斗助战方式"

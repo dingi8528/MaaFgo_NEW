@@ -68,6 +68,8 @@ class StoryRunner:
         self.completed = self.battles = 0
         self.skip_confirm_until = self.skip_settle_until = 0
         self.auto_handle_restrictions = self.config.get("auto_handle_restrictions", True) is True
+        self.use_spirit_stone = self.config.get("use_spirit_stone", False) is True
+        self._spirit_stones_used = 0
         self.reset_restriction_state()
 
     def reset_restriction_state(self):
@@ -217,8 +219,45 @@ class StoryRunner:
             self._mark_restricted("编成限制提示")
 
     def failure(self, image):
-        if any(self.reco(n, image) for n in ("战斗失败_不回主界面", "失败2_不回主界面")):
+        if self.is_defeat(image):
             raise StoryStopped("战斗失败，需要人工处理")
+
+    def is_defeat(self, image):
+        return any(self.reco(n, image) for n in ("战斗失败_不回主界面", "失败2_不回主界面"))
+
+    def continue_with_spirit_stone(self, image):
+        """仅处理明确的灵脉石按钮；每次续关最多一次选道具、一次确认。"""
+        if not self.use_spirit_stone or self.mode != "native":
+            raise StoryStopped("战斗失败，未开启自动使用灵脉石")
+        if self._spirit_stones_used >= 3:
+            raise StoryStopped("本关已使用3次灵脉石，仍未通关，停止任务")
+        confirm = self.reco("主线-灵脉石确认", image)
+        if not confirm:
+            offer = self.reco("主线-使用灵脉石", image)
+            if not offer:
+                raise StoryStopped("战斗失败：没有可确认的灵脉石按钮或正数库存，停止续关；未使用令咒或圣晶石")
+            self.action("主线-使用灵脉石", offer)
+            deadline = self.clock() + min(self.timeout, 15)
+            while self.clock() < deadline:
+                self.pause()
+                image = self.frame()
+                confirm = self.reco("主线-灵脉石确认", image)
+                if confirm:
+                    break
+            if not confirm:
+                raise StoryStopped("未确认灵脉石消费弹窗，保留现场停止；未再次点击道具")
+        self.check_stop()
+        self.action("主线-灵脉石确认", confirm)
+        self._spirit_stones_used += 1
+        mfaalog.info(f"[自动推主线] 已确认使用灵脉石，本关第{self._spirit_stones_used}/3次；等待续战，不计入通关数")
+        deadline = self.clock() + self.timeout
+        while self.clock() < deadline:
+            image = self.frame()
+            if self.reco("进本-战斗主界面已出现", image):
+                mfaalog.info("[自动推主线] 灵脉石续战成功，本关改用默认战斗逻辑")
+                return
+            self.pause()
+        raise StoryStopped("灵脉石确认后未返回战斗，停止任务；未重复消费")
 
     def interrupt(self, image, *, entering=False, forming=False):
         """已识别事件才操作；剧情跳过分帧确认，避免切换中重复点击。"""
@@ -248,7 +287,8 @@ class StoryRunner:
             self.action("跳过剧情-点击跳过", result)
             self.skip_confirm_until = self.clock() + 4
             return True
-        names = ["进本-关闭告知弹窗"]
+        # run_action 不执行 next；必须调用实际关闭叶子，不能调用仅分发的父节点。
+        names = ["主线-右上公告关闭", "进本-普通告知弹窗关闭"]
         if entering or forming:
             names[:0] = ["进本-编成条件提示", "进本-攻略提示关闭",
                          "主线-编队弹窗关闭保底"]
@@ -506,10 +546,19 @@ class StoryRunner:
                 self.ctx.clear_hit_count(name)
             self._start_formation_battle()
             # 字符串整体替换，不能用空对象深合并后遗留原 plan/share/source。
-            battle_override = {"原生自动战斗入口": {"action": {"param": {
-                "custom_action_param": "{}"
-            }}}} if self.current_restricted else None
-            self.task("原生自动战斗入口", battle_override)
+            use_default = self.current_restricted or self._spirit_stones_used > 0
+            while True:
+                battle_override = {"原生自动战斗入口": {"action": {"param": {
+                    "custom_action_param": "{}"
+                }}}} if use_default else None
+                self.task("原生自动战斗入口", battle_override)
+                if not self.use_spirit_stone:
+                    return
+                image = self.frame()
+                if not self.is_defeat(image):
+                    return
+                self.continue_with_spirit_stone(image)
+                use_default = True
         finally:
             sessions.finish(root, token)
 
@@ -555,6 +604,7 @@ class StoryRunner:
 
     def run(self):
         while self.completed < self.limit:
+            self._spirit_stones_used = 0
             self.reset_restriction_state()
             target = self.locate()
             kind = "battle" if target is None else self.enter(target)

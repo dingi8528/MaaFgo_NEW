@@ -15,6 +15,7 @@
       "quest_limit": 10,
       "battle_mode": "native",
       "auto_handle_restrictions": true,
+      "use_spirit_stone": false,
       "transition_timeout": 120
     }
   },

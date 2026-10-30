@@ -48,17 +48,20 @@ class NpTargetLabelTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(perception._detect_np(context(text=text), object(), 1))
 
-    def test_real_japanese_and_english_titles_still_work_without_known_roster(self):
-        for title in ('ぜつぎのはっきどとう', '烈士徇名・不惜身命', 'Gate of Babylon', 'GET AWAY'):
+    def test_any_title_and_frame_are_insufficient_without_known_card_identity(self):
+        for title in ('CE', 'ぜつぎのはっきどとう', '烈士徇名・不惜身命', 'Gate of Babylon', 'GET AWAY'):
             with self.subTest(title=title):
-                card = perception._detect_np(context(text=title, score=.90), object(), 1)
-                self.assertEqual(card.servant_slot, 1)
-                self.assertTrue(card.available)
+                ctx = context(text=title, score=.99)
+                self.assertIsNone(perception._detect_np(ctx, object(), 1))
+                names = [call.args[0] for call in ctx.run_recognition.call_args_list]
+                self.assertNotIn(config.NP_VISUAL_NODE.format(servant_slot=1), names)
+                self.assertNotIn(config.NP_FRAME_NODE.format(servant_slot=1), names)
 
-    def test_title_still_needs_frame_when_portrait_identity_is_unknown(self):
+    def test_unknown_portrait_does_not_fall_back_to_title_or_frame(self):
         ctx = context(text='烈士徇名', frame=False)
         self.assertIsNone(perception._detect_np(ctx, object(), 1))
-        ctx.run_recognition.assert_any_call(config.NP_FRAME_NODE.format(servant_slot=1), unittest.mock.ANY)
+        self.assertNotIn(config.NP_FRAME_NODE.format(servant_slot=1),
+                         [call.args[0] for call in ctx.run_recognition.call_args_list])
 
     def test_known_real_np2_and_np3_keep_their_logged_portrait_positive_path(self):
         for slot, score in ((2, .958), (3, .966)):
