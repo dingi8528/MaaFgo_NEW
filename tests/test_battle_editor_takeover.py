@@ -43,6 +43,7 @@ class EditorTakeoverTests(unittest.TestCase):
             shutil.copy2(ROOT / 'agent/chaldea/servant_aliases.py', root / 'agent/chaldea')
             (root / 'agent/battle/core').mkdir(parents=True)
             shutil.copy2(ROOT / 'agent/battle/core/special_skills.py', root / 'agent/battle/core')
+            shutil.copy2(ROOT / 'agent/battle/core/advanced_strategy.py', root / 'agent/battle/core')
         else:
             entry = root / 'agent/battle_editor/main.py'
             entry.parent.mkdir(parents=True)

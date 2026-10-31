@@ -9,12 +9,16 @@ from __future__ import annotations
 from typing import Any
 
 from .special_choices import match_special_skill
+try:  # Both packaged ``battle_editor`` and repository ``agent.battle_editor``.
+    from ..battle.core.advanced_strategy import default_advanced_strategy, validate_advanced_strategy
+except ImportError:
+    from battle.core.advanced_strategy import default_advanced_strategy, validate_advanced_strategy
 
 ORDER_CHANGE_IDS = {20, 210, 440}
 MAX_VALIDATION_ISSUES = 200
 CARD_TYPES = {1: "arts", 2: "buster", 3: "quick", "1": "arts", "2": "buster", "3": "quick", "arts": "arts", "buster": "buster", "quick": "quick"}
 DEFAULTS = {
-    "newBattle": {"team": {"name": "未命名方案", "onFieldSvts": [None, None, None], "backupSvts": [None, None, None], "mysticCode": {"mysticCodeId": 210, "level": 10}}, "actions": []},
+    "newBattle": {"team": {"name": "未命名方案", "onFieldSvts": [None, None, None], "backupSvts": [None, None, None], "mysticCode": {"mysticCodeId": 210, "level": 10}}, "actions": [], "maaAdvancedStrategy": default_advanced_strategy()},
     "servant": {"supportType": "none", "skillLvs": [10, 10, 10], "appendLvs": [0, 0, 0, 0, 0]}, "equip": {}, "mysticCode": {},
     "description": {"lv": "未指定，不新增等级要求", "tdLv": "未指定，不新增宝具要求", "skillLvs": "空槽新选从者预设 10/10/10；导入未指定时保持缺失，不新增技能要求", "appendLvs": "空槽新选从者预设 0/0/0/0/0，0 表示不要求；导入保留原字段与数组长度", "taskSkillDefaults": "任务技能预设只在新选空槽或显式补齐空项时使用；更换已有从者及切换助战类型不自动补值，预设不是游戏内实际等级", "mysticCode.level": "未指定，仅记录属性", "playerTarget": "未指定，省略该字段", "emptyAttack": "完全空的回合保留一条 attack（attacks: []）：不释放技能或宝具，仅按通用规则选普通卡；同回合已安排的技能仍执行。actions 为空表示未设置回合，使用通用自动战斗", "autoAttackCard": "Maa 扩展 isAuto: true，按当前位置使用默认普通卡策略补齐；不属于上游 Chaldea 标准，不能混入具体卡片字段"},
 }
@@ -101,7 +105,10 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
     if not isinstance(data, dict):
         error("$", "invalid_root", "需要 Chaldea BattleShareData JSON 对象")
         return result()
-    known_root = {"minBuild", "appBuild", "quest", "options", "team", "delegate", "actions", "isCritTeam"}
+    known_root = {"minBuild", "appBuild", "quest", "options", "team", "delegate", "actions", "isCritTeam", "maaAdvancedStrategy"}
+    if "maaAdvancedStrategy" in data:
+        for item in validate_advanced_strategy(data["maaAdvancedStrategy"]):
+            issue(item["severity"], item["path"], item["code"], item["message"])
     if data.get("_source") == "bbc":
         known_root.update({"_source", "_bbcSource", "_bbcWaveTurns", "_conversionWarnings"})
         conversion_warnings = data.get("_conversionWarnings")
@@ -139,6 +146,12 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                 warning("options", "simulation_only", "顶层 options 是 Chaldea 模拟参数，保存保留；它们不会改变 MaaFGO 选卡策略")
 
     team = data.get("team")
+    no_formation = team is None and ("maaAdvancedStrategy" in data or isinstance(data.get("actions"), list))
+    if no_formation:
+        # A private projection allows strategy-only documents to pass the same
+        # validation flow without inventing or writing a recorded formation.
+        team = {"onFieldSvts": [None, None, None], "backupSvts": [None, None, None]}
+        warning("team", "no_formation", "方案未指定编队，原生战斗将使用当前场上的阵容；自动编队不适用。")
     if not isinstance(team, dict):
         error("team", "required_team", "缺少 Chaldea team 对象")
         return result()
@@ -296,7 +309,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         error("team", "multiple_supports", "当前自动编队只支持一个助战槽位")
     if supports == 0:
         warning("team", "missing_support", "队伍中未设置助战，请核对成员类型；无助战关卡可忽略此提醒，仍允许保存方案")
-    if not any(members[:3]):
+    if not any(members[:3]) and not (no_formation or isinstance(data.get("maaAdvancedStrategy"), dict) and not any(members)):
         error("team.onFieldSvts", "empty_frontline", "至少选择一位前排从者")
 
     mystic = team.get("mysticCode")

@@ -1,4 +1,5 @@
 import {isAutoAttackCard,setAttackCard} from './attackCards';
+import {defaultAdvancedStrategy} from './advancedStrategy';
 import {setEquipCandidate} from './equipRequirements';
 import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoicesRebuilt} from './specialSkillChoices';
 import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
@@ -13,13 +14,13 @@ export interface ServantBond {tags?:string[]|null;tags_by_ascension?:Record<stri
 export interface NPFilterVariant {treasureDeviceId?:number;name_jp?:string;type?:string;card?:string;conditions_jp?:string[];[key:string]:unknown}
 export interface ServantNPFilter {types?:string[];cards?:string[];variants?:NPFilterVariant[]}
 export interface Servant { id:number; name:string; nameJp?:string; collectionNo?:number; classKey?:string; className?:string; rarity?:number;cost?:number|null; image?:string|null; portrait?:string|null; statusImage?:string|null; classIcon?:string|null; cards?:number[]; aliases?:(string|number)[]; searchAliases?:string[]; skills?:{id:number;num?:number;name:string;icon?:string;target?:string;targets?:string[];coolDown?:number[]}[]; skillVariants?:Json[]; appendSkills?:Json[]; np?:Json; npVariants?:Json[];bond?:ServantBond|null;npFilter?:ServantNPFilter|null }
-export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;common?:boolean;commonSources?:string[];filters?:EquipFilterMetadata}
+export interface Equip {id:number;name:string;nameJp?:string;collectionNo?:number;rarity?:number;cost?:number|null;image?:string|null;imageWidth?:number;imageHeight?:number;recognizable?:boolean;supportRecognition?:{limitBreak:boolean;nonLimitBreak:boolean};common?:boolean;commonSources?:string[];filters?:EquipFilterMetadata}
 export interface Mystic {id:number;name:string;image?:string|null;skills?:Json[];orderChange?:boolean}
 export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[];uiAssets?:{classes?:Record<string,string>;support?:string|null;background?:string|null;npFrames?:{arts?:string;buster?:string;quick?:string};masterSkill?:string|null;masterFrame?:string|null;masterEquipFrame?:string|null};inventory?:{servants?:number[];equips?:number[];[key:string]:any};version?:string|Json;specialSkillChoices?:SpecialSkillChoiceCatalog;equipFilters?:EquipFilterCatalog}
 export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding;actorBinding?:ActionActor;cardActorBindings?:ActorCardBinding[]}
 export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
-export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[]});
+export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[],maaAdvancedStrategy:defaultAdvancedStrategy()});
 export const newServantDefaults=():Json=>({supportType:'none',skillLvs:[10,10,10],appendLvs:[0,0,0,0,0]});
 export function hasServantIdentity(member:Json|null|undefined):member is Json&{svtId:number} {
  return typeof member?.svtId==='number'&&Number.isSafeInteger(member.svtId)&&member.svtId>0;

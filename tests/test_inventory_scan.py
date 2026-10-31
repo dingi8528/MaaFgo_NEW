@@ -9,6 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent/custom"))
 from inventory_scan_action import BuildPlayerInventory
+import inventory_scan_action as inventory
 
 
 class InventoryScanTests(unittest.TestCase):
@@ -59,6 +60,91 @@ class InventoryScanTests(unittest.TestCase):
         self.assertEqual((covered, missing), (1, []))
         self.assertEqual(variants, [("9401070", "f_94010700.png")])
         self.assertEqual(matrix.shape[0], 1)
+
+    def make_single_row_equips(self, count):
+        scan = self.scan
+        scan.bond_equips_only = True
+        scan.sx = scan.sy = 1.0
+        scan.rarity_dirs = [str(
+            Path(__file__).resolve().parents[1] /
+            "assets/resource/base/image/个人库存/稀有度"
+        )]
+        scan._load_rarity_anchor()
+        stars = scan._read_first_template(scan.rarity_dirs, "rarity4_0.png")
+        rng = np.random.default_rng(408)
+        source = rng.integers(0, 255, (56, 147, 3), dtype=np.uint8)
+        scan.equip_list_dirs = []
+        with patch.object(scan, "_read_first_template", return_value=source):
+            matrix, variants, _, _ = scan._prepare_equip_features([{"id": "9400010"}])
+        template = scan.equip_full_templates["f_94000100.png"]
+        for column in range(count):
+            x = inventory.EQUIP_FACE_X[column]
+            self.frame[214:256, x:x + 110] = template
+            x = inventory.INVENTORY_CARD_X[column] + 60
+            height, width = stars.shape[:2]
+            self.frame[291:291 + height, x:x + width] = stars
+        return matrix, variants, stars
+
+    def test_single_row_bond_equips_recognizes_sparse_and_full_rows(self):
+        for count in (1, 3, 8):
+            with self.subTest(count=count):
+                self.frame.fill(0)
+                matrix, variants, _ = self.make_single_row_equips(count)
+                self.scan._shot = lambda: self.frame
+                self.scan._scroll_thumb_center = lambda _image: None
+                with patch("inventory_scan_action.time.sleep"):
+                    observed, metrics = self.scan._scan_pages(
+                        "礼装", [], matrix, variants, self.scan._stable_equip_hits, "swipe", 8
+                    )
+                self.assertEqual(set(observed), {"9400010"})
+                self.assertEqual(metrics["bottom_detection"], "single_row")
+                self.assertTrue(metrics["recognition_valid"])
+                self.assertEqual(metrics["swipes"], 3)
+                self.assertEqual(self.scan.last_rarity_grid["card_origins"], [190])
+
+    def test_single_row_bond_equips_requires_no_lower_star_rows(self):
+        _, _, stars = self.make_single_row_equips(1)
+        height, width = stars.shape[:2]
+        # 下方即使只有一张缺身份模板的礼装，也不能当成单行完整库存。
+        self.frame[440:440 + height, 143:143 + width] = stars
+        self.assertIsNone(self.scan._single_row_bond_equip_candidate(self.frame))
+
+    def test_single_row_bond_equips_requires_top_row_and_bond_filter(self):
+        self.make_single_row_equips(1)
+        self.scan.bond_equips_only = False
+        self.assertIsNone(self.scan._single_row_bond_equip_candidate(self.frame))
+        self.scan.bond_equips_only = True
+        shifted = np.roll(self.frame, 30, axis=0)
+        self.assertIsNone(self.scan._single_row_bond_equip_candidate(shifted))
+
+    def test_single_row_bond_equips_zero_identity_hits_does_not_complete(self):
+        matrix, variants, _ = self.make_single_row_equips(1)
+        self.scan._shot = lambda: self.frame
+        self.scan._direct_equip_hits = lambda _hits, _image: {}
+        with patch("inventory_scan_action.time.sleep"):
+            result = self.scan._scan_pages(
+                "礼装", [], matrix, variants, self.scan._stable_equip_hits, "swipe", 8
+            )
+        self.assertEqual(result, (None, None))
+        self.scan._run_pipeline.assert_not_called()
+
+    def test_single_row_bond_equips_requires_both_frames(self):
+        matrix, variants, _ = self.make_single_row_equips(1)
+        self.scan._shot = Mock(side_effect=[self.frame, self.frame, np.zeros_like(self.frame)])
+        with patch("inventory_scan_action.time.sleep"):
+            hits, _image = self.scan._stable_equip_hits([], matrix, variants)
+        self.assertEqual(hits, {})
+        self.assertFalse(self.scan.stable_single_row_equips)
+
+    def test_single_row_bond_equips_with_mid_list_scrollbar_does_not_complete(self):
+        matrix, variants, _ = self.make_single_row_equips(1)
+        self.scan._shot = lambda: self.frame
+        self.scan._scroll_thumb_center = lambda _image: 300
+        with patch("inventory_scan_action.time.sleep"):
+            result = self.scan._scan_pages(
+                "礼装", [], matrix, variants, self.scan._stable_equip_hits, "swipe", 8
+            )
+        self.assertEqual(result, (None, None))
 
     def run_scan(self, thumb, hits=None):
         self.scan._scroll_thumb_center = lambda image: thumb

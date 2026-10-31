@@ -13,7 +13,7 @@ sys.path[:0] = [str(ROOT / 'agent'), str(ROOT / 'agent/custom')]
 from battle.core.enums import Scene
 from battle.core.models import (BattleAction, BattlePlan, BattleState, Confidence, MasterSkillAction,
                                 OrderChangeAction, ServantSkillAction, ServantState, SkillState, TurnPlan)
-from battle.core.policy import StrategyProfile
+from battle.core.policy import BattlePolicy, SkillPolicy, StrategyProfile
 from battle.runtime.runtime import AutoBattleRuntime, _ORDER_CHANGE_RETURN_TIMEOUT_S
 
 
@@ -45,7 +45,7 @@ class OrderChangeSettleTests(unittest.TestCase):
         runtime.roster_servant_ids = INITIAL
         runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)))
         runtime._turn_index = 0
-        runtime.battle_policy = NS(skill=NS(use_master_skills=True))
+        runtime.battle_policy = BattlePolicy(skill=SkillPolicy(use_master_skills=True))
         runtime.events = []
         runtime._mark_action = Mock()
         runtime._wait_until = Mock(return_value=True)

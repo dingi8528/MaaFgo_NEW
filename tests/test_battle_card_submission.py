@@ -33,7 +33,7 @@ class CardSubmissionTests(unittest.TestCase):
         current = [frames[-1]]
         observations = [0]
 
-        def detect(_context, _image):
+        def detect(_context, _image, **_kwargs):
             current[0] = next(pending, current[0])
             scene, elapsed = current[0]
             clock[0] += elapsed

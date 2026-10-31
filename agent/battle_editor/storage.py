@@ -117,9 +117,19 @@ class BattleStorage:
                     item = self.read_battle(file.name)
                     row["hash"] = item["hash"]
                     data = item["data"]
-                    if not isinstance(data, dict) or not isinstance(data.get("team"), dict):
+                    if not isinstance(data, dict):
                         raise EditorError("invalid_structure", "缺少 Chaldea team 对象")
-                    team = data["team"]
+                    team = data.get("team")
+                    if not isinstance(team, dict):
+                        # Strategy/actions-only files are valid editor documents too.
+                        # Validate their contract, but project an empty formation only
+                        # for the summary; listing must never materialize JSON fields.
+                        from .validation import validate_battle
+                        report = validate_battle(data)
+                        error = next((item for item in report["issues"] if item["severity"] == "error"), None)
+                        if error:
+                            raise EditorError("invalid_structure", f"{error['path']}: {error['message']}")
+                        team = {}
                     if team.get("name") is not None and not isinstance(team["name"], str):
                         raise EditorError("invalid_structure", "team.name 不是字符串，请修正原文件")
                     row["title"] = team.get("name") or file.stem

@@ -178,7 +178,7 @@ class BundledEquipFilterTests(unittest.TestCase):
         curated_path = ROOT / "agent/custom/equip_list.json"
         curated = json.loads(curated_path.read_text(encoding="utf-8"))["equips"]
         self.assertEqual(set(index["equips"]), {row["id"] for row in curated})
-        self.assertEqual(len(index["equips"]), 1156)
+        self.assertEqual(len(index["equips"]), 1157)
         self.assertEqual(index["version"]["curatedSha256"], hashlib.sha256(curated_path.read_bytes()).hexdigest())
         manifest = json.loads((ROOT / "agent/battle_editor/data/equip_filters_sources.json").read_text(encoding="utf-8"))
         self.assertNotIn(b"\r\n", curated_path.read_bytes())

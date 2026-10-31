@@ -7,11 +7,11 @@
       "dataVer": 2691,
       "dateVer": 1793264400
     },
-    "curatedSha256": "69a7fed8318bdbbcc3f330b7e27a65bda3be8fcba6132305a4a63a32929072ce",
+    "curatedSha256": "f15cc42ee59cc0ac49b2ea5cfabbe8d8efd892b434131b8585c95e617b7d236f",
     "niceEquipSha256": "3c8d444a3f0d828ef14eb3439fced34503955a659434910e77dcee0494ca72ad"
   },
-  "curatedCount": 1156,
-  "indexSha256": "6e2c0cfe95bd9f064f8758bbdcdeb6042eb7c585f1fc928099ef1419cc1ae590",
+  "curatedCount": 1157,
+  "indexSha256": "2eca2d2de2b584a4c313c7000f9d8c1a61d0f1830953f2076b37c271fd8f70d9",
   "sources": [
     {
       "file": "JP_info.json",

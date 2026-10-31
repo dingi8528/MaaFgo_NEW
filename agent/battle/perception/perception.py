@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import List, Optional, Sequence, Tuple
 
+import mfaalog
+
 from ..core.enums import CardColor, Scene
 from ..core.models import (BattleState, CommandCard, Confidence, EnemyState,
                            NpCard, ServantState, SkillState)
@@ -33,6 +35,7 @@ def build(
     candidate_servant_ids: Sequence[str | int | None] | None = None,
     servant_recognizer: FrontlineServantRecognizer | None = None,
     composed_recognizer: ComposedCardRecognizer | None = None,
+    enemy_slots: Sequence[int] | None = None,
 ) -> BattleState:
     scene, sconf = _detect_scene(context, img)
 
@@ -96,6 +99,12 @@ def build(
             )
         np_cards = tuple(c for c in (_detect_np(context, img, s, np_owners.get(s))
                                     for s in config.FRONTLINE_SLOTS) if c)
+        for slot, detected in np_owners.items():
+            if getattr(detected, "reason", "") == "np_glare_uncertain":
+                unknown.append(f"np[{slot}].presence:glare")
+                mfaalog.info(f"[NPGlare] slot={slot} score={detected.score:.4f} "
+                             f"white_fraction={detected.glare_fraction:.4f} "
+                             f"template={detected.matched_template}; 仅请求重拍，不确认为可用宝具")
         for c in cards:
             if not c.confidence.passes(config.MIN_CARD_CONFIDENCE):
                 unknown.append(f"card[{c.ui_slot}]")
@@ -120,7 +129,9 @@ def build(
         # 换人界面：检测从者技能状态无意义，只识别场景即可
         pass
 
-    enemies = _detect_enemies(context, img)
+    # 结算、换人和动画中没有可操作的敌人；不要把报酬/弹窗文字送进敌人 OCR。
+    enemies = (_detect_enemies(context, img, slots=enemy_slots)
+               if scene in (Scene.MAIN_BATTLE, Scene.COMMAND_SELECTION) else ())
 
     return BattleState(
         scene=scene,
@@ -140,15 +151,18 @@ def _reco(context, node: str, img):
     return context.run_recognition(node, img)
 
 
-def detect_scene(context, img) -> Scene:
+def detect_scene(context, img, *, check_order_change: bool = True) -> Scene:
     """轻量版：只检测场景，不做卡牌/技能/敌人等完整感知。用于轮询等待。"""
-    scene, _ = _detect_scene(context, img)
+    scene, _ = _detect_scene(context, img, check_order_change=check_order_change)
     return scene
 
 
-def _detect_scene(context, img) -> Tuple[Scene, float]:
+def _detect_scene(context, img, *, check_order_change: bool = True) -> Tuple[Scene, float]:
     # 命中哪个场景节点就是哪个；都不命中 -> UNKNOWN
     for scene_key, node in config.SCENE_NODES.items():
+        # 仅用于明确不等待换人的轮询；完整感知/首次接管保留换人识别。
+        if scene_key == "order_change" and not check_order_change:
+            continue
         r = _reco(context, node, img)
         if r and r.hit:
             score = getattr(getattr(r, "best_result", None), "score", 1.0) or 1.0
@@ -223,9 +237,11 @@ def _detect_np(context, img, servant_slot: int, owner=None) -> Optional[NpCard]:
     )
 
 
-def _detect_enemies(context, img) -> Tuple[EnemyState, ...]:
+def _detect_enemies(context, img, *, slots: Sequence[int] | None = None) -> Tuple[EnemyState, ...]:
     out: List[EnemyState] = []
     for slot in config.ENEMY_SLOTS:
+        if slots is not None and slot not in slots:
+            continue
         alive_r = _reco(context, config.ENEMY_NODE.format(slot=slot), img)
         alive = bool(alive_r and alive_r.hit)
         if not alive:
@@ -256,6 +272,10 @@ def _detect_servants(context, img, candidate_servant_ids=(), *, recognizer=None)
         return ()
     recognizer = recognizer or FrontlineServantRecognizer.from_context(context)
     for identity in recognizer.detect(img, candidate_servant_ids):
+        if identity.servant_id is None or getattr(identity, "visible_top", 35) != 35:
+            mfaalog.info(f"[HUDIdentity] slot={identity.slot} id={identity.servant_id or 'unknown'} "
+                         f"score={identity.confidence.value:.4f} margin={identity.margin:.4f} "
+                         f"crop_top={getattr(identity, 'visible_top', 35)} template={identity.matched_template}")
         if identity.servant_id is None:
             continue
         slot = identity.slot

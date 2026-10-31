@@ -118,6 +118,7 @@ class LauncherTest(unittest.TestCase):
             shutil.copy2(ROOT / "agent" / "chaldea" / "servant_aliases.py", root / "agent" / "chaldea")
             (root / "agent/battle/core").mkdir(parents=True)
             shutil.copy2(ROOT / "agent/battle/core/special_skills.py", root / "agent/battle/core")
+            shutil.copy2(ROOT / "agent/battle/core/advanced_strategy.py", root / "agent/battle/core")
             static = root / "web" / "battle-editor"
             static.mkdir(parents=True)
             (static / "index.html").write_text("<!doctype html><title>test</title>", encoding="utf-8")

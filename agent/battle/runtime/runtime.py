@@ -11,16 +11,17 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from dataclasses import dataclass, replace
 
-from ..core.decider import Decider
+from ..core.decider import Decider, RuleDecider
 from ..core.special_skills import SpecialSkillChoiceError
 from .special_skills import SpecialSkillDispatcher
 from ..core.enums import PrimitiveKind, Scene
 from ..core.models import (ActorBinding, BattlePlan, BattleState, CardPick, InitialFormation,
                            MasterSkillAction, OrderChangeAction, RetireAction,
                            ServantSkillAction, VERIFIED_FORMATION_SOURCE, is_slot)
-from ..core.policy import BattlePolicy, StrategyProfile
+from ..core.policy import BattlePolicy, Goal, StrategyProfile
 from ..core.validator import (
     skip_unusable_servant_skills,
     validate_card_action,
@@ -42,6 +43,7 @@ _POLL_FREEZE_MS = 2000
 _PICK_DELAY_S = 0.3
 # 主战斗界面首次出现后，等待技能 CD 数字渲染完成再重新截图感知。
 _MAIN_BATTLE_SETTLE_S = 1.0
+_NP_GLARE_MAX_FRAMES = 3
 
 # —— 等待上限（秒）：安卓为慢速 OCR 留余量；识别成功立即继续 ——
 _OPEN_CARDS_TIMEOUT_S = 15.0        # 手机单轮 OCR 可耗时 5～6 秒，允许至少两轮确认选卡
@@ -137,8 +139,22 @@ class AutoBattleRuntime:
         )
         mfaalog.info(f"[AutoBattle] run() start, max_turns={self.profile.max_turns}")
         turns = 0
+        plan_turn = 0
+        opening_waits = 0
+        native = self.battle_policy.card.native_strategy
+        opening = native.opening_hand
+        opening_pending = native.enabled and opening.enabled
+        opening_used = opening_pending
+        opening_preview_started = False
+        opening_plan = getattr(self.decider, "plan", None)
+        if opening_pending and (
+            not opening.required_colors or not 0 <= opening.max_wait_turns <= 5
+            or not (opening.servant_id or opening.servant_slot)
+            or not isinstance(opening_plan, BattlePlan) or opening_plan.active_turn(0) is None
+        ):
+            return BattleResult.fail("invalid_opening_hand_config_or_missing_plan", turns)
         while turns < self.profile.max_turns:
-            self._turn_index = turns
+            self._turn_index = plan_turn
             state = self._observe(settle_main=True)
             scene = state.scene
             mfaalog.info(f"[AutoBattle] Turn {turns+1} | scene={scene.name} | unknown={state.unknown_fields}")
@@ -158,8 +174,20 @@ class AutoBattleRuntime:
                 return BattleResult.fail("unexpected_dialog", turns)
 
             if scene is Scene.MAIN_BATTLE:
+                if opening_used and plan_turn == 0 and not self._opening_roster_unchanged():
+                    return BattleResult.fail("opening_hand_roster_changed_or_unknown", turns)
+                if opening_pending and plan_turn == 0:
+                    # Observe the real five cards before the first skill. The
+                    # existing Executor owns Attack; the return lives in Pipeline.
+                    mfaalog.info(f"[OpeningHand] 实际回合{turns+1}，释放任何计划技能前查看手牌")
+                    if not self.executor.open_command_cards():
+                        return BattleResult.fail("opening_hand_open_failed", turns)
+                    if not self._wait_until((Scene.COMMAND_SELECTION,), _OPEN_CARDS_TIMEOUT_S):
+                        return BattleResult.fail("opening_hand_open_confirm_failed", turns)
+                    opening_preview_started = True
+                    continue
                 mfaalog.info("[AutoBattle] MAIN_BATTLE -> deciding skills...")
-                action = self.decider.decide(state, turn_index=turns)
+                action = self.decider.decide(state, turn_index=plan_turn)
                 action, skipped_skills = skip_unusable_servant_skills(
                     action, state, self.profile
                 )
@@ -246,7 +274,27 @@ class AutoBattleRuntime:
                 return BattleResult.fail("unexpected_order_change_scene", turns)
 
             if scene is Scene.COMMAND_SELECTION:
-                if not self._check_card_actor_bindings():
+                waiting_action = None
+                if opening_pending and plan_turn == 0:
+                    if not opening_preview_started:
+                        return BattleResult.fail("opening_hand_requires_main_battle_start", turns)
+                    if not self._opening_roster_unchanged():
+                        return BattleResult.fail("opening_hand_roster_changed_or_unknown", turns)
+                    ready, reason, target_id, target_slot = self._opening_hand_matches(state, opening)
+                    mfaalog.info(f"[OpeningHand] 实际回合{turns+1} 逻辑回合1 等待={opening_waits}/{opening.max_wait_turns} "
+                                 f"目标={target_id or target_slot} required={opening.required_colors} ready={ready} reason={reason}")
+                    if reason != "known_hand":
+                        return BattleResult.fail(f"opening_hand_{reason}", turns)
+                    if ready:
+                        detail = self.ctx.run_task("战斗_选卡返回主界面")
+                        if not (detail and detail.status.succeeded):
+                            return BattleResult.fail("opening_hand_return_failed", turns)
+                        opening_pending = False
+                        continue
+                    if opening_waits >= opening.max_wait_turns:
+                        return BattleResult.fail("opening_hand_wait_exhausted", turns)
+                    waiting_action = self._opening_wait_action(state, target_id, target_slot)
+                if waiting_action is None and not self._check_card_actor_bindings():
                     return BattleResult.fail("card_actor_identity_mismatch", turns)
                 mfaalog.info(f"[AutoBattle] ========== Turn {turns+1} ==========")
                 self._selection_cards = state.cards
@@ -264,7 +312,7 @@ class AutoBattleRuntime:
                     for card in state.np_cards
                 ))
                 mfaalog.info(f"[AutoBattle] State: {state}")
-                action = self.decider.decide(state, turn_index=turns)
+                action = waiting_action or self.decider.decide(state, turn_index=plan_turn)
                 mfaalog.info(f"[AutoBattle] Decided Action: {action}")
                 
                 verdict = validate_card_action(action, state, self.profile)
@@ -307,6 +355,10 @@ class AutoBattleRuntime:
                     return BattleResult(True, "story_returned_to_map", turns + 1)
                 mfaalog.info(f"[AutoBattle] Turn {turns+1} settled, advancing to turn {turns+2}")
                 turns += 1
+                if waiting_action is not None:
+                    opening_waits += 1
+                else:
+                    plan_turn += 1
                 continue
 
             # UNKNOWN / ANIMATION（非攻击后语境，如加载）：有界等待
@@ -321,7 +373,49 @@ class AutoBattleRuntime:
 
     # ---- 内部 ----
 
-    def _observe(self, *, settle_main: bool = False):
+    def _opening_roster_unchanged(self):
+        self._ensure_member_tracking()
+        expected = tuple(canonical_servant_id(sid) for sid in self._initial_servant_ids[:3])
+        actual = tuple(canonical_servant_id(sid) for sid in self.roster_servant_ids[:3])
+        return (any(expected) and expected == actual and not self._retired_instances
+                and self._member_order[:3] == [0, 1, 2])
+
+    def _opening_hand_matches(self, state, opening):
+        from ..core.enums import CardColor
+        target_id = canonical_servant_id(opening.servant_id) if opening.servant_id else None
+        target_slot = opening.servant_slot
+        roster = tuple(canonical_servant_id(sid) for sid in self.roster_servant_ids[:3])
+        if target_id:
+            slots = [slot for slot, sid in enumerate(roster, 1) if sid == target_id]
+            if len(slots) != 1:
+                return False, "target_identity_unknown", target_id, target_slot
+            target_slot = slots[0]
+        elif not is_slot(target_slot, 1, 3) or roster[target_slot - 1] is None:
+            return False, "target_identity_unknown", target_id, target_slot
+        if (not state.cards_ready(self.profile.min_card_confidence)
+                or not state.card_owners_ready(.80)
+                or any(card.color not in (CardColor.BUSTER, CardColor.ARTS, CardColor.QUICK) for card in state.cards)
+                or target_id and any(canonical_servant_id(card.owner_servant_id) != roster[card.owner_slot - 1]
+                                     for card in state.cards)):
+            return False, "hand_identity_or_color_unknown", target_id, target_slot
+        available = Counter(card.color for card in state.cards if card.owner_slot == target_slot and card.can_attack)
+        needed = Counter(opening.required_colors)
+        return all(available[color] >= count for color, count in needed.items()), "known_hand", target_id, target_slot
+
+    def _opening_wait_action(self, state, target_id, target_slot):
+        from ..core.enums import CardColor
+        policy = self.battle_policy.card
+        native = policy.native_strategy
+        ids = tuple(dict.fromkeys(((target_id,) if target_id else ()) + native.preferred_servant_ids))
+        slots = tuple(dict.fromkeys((target_slot,) + native.preferred_slots))
+        recovery = replace(policy, goal=Goal.BUILD_NP, np_first=False,
+                           color_priority=(CardColor.ARTS, CardColor.QUICK, CardColor.BUSTER),
+                           native_strategy=replace(native, preferred_servant_ids=ids, preferred_slots=slots,
+                                                   color_weights=((CardColor.ARTS, 4), (CardColor.QUICK, 2), (CardColor.BUSTER, 1))))
+        action = RuleDecider(recovery).decide(state)
+        return replace(action, rationale_tag="opening_hand:wait_without_skills_or_np")
+
+    def _observe(self, *, settle_main: bool = False, enemy_slots=None):
         mfaalog.info("[AutoBattle] _observe() -> post_screencap")
         img = self.controller.post_screencap().wait().get()
         scene = perception.detect_scene(self.ctx, img) if settle_main else None
@@ -342,16 +436,38 @@ class AutoBattleRuntime:
             img = self.controller.post_screencap().wait().get()
         frontline = self.roster_servant_ids[:3]
         candidates = self.candidate_servant_ids or self.roster_servant_ids
+        perception_args = {}
         if any(candidates):
             if self.servant_recognizer is None:
                 self.servant_recognizer = perception.FrontlineServantRecognizer.from_context(self.ctx)
-            result = perception.build(
-                self.ctx, img, frontline_servant_ids=frontline,
-                candidate_servant_ids=candidates,
-                servant_recognizer=self.servant_recognizer,
-            )
-        else:
-            result = perception.build(self.ctx, img)
+            perception_args = dict(frontline_servant_ids=frontline,
+                                   candidate_servant_ids=candidates,
+                                   servant_recognizer=self.servant_recognizer)
+        if enemy_slots is not None:
+            # 目标复核仍取新截图，只省去另外两个无关敌人的 OCR。
+            perception_args["enemy_slots"] = enemy_slots
+        result = perception.build(self.ctx, img, **perception_args)
+        for frame_index in range(1, _NP_GLARE_MAX_FRAMES):
+            uncertain = tuple(field for field in getattr(result, "unknown_fields", ())
+                              if field.startswith("np[") and field.endswith(".presence:glare"))
+            if result.scene is not Scene.COMMAND_SELECTION or not uncertain:
+                break
+            if self.ctx.tasker.stopping:
+                raise RuntimeError("np_glare_retry_stopped")
+            mfaalog.info(f"[NPGlare] frame={frame_index}/{_NP_GLARE_MAX_FRAMES} "
+                         f"uncertain={uncertain}; 保持0.80门槛，等待新相位后重拍")
+            detail = self.ctx.run_task("战斗_宝具闪光重拍等待")
+            if not (detail and detail.status.succeeded):
+                raise RuntimeError("np_glare_retry_wait_failed")
+            img = self.controller.post_screencap().wait().get()
+            # Use only the latest complete frame. Do not carry an available NP
+            # over a newer seal/identity change, another turn, or another battle.
+            result = perception.build(self.ctx, img, **perception_args)
+        unresolved = tuple(field for field in getattr(result, "unknown_fields", ())
+                           if field.startswith("np[") and field.endswith(".presence:glare"))
+        if result.scene is Scene.COMMAND_SELECTION and unresolved:
+            mfaalog.error(f"[NPGlare] {_NP_GLARE_MAX_FRAMES}帧仍无法确认 {unresolved}，保留选卡现场停止")
+            raise RuntimeError("np_glare_unresolved")
         if result.scene is Scene.MAIN_BATTLE and any(candidates):
             self._update_frontline(result.servants)
 
@@ -512,7 +628,7 @@ class AutoBattleRuntime:
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 return False
-            state = self._observe()
+            state = self._observe(enemy_slots=(slot,))
             if self.ctx.tasker.stopping:
                 return False
             enemy = next((e for e in state.enemies if e.slot == slot and e.alive), None)
@@ -536,7 +652,7 @@ class AutoBattleRuntime:
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 return False
-            state = self._observe()
+            state = self._observe(enemy_slots=(slot,))
             if self.ctx.tasker.stopping:
                 return False
             if (state.scene is Scene.MAIN_BATTLE
@@ -1013,7 +1129,9 @@ class AutoBattleRuntime:
             if img is None:
                 mfaalog.error("[AutoBattle] 等待界面时截图失败")
                 return False
-            scene = perception.detect_scene(self.ctx, img)
+            # 换人只由明确的换人技能等待触发；普通出卡/技能返回不轮询大范围 OCR。
+            scene = (perception.detect_scene(self.ctx, img) if Scene.ORDER_CHANGE in scenes
+                     else perception.detect_scene(self.ctx, img, check_order_change=False))
             if scene in scenes:
                 mfaalog.info(f"[AutoBattle] _wait_until() matched scene={scene.name}")
                 return True

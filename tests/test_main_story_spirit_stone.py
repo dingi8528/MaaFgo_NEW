@@ -63,7 +63,8 @@ class SpiritStoneTests(unittest.TestCase):
         battles=[o for n,o in c.tasks if n=='原生自动战斗入口']
         self.assertEqual(len(battles),2)
         self.assertEqual(battles[0],{})
-        self.assertEqual(battles[1]['原生自动战斗入口']['action']['param']['custom_action_param'],'{}')
+        self.assertEqual(battles[1]['原生自动战斗入口']['action']['param']['custom_action_param'],
+                         '{"native_battle_formation_reset":true}')
         r.reach_formation.assert_called_once()
         r._start_formation_battle.assert_called_once()
         self.assertEqual(r.completed,0)
