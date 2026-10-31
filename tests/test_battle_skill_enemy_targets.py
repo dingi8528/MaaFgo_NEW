@@ -232,7 +232,7 @@ class SkillEnemyTargetTests(unittest.TestCase):
         self.assertFalse(runtime._execute_skills(action_for([MasterSkillAction(1, target_enemy=2)])))
         runtime._observe.assert_not_called();runtime._execute_skill_cast.assert_not_called()
         runtime = self.runtime()
-        def observe():
+        def observe(**_kwargs):
             runtime.ctx.tasker.stopping = True
             return state(selected=2)
         runtime._observe = Mock(side_effect=observe)
@@ -267,7 +267,7 @@ class SkillEnemyTargetTests(unittest.TestCase):
     def test_skill_waits_for_missing_or_uncertain_enemy_then_confirms_before_cast(self):
         runtime = self.runtime()
         frames = iter([state(enemies=()), state(enemies=(EnemyState(2, True, False, Confidence(0.2)),))])
-        runtime._observe = Mock(side_effect=lambda: next(frames, state(selected=runtime.selected)))
+        runtime._observe = Mock(side_effect=lambda **_kwargs: next(frames, state(selected=runtime.selected)))
         with fast_clock():
             self.assertTrue(runtime._execute_skills(action_for([MasterSkillAction(1, target_enemy=2)])))
         self.assertEqual(runtime.events, [("enemy", 2), ("master", 1)])

@@ -415,7 +415,7 @@ class AutoBattleRuntime:
         action = RuleDecider(recovery).decide(state)
         return replace(action, rationale_tag="opening_hand:wait_without_skills_or_np")
 
-    def _observe(self, *, settle_main: bool = False):
+    def _observe(self, *, settle_main: bool = False, enemy_slots=None):
         mfaalog.info("[AutoBattle] _observe() -> post_screencap")
         img = self.controller.post_screencap().wait().get()
         scene = perception.detect_scene(self.ctx, img) if settle_main else None
@@ -443,6 +443,9 @@ class AutoBattleRuntime:
             perception_args = dict(frontline_servant_ids=frontline,
                                    candidate_servant_ids=candidates,
                                    servant_recognizer=self.servant_recognizer)
+        if enemy_slots is not None:
+            # 目标复核仍取新截图，只省去另外两个无关敌人的 OCR。
+            perception_args["enemy_slots"] = enemy_slots
         result = perception.build(self.ctx, img, **perception_args)
         for frame_index in range(1, _NP_GLARE_MAX_FRAMES):
             uncertain = tuple(field for field in getattr(result, "unknown_fields", ())
@@ -625,7 +628,7 @@ class AutoBattleRuntime:
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 return False
-            state = self._observe()
+            state = self._observe(enemy_slots=(slot,))
             if self.ctx.tasker.stopping:
                 return False
             enemy = next((e for e in state.enemies if e.slot == slot and e.alive), None)
@@ -649,7 +652,7 @@ class AutoBattleRuntime:
         while time.monotonic() < deadline:
             if self.ctx.tasker.stopping:
                 return False
-            state = self._observe()
+            state = self._observe(enemy_slots=(slot,))
             if self.ctx.tasker.stopping:
                 return False
             if (state.scene is Scene.MAIN_BATTLE
@@ -1126,7 +1129,9 @@ class AutoBattleRuntime:
             if img is None:
                 mfaalog.error("[AutoBattle] 等待界面时截图失败")
                 return False
-            scene = perception.detect_scene(self.ctx, img)
+            # 换人只由明确的换人技能等待触发；普通出卡/技能返回不轮询大范围 OCR。
+            scene = (perception.detect_scene(self.ctx, img) if Scene.ORDER_CHANGE in scenes
+                     else perception.detect_scene(self.ctx, img, check_order_change=False))
             if scene in scenes:
                 mfaalog.info(f"[AutoBattle] _wait_until() matched scene={scene.name}")
                 return True

@@ -35,6 +35,7 @@ def build(
     candidate_servant_ids: Sequence[str | int | None] | None = None,
     servant_recognizer: FrontlineServantRecognizer | None = None,
     composed_recognizer: ComposedCardRecognizer | None = None,
+    enemy_slots: Sequence[int] | None = None,
 ) -> BattleState:
     scene, sconf = _detect_scene(context, img)
 
@@ -128,7 +129,9 @@ def build(
         # 换人界面：检测从者技能状态无意义，只识别场景即可
         pass
 
-    enemies = _detect_enemies(context, img)
+    # 结算、换人和动画中没有可操作的敌人；不要把报酬/弹窗文字送进敌人 OCR。
+    enemies = (_detect_enemies(context, img, slots=enemy_slots)
+               if scene in (Scene.MAIN_BATTLE, Scene.COMMAND_SELECTION) else ())
 
     return BattleState(
         scene=scene,
@@ -148,15 +151,18 @@ def _reco(context, node: str, img):
     return context.run_recognition(node, img)
 
 
-def detect_scene(context, img) -> Scene:
+def detect_scene(context, img, *, check_order_change: bool = True) -> Scene:
     """轻量版：只检测场景，不做卡牌/技能/敌人等完整感知。用于轮询等待。"""
-    scene, _ = _detect_scene(context, img)
+    scene, _ = _detect_scene(context, img, check_order_change=check_order_change)
     return scene
 
 
-def _detect_scene(context, img) -> Tuple[Scene, float]:
+def _detect_scene(context, img, *, check_order_change: bool = True) -> Tuple[Scene, float]:
     # 命中哪个场景节点就是哪个；都不命中 -> UNKNOWN
     for scene_key, node in config.SCENE_NODES.items():
+        # 仅用于明确不等待换人的轮询；完整感知/首次接管保留换人识别。
+        if scene_key == "order_change" and not check_order_change:
+            continue
         r = _reco(context, node, img)
         if r and r.hit:
             score = getattr(getattr(r, "best_result", None), "score", 1.0) or 1.0
@@ -231,9 +237,11 @@ def _detect_np(context, img, servant_slot: int, owner=None) -> Optional[NpCard]:
     )
 
 
-def _detect_enemies(context, img) -> Tuple[EnemyState, ...]:
+def _detect_enemies(context, img, *, slots: Sequence[int] | None = None) -> Tuple[EnemyState, ...]:
     out: List[EnemyState] = []
     for slot in config.ENEMY_SLOTS:
+        if slots is not None and slot not in slots:
+            continue
         alive_r = _reco(context, config.ENEMY_NODE.format(slot=slot), img)
         alive = bool(alive_r and alive_r.hit)
         if not alive:
