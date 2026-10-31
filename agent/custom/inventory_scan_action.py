@@ -76,6 +76,8 @@ RARITY_SEARCH_BOTTOM = 708
 RARITY_TO_CARD_TOP = 101
 RARITY_THRESHOLD = 0.90
 RARITY_MIN_COLUMNS = 4
+BOND_EQUIP_FIRST_STAR_Y = 291
+BOND_EQUIP_ROW_TOLERANCE = 8
 INVENTORY_GRID_MAX_CANDIDATES = 6
 INVENTORY_GRID_PHASE_SEPARATION = 8
 
@@ -698,17 +700,91 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         return features, centers
 
     def _stable_equip_hits(self, catalog, matrix, variants):
+        grids = []
+
+        def match_image(frame):
+            hits = self._match_equip_image(frame, matrix, variants)
+            grids.append(getattr(self, "last_rarity_grid", None) or {})
+            return hits
+
         hits, image = self._stable_hits(
             catalog, matrix, variants, self._visible_equip_features,
             EQUIP_THRESHOLD, EQUIP_MARGIN,
-            match_image=lambda frame: self._match_equip_image(frame, matrix, variants),
+            match_image=match_image,
+        )
+        self.stable_single_row_equips = bool(hits) and len(grids) == 2 and all(
+            grid.get("single_row_bond_equips", False) for grid in grids
         )
         return hits, image
 
+    def _single_row_bond_equip_candidate(self, image):
+        """仅羁绊筛选：用完整四星条确认顶部单行，支持不足四张的列表。
+
+        单星在卡面上容易误命中，不能直接把通用网格的两行要求降为一行。
+        此处要求四星条在复位后的首行位置命中，且下方没有其他四星条；
+        身份仍须通过完整礼装模板复核及双帧稳定校验。
+        """
+        if not getattr(self, "bond_equips_only", False):
+            return None
+        base = self._to_base(image)
+        if base is None:
+            return None
+        template = self._read_first_template(self.rarity_dirs, "rarity4_0.png")
+        if template is None:
+            return None
+        green = (
+            (template[:, :, 1] >= 250) &
+            (template[:, :, 0] <= 5) &
+            (template[:, :, 2] <= 5)
+        )
+        mask = (~green).astype(np.uint8) * 255
+        curves = []
+        for base_x in INVENTORY_CARD_X:
+            result = cv2.matchTemplate(
+                base[RARITY_SEARCH_TOP:RARITY_SEARCH_BOTTOM,
+                     base_x:base_x + INVENTORY_CARD_WIDTH],
+                template, cv2.TM_CCORR_NORMED, mask=mask,
+            )
+            curves.append(np.nan_to_num(
+                result, nan=-1.0, posinf=-1.0, neginf=-1.0
+            ).max(axis=1))
+        curves = np.stack(curves)
+        lower_start = BOND_EQUIP_FIRST_STAR_Y + INVENTORY_ROW_PITCH // 2
+        if np.any(curves[:, lower_start - RARITY_SEARCH_TOP:] >= RARITY_THRESHOLD):
+            return None
+        first = BOND_EQUIP_FIRST_STAR_Y - BOND_EQUIP_ROW_TOLERANCE
+        last = BOND_EQUIP_FIRST_STAR_Y + BOND_EQUIP_ROW_TOLERANCE
+        scores = curves[:, first - RARITY_SEARCH_TOP:last - RARITY_SEARCH_TOP + 1]
+        supports = (scores >= RARITY_THRESHOLD).sum(axis=0)
+        best = max(range(scores.shape[1]), key=lambda i: (supports[i], scores[:, i].sum()))
+        support = int(supports[best])
+        if support == 0:
+            return None
+        star_y = first + best
+        origin = star_y - RARITY_TO_CARD_TOP
+        mean = float(scores[:, best].mean())
+        return {
+            "phase": origin % INVENTORY_ROW_PITCH,
+            "rows": [(star_y, support, mean)],
+            "support": support,
+            "score_sum": mean,
+            # 单行模式不向空白区域外推其他卡位。
+            "origins": [origin],
+            "diagnostic": {
+                "detected_rows": [star_y], "supports": [support],
+                "means": [round(mean, 4)], "card_origins": [origin],
+                "single_row_bond_equips": True,
+            },
+        }
+
     def _match_equip_image(self, image, matrix, variants):
+        self.last_rarity_grid = None
         candidates = self._small_icon_row_candidates(image)
+        single_row = self._single_row_bond_equip_candidate(image)
+        if single_row is not None:
+            candidates.append(single_row)
         if not candidates:
-            mfaalog.warning("[个人库存] 礼装页星级网格未形成至少两行稳定相位")
+            mfaalog.warning("[个人库存] 礼装页未形成稳定多行网格或羁绊单行")
             return {}
 
         ranked = sorted(
@@ -892,6 +968,7 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
         content_unchanged = 0
         unmatched_cells = 0
         swipes = 0
+        single_row_scan = label == "礼装" and getattr(self, "bond_equips_only", False)
         self.current_scan_recoveries = 0
         for page_index in range(max_swipes + 1):
             if self.context.tasker.stopping:
@@ -942,6 +1019,10 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             self._focus(f"正在扫描{label}：已识别 {len(observed)}")
 
             current_thumb = self._scroll_thumb_center(image)
+            single_row_scan = (
+                single_row_scan and current_thumb is None and
+                getattr(self, "stable_single_row_equips", False)
+            )
             current_content = self._content_signature(image)
             content_diff = self._content_difference(previous_content, current_content)
             stable_content = content_diff is not None and content_diff <= CONTENT_DIFF_THRESHOLD
@@ -953,8 +1034,9 @@ class BuildPlayerInventory(AutoFormationFromChaldea):
             )
             unchanged = unchanged + 1 if stable_page else 0
             scrollbar_bottom = unchanged >= BOTTOM_STABLE_ROUNDS
-            if scrollbar_bottom:
-                bottom_detection = "scrollbar"
+            single_row_bottom = single_row_scan and content_unchanged >= CONTENT_STABLE_ROUNDS
+            if scrollbar_bottom or single_row_bottom:
+                bottom_detection = "scrollbar" if scrollbar_bottom else "single_row"
                 metrics = {
                     "pages_scanned": page_index + 1,
                     "swipes": swipes,
