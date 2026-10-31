@@ -14,6 +14,7 @@ import test_mxu_packaging as mxu_tests
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSED_MODULE = 'agent/battle/perception/composed_card.py'
 SPECIAL_CHOICE_MODULES = ('agent/battle_editor/special_choices.py', 'agent/battle/core/special_skills.py')
+ADVANCED_STRATEGY_MODULE = 'agent/battle/core/advanced_strategy.py'
 EQUIP_FILTER_FILES = ('agent/battle_editor/equip_filters.py', 'agent/battle_editor/data/equip_filters.json',
                       'agent/battle_editor/data/equip_filters_sources.json', 'agent/custom/equip_categories.json')
 RUNTIME_MANIFESTS = (
@@ -41,7 +42,8 @@ class RuntimeBundleGuardTests(unittest.TestCase):
 
     def test_mxu_guard_rejects_missing_runtime_module_and_manifests(self):
         mxu_tests.mxu.validate_editor_bundle(self.fixture.source)
-        for relative in (COMPOSED_MODULE, *SPECIAL_CHOICE_MODULES, *EQUIP_FILTER_FILES, *RUNTIME_MANIFESTS):
+        for relative in (COMPOSED_MODULE, *SPECIAL_CHOICE_MODULES, ADVANCED_STRATEGY_MODULE,
+                         *EQUIP_FILTER_FILES, *RUNTIME_MANIFESTS):
             with self.subTest(relative=relative):
                 path = self.fixture.source / relative
                 original = path.read_bytes()

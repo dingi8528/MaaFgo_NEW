@@ -52,10 +52,12 @@ def main():
                         ignore=shutil.ignore_patterns("data", "__pycache__"))
         (root / "agent/chaldea").mkdir()
         shutil.copy2(ROOT / "agent/chaldea/servant_aliases.py", root / "agent/chaldea")
-        # The offline editor reads the native special-skill registry by file.
+        # The offline editor shares the native strategy contract and reads the
+        # special-skill registry by file.
         # Keep this isolated installation complete without copying battle runtime.
         (root / "agent/battle/core").mkdir(parents=True)
         shutil.copy2(ROOT / "agent/battle/core/special_skills.py", root / "agent/battle/core")
+        shutil.copy2(ROOT / "agent/battle/core/advanced_strategy.py", root / "agent/battle/core")
         (root / "web/battle-editor").mkdir(parents=True)
         (root / "web/battle-editor/index.html").write_text("<!doctype html><title>Integration</title>")
         bundle = root / "resource"
