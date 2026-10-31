@@ -282,7 +282,22 @@ class AndroidInterfaceTests(unittest.TestCase):
         converted = android.adapt_interface(source, ROOT / "assets")
         report = android.compatibility_report(source, converted)
         self.assertEqual(len(report["file_lists"]), 6)
-        self.assertEqual(len(report["file_inputs_as_text"]), 1)
+        self.assertEqual(
+            {(item["option"], item["input"]) for item in report["file_inputs_as_text"]},
+            {("Chaldea导入手动输入", "chaldea_import_source"),
+             ("地狱的试炼-队伍方案", "chaldea_import_source")},
+        )
+        for item in report["file_inputs_as_text"]:
+            name, field_name = item["option"], item["input"]
+            original = source["option"][name]
+            option = converted["option"][name]
+            original_field = next(field for field in original["inputs"] if field["name"] == field_name)
+            field = next(field for field in option["inputs"] if field["name"] == field_name)
+            for desktop_key in ("input_type", "file_dialog_dir", "file_dialog_filters"):
+                self.assertNotIn(desktop_key, field)
+            self.assertEqual(field["pipeline_type"], "string")
+            self.assertEqual(field["default"], original_field["default"])
+            self.assertEqual(option["pipeline_override"], original["pipeline_override"])
         self.assertEqual(len(report["task_docs_in_description"]), 1)
         for name, option in converted["option"].items():
             self.assertIn(option.get("type", "select"), android.ANDROID_OPTION_TYPES)
