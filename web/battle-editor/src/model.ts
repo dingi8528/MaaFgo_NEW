@@ -1,4 +1,5 @@
 import {isAutoAttackCard,setAttackCard} from './attackCards';
+import {defaultAdvancedStrategy} from './advancedStrategy';
 import {setEquipCandidate} from './equipRequirements';
 import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoicesRebuilt} from './specialSkillChoices';
 import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
@@ -19,7 +20,7 @@ export interface Catalog {servants:Servant[];equips:Equip[];mysticCodes:Mystic[]
 export interface Entry {raw: any; replacement?:any; paired?:boolean; index:number;specialChoice?:SpecialSkillChoiceBinding;actorBinding?:ActionActor;cardActorBindings?:ActorCardBinding[]}
 export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
-export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[]});
+export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[],maaAdvancedStrategy:defaultAdvancedStrategy()});
 export const newServantDefaults=():Json=>({supportType:'none',skillLvs:[10,10,10],appendLvs:[0,0,0,0,0]});
 export function hasServantIdentity(member:Json|null|undefined):member is Json&{svtId:number} {
  return typeof member?.svtId==='number'&&Number.isSafeInteger(member.svtId)&&member.svtId>0;

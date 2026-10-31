@@ -47,7 +47,7 @@
                 },
                 {
                     "name": "使用Chaldea配置",
-                    "label": "使用 Chaldea 配置",
+                    "label": "使用编辑器/chaldea配置",
                     "option": [
                         "多次查找失败随机选择助战"
                     ],

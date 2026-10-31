@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import List, Optional, Sequence, Tuple
 
+import mfaalog
+
 from ..core.enums import CardColor, Scene
 from ..core.models import (BattleState, CommandCard, Confidence, EnemyState,
                            NpCard, ServantState, SkillState)
@@ -96,6 +98,12 @@ def build(
             )
         np_cards = tuple(c for c in (_detect_np(context, img, s, np_owners.get(s))
                                     for s in config.FRONTLINE_SLOTS) if c)
+        for slot, detected in np_owners.items():
+            if getattr(detected, "reason", "") == "np_glare_uncertain":
+                unknown.append(f"np[{slot}].presence:glare")
+                mfaalog.info(f"[NPGlare] slot={slot} score={detected.score:.4f} "
+                             f"white_fraction={detected.glare_fraction:.4f} "
+                             f"template={detected.matched_template}; 仅请求重拍，不确认为可用宝具")
         for c in cards:
             if not c.confidence.passes(config.MIN_CARD_CONFIDENCE):
                 unknown.append(f"card[{c.ui_slot}]")
@@ -256,6 +264,10 @@ def _detect_servants(context, img, candidate_servant_ids=(), *, recognizer=None)
         return ()
     recognizer = recognizer or FrontlineServantRecognizer.from_context(context)
     for identity in recognizer.detect(img, candidate_servant_ids):
+        if identity.servant_id is None or getattr(identity, "visible_top", 35) != 35:
+            mfaalog.info(f"[HUDIdentity] slot={identity.slot} id={identity.servant_id or 'unknown'} "
+                         f"score={identity.confidence.value:.4f} margin={identity.margin:.4f} "
+                         f"crop_top={getattr(identity, 'visible_top', 35)} template={identity.matched_template}")
         if identity.servant_id is None:
             continue
         slot = identity.slot

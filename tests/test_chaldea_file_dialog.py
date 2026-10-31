@@ -57,11 +57,11 @@ class ChaldeaFileDialogTest(unittest.TestCase):
             if any(field.get("name") == "chaldea_import_source"
                    for field in option.get("inputs", []))
         }
-        self.assertEqual(imports, {"Chaldea导入手动输入", "chaldea_team_config"})
+        self.assertEqual(imports, {"Chaldea导入手动输入", "chaldea_team_config", "地狱的试炼-队伍方案"})
         expected = {
             "日常战斗", "冠位戴冠战", "迦勒底之门", "直接bbc战斗",
             "自动推主线（beta）", "大活动", "小活动", "Chaldea 自动编队",
-            "芥雏子学姐连续代打",
+            "芥雏子学姐连续代打", "地狱的试炼",
         }
         covered = set()
         for task in source["task"]:

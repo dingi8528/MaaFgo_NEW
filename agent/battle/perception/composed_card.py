@@ -29,6 +29,12 @@ _COLORS = {'arts': CardColor.ARTS, 'buster': CardColor.BUSTER, 'quick': CardColo
 _WORK_SCALE = .5
 _MAX_METADATA_BYTES = 4 * 1024 * 1024
 _MAX_PREPARED_TEMPLATES = 256  # Per region; JP+CN auto remains bounded by 512.
+# These only request a new screenshot; neither value accepts an NP card.
+# 2026-10-31 JP: peak gold flash gave real NP scores .709/.786 and neutral
+# saturation .130/.133; clear phases passed the unchanged .80 positive gate.
+_NP_GLARE_SCORE_WINDOW = .20
+_NP_GLARE_MIN_SATURATION = .10
+_NP_GLARE_WHITE_LEVEL = 230
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,7 @@ class ComposedCardDetection:
     reason: str = 'unknown'
     visual_present: bool = False
     authoritative: bool = False
+    glare_fraction: float = 0.0
 
     @property
     def best_score(self) -> float:
@@ -359,10 +366,11 @@ class ComposedCardRecognizer:
                     if template.pixels.shape[0] > crop.shape[0] or template.pixels.shape[1] > crop.shape[1]:
                         continue
                     result = cv2.matchTemplate(crop, template.pixels, cv2.TM_CCOEFF_NORMED, mask=template.mask)
-                    score = float(np.nan_to_num(result, nan=-1, posinf=-1, neginf=-1).max())
+                    clean = np.nan_to_num(result, nan=-1, posinf=-1, neginf=-1)
+                    _, score, _, location = cv2.minMaxLoc(clean)
                     key = sid, template.color
                     if key not in ranked or score > ranked[key][0]:
-                        ranked[key] = score, template.name
+                        ranked[key] = score, template.name, template, location
             own = candidates.get(roster[slot - 1]) if kind == 'np' else None
             authoritative = own.complete if own is not None else (kind == 'face' and all(roster)
                               and all(p.complete for p in candidates.values()))
@@ -370,7 +378,7 @@ class ComposedCardRecognizer:
                 outputs.append(ComposedCardDetection(slot, reason='candidate_assets_incomplete'))
                 continue
             ranking = sorted(ranked.items(), key=lambda item: item[1][0], reverse=True)
-            (sid, color), (score, name) = ranking[0]
+            (sid, color), (score, name, template, location) = ranking[0]
             runner_up = next((value[0] for (other_sid, _), value in ranking[1:]
                               if kind == 'face' or other_sid != sid), 0.0)
             margin = score - runner_up
@@ -379,8 +387,20 @@ class ComposedCardRecognizer:
             owner_slots = [i for i, value in enumerate(roster, 1) if value == sid]
             owner_slot = owner_slots[0] if len(owner_slots) == 1 else None
             reason = 'identified'
+            glare_fraction = 0.0
             if not present:
                 reason = 'card_not_present' if score < threshold else 'card_margin_insufficient'
+                if kind == 'np' and threshold - _NP_GLARE_SCORE_WINDOW <= score < threshold:
+                    left, top = location
+                    height, width = template.mask.shape
+                    actual = crop[top:top + height, left:left + width]
+                    supported = template.mask > 0
+                    saturated = np.min(actual, axis=2) >= _NP_GLARE_WHITE_LEVEL
+                    glare_fraction = float(np.count_nonzero(supported & saturated)) / max(1, np.count_nonzero(supported))
+                    if glare_fraction >= _NP_GLARE_MIN_SATURATION:
+                        # A bright transient is uncertain, not authoritative
+                        # absence or availability. Runtime must resample.
+                        reason, authoritative = 'np_glare_uncertain', False
                 owner_slot, sid, color = None, None, None
             elif kind == 'np':
                 if roster[slot - 1] == sid:
@@ -392,5 +412,5 @@ class ComposedCardRecognizer:
             elif owner_slot is None:
                 reason = 'duplicate_frontline_identity'
             outputs.append(ComposedCardDetection(slot, owner_slot, sid, color, score, margin, name,
-                                                 reason, present, bool(authoritative)))
+                                                 reason, present, bool(authoritative), glare_fraction))
         return tuple(outputs)

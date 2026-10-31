@@ -15,7 +15,7 @@ from battle.core.models import (BattleAction, BattlePlan, BattleState, Confidenc
                                 MasterSkillAction, OrderChangeAction,
                                 ServantSkillAction, ServantState, SkillState, TurnPlan)
 from battle.core.plan_parser import _parse_plan
-from battle.core.policy import StrategyProfile
+from battle.core.policy import BattlePolicy, SkillPolicy, StrategyProfile
 from battle.core.validator import (skip_unusable_master_skills,
                                    validate_main_action)
 from battle.data.chaldea_converter import convert_chaldea_actions_to_battle_plan
@@ -59,7 +59,7 @@ class SkillEnemyTargetTests(unittest.TestCase):
         runtime.profile = StrategyProfile()
         runtime.decider = NS(plan=BattlePlan(turns=(TurnPlan(),)))
         runtime._turn_index = 0
-        runtime.battle_policy = NS(skill=NS(use_master_skills=True))
+        runtime.battle_policy = BattlePolicy(skill=SkillPolicy(use_master_skills=True))
         runtime.roster_servant_ids = ("one", "two", "three", "four", None, None)
         runtime.events = []
         runtime.selected = selected

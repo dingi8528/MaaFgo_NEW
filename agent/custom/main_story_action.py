@@ -549,7 +549,7 @@ class StoryRunner:
             use_default = self.current_restricted or self._spirit_stones_used > 0
             while True:
                 battle_override = {"原生自动战斗入口": {"action": {"param": {
-                    "custom_action_param": "{}"
+                    "custom_action_param": '{"native_battle_formation_reset":true}'
                 }}}} if use_default else None
                 self.task("原生自动战斗入口", battle_override)
                 if not self.use_spirit_stone:
