@@ -241,6 +241,36 @@ def _reject_special_skill_choices(delegate) -> None:
                          + "）；请使用原生自动战斗，不能忽略选项后转换。")
 
 
+def _reject_native_actor_guards(actions) -> None:
+    """BBC positions cannot enforce original-instance identity after editing."""
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            continue
+        if action.get("type") == "retire":
+            raise ValueError("BBC 无法无损执行从者退场标记及其身份校验；请使用原生自动战斗。")
+        cards = action.get("attacks")
+        guarded_card = isinstance(cards, list) and any(isinstance(card, dict) and "actor" in card for card in cards)
+        if "actor" in action or guarded_card:
+            raise ValueError(f"actions[{index}]：BBC 无法保留 actor 从者实例身份校验；请使用原生自动战斗，不能移除护栏后转换。")
+
+
+def _reject_native_card_order(actions) -> None:
+    """The legacy BBC output only expresses leading NP order, not mixed cards."""
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict) or action.get("type") != "attack":
+            continue
+        cards = action.get("attacks")
+        if cards is None:
+            continue
+        if not isinstance(cards, list):
+            raise ValueError(f"actions[{index}].attacks：出卡必须是数组，不能忽略后导出 BBC")
+        for card in cards:
+            if (not isinstance(card, dict) or card.get("isAuto") is True
+                    or card.get("isTD") is not True
+                    or "isAuto" in card and type(card["isAuto"]) is not bool):
+                raise ValueError(f"actions[{index}]：BBC 反向导出无法保留普通卡、isAuto 占位或延后宝具的混排顺序；请使用原生自动战斗。")
+
+
 def convert_actions_to_bbc_rounds(
     actions: List[dict],
     delegate: Optional[dict] = None,
@@ -256,6 +286,8 @@ def convert_actions_to_bbc_rounds(
     - 10-12: 御主技能1-3
     """
     _reject_special_skill_choices(delegate)
+    _reject_native_actor_guards(actions)
+    _reject_native_card_order(actions)
     rounds_config: Dict[str, Any] = {}
     current_skills: List[Union[int, List]] = []
     current_nps: List[int] = []
@@ -268,6 +300,19 @@ def convert_actions_to_bbc_rounds(
     replace_ptr = 0
 
     is_order_change = (mystic_code_id in ORDER_CHANGE_MYSTIC_CODE_IDS)
+
+    def flush_round():
+        nonlocal current_skills, current_nps, round_idx
+        rounds_config[f"round{round_idx}_turns"] = 1
+        rounds_config[f"round{round_idx}_extraSkill"] = []
+        rounds_config[f"round{round_idx}_extraStrategy"] = None
+        rounds_config[f"round{round_idx}_turn{turn_idx}_skill"] = current_skills.copy()
+        rounds_config[f"round{round_idx}_turn{turn_idx}_np"] = current_nps.copy()
+        rounds_config[f"round{round_idx}_turn{turn_idx}_strategy"] = None
+        rounds_config[f"round{round_idx}_turn{turn_idx}_condition"] = None
+        current_skills = []
+        current_nps = []
+        round_idx += 1
 
     for action in actions:
         if not isinstance(action, dict):
@@ -287,13 +332,19 @@ def convert_actions_to_bbc_rounds(
                 bbc_skill_idx = 10 + skill_idx
 
                 if bbc_skill_idx == 12 and is_order_change:
-                    if replace_ptr < len(replace_members):
-                        backup_idx = replace_members[replace_ptr][1] + 1
-                        current_skills.append([-2, backup_idx])
-                        replace_ptr += 1
-                    else:
-                        logger.warning("[Chaldea] 换人技能数量超过 delegate 中定义的换人信息")
-                        current_skills.append([-2, 1])
+                    if not isinstance(replace_members, list) or replace_ptr >= len(replace_members):
+                        raise ValueError("BBC 换人技能缺少 delegate.replaceMemberIndexes 配对，不能猜测换人位置")
+                    pair = replace_members[replace_ptr]
+                    if (not isinstance(pair, list) or len(pair) != 2
+                            or type(pair[0]) is not int or not 0 <= pair[0] <= 2
+                            or type(pair[1]) is not int or not 0 <= pair[1] <= 5):
+                        raise ValueError("BBC 换人配对必须指定前排 0–2 与候补相对 0–2／旧绝对 3–5 槽位")
+                    front, backup = pair
+                    backup = backup + 4 if backup < 3 else backup + 1
+                    # BBC's negative skill numbers select special servant menus;
+                    # Order Change is [master skill 12, front 1..3, back 4..6].
+                    current_skills.append([12, front + 1, backup])
+                    replace_ptr += 1
                     continue
             else:
                 if not isinstance(svt_idx, int) or not (0 <= svt_idx <= 5):
@@ -327,17 +378,12 @@ def convert_actions_to_bbc_rounds(
                             if np_pos not in current_nps:
                                 current_nps.append(np_pos)
 
-            rounds_config[f"round{round_idx}_turns"] = 1
-            rounds_config[f"round{round_idx}_extraSkill"] = []
-            rounds_config[f"round{round_idx}_extraStrategy"] = None
-            rounds_config[f"round{round_idx}_turn{turn_idx}_skill"] = current_skills.copy()
-            rounds_config[f"round{round_idx}_turn{turn_idx}_np"] = current_nps.copy()
-            rounds_config[f"round{round_idx}_turn{turn_idx}_strategy"] = None
-            rounds_config[f"round{round_idx}_turn{turn_idx}_condition"] = None
+            flush_round()
 
-            current_skills = []
-            current_nps = []
-            round_idx += 1
+    if current_skills:
+        # Native plans finish a trailing skill-only turn with ordinary cards.
+        # BBC keeps this row because its skill list is nonempty (getRealTurns).
+        flush_round()
 
     return rounds_config
 
@@ -347,6 +393,10 @@ def chaldea_to_bbc(share_data: dict) -> dict:
     if not isinstance(share_data, dict):
         logger.error("[Chaldea] share_data 类型错误，期望 dict")
         return {}
+
+    advanced = share_data.get("maaAdvancedStrategy")
+    if advanced is not None and (not isinstance(advanced, dict) or advanced):
+        raise ValueError("BBC 无法等价执行 maaAdvancedStrategy 全局高级策略；请使用原生自动战斗，不能忽略策略后转换。")
 
     team_data = share_data.get("team", {})
     actions = share_data.get("actions", [])

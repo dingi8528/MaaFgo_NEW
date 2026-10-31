@@ -74,6 +74,129 @@ class BbcUploadTests(unittest.TestCase):
         self.assertEqual(self.config, original)
         self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
 
+    def test_formation_only_upload_has_no_implicit_turn_or_file_write(self):
+        config = {key: value for key, value in self.config.items() if not key.startswith("round")}
+        original = copy.deepcopy(config)
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        status, result = self.request({"config": config, "name": "仅编队 BBC.json"})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["validation"]["valid"], result["validation"])
+        self.assertEqual(result["data"]["actions"], [])
+        self.assertEqual(result["data"]["_bbcWaveTurns"], [])
+        self.assertIn("default_battle", [issue["code"] for issue in result["validation"]["issues"]])
+        self.assertEqual(result["data"]["team"]["onFieldSvts"][2]["supportType"], "friend")
+        self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
+    def test_ce_only_upload_preserves_all_or_candidates_without_servant_requirements(self):
+        names = json.loads((self.root / "agent/utils/Chaldea/equip_names_CN.json").read_text("utf-8"))
+        ids = [9400340, 9400480, 9403280]
+        config = {key: value for key, value in self.config.items() if not key.startswith("round")}
+        config.update({"servant_2_name": None, "assistMode": "仅礼装",
+                       "assistEquip": [names[str(eid)] for eid in ids], "fullEquip": 1})
+        original = copy.deepcopy(config)
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        status, result = self.request({"config": config, "name": "仅礼装候选.json"})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["validation"]["valid"], result["validation"])
+        self.assertEqual(result["data"]["actions"], [])
+        self.assertEqual(result["data"]["team"]["onFieldSvts"][2], {
+            "supportType": "friend", "equip1": {"id": ids[0], "limitBreak": True,
+                "candidates": [{"id": eid, "limitBreak": True} for eid in ids[1:]]}})
+        self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
+    def test_grand_ce_only_upload_keeps_effect_and_or_choices_in_their_real_cells(self):
+        names = json.loads((self.root / "agent/utils/Chaldea/equip_names_CN.json").read_text("utf-8"))
+        ids = [9400340, 9400480, 9403280]
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        for source, expected in (("NP50", True), ("初始", False)):
+            with self.subTest(effect=source):
+                config = {key: value for key, value in self.config.items() if not key.startswith("round")}
+                config.update({"servant_2_name": None, "assistMode": "冠位助战仅礼装", "jbType": source,
+                               "assistEquip": [[names[str(ids[0])], names[str(ids[1])]], None,
+                                               [names[str(ids[2])], names[str(ids[0])]]], "fullEquip": 1})
+                original = copy.deepcopy(config)
+                status, result = self.request({"config": config, "name": "冠位礼装候选.json"})
+                self.assertEqual(status, 200, result)
+                self.assertTrue(result["validation"]["valid"], result["validation"])
+                self.assertEqual(result["data"]["actions"], [])
+                self.assertEqual(result["data"]["team"]["onFieldSvts"][2], {
+                    "supportType": "friend", "grandSvt": True,
+                    "classBoardData": {"grandBondEquipSkillChange": expected},
+                    "equip1": {"id": ids[0], "limitBreak": True,
+                               "candidates": [{"id": ids[1], "limitBreak": True}]},
+                    "equip3": {"id": ids[2], "limitBreak": True,
+                               "candidates": [{"id": ids[0], "limitBreak": True}]}})
+                self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
+    def test_grand_effect_upload_does_not_fabricate_a_named_bond_ce(self):
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        for source, expected in (("NP50", True), ("初始", False)):
+            with self.subTest(effect=source):
+                config = {key: value for key, value in self.config.items() if not key.startswith("round")}
+                config.update({"assistMode": "冠位助战", "jbType": source, "assistEquip": [None, None, None]})
+                original = copy.deepcopy(config)
+                status, result = self.request({"config": config, "name": "冠位效果.json"})
+                self.assertEqual(status, 200, result)
+                self.assertTrue(result["validation"]["valid"], result["validation"])
+                member = result["data"]["team"]["onFieldSvts"][2]
+                self.assertIs(member["grandSvt"], True)
+                self.assertEqual(member["classBoardData"], {"grandBondEquipSkillChange": expected})
+                self.assertFalse(any(f"equip{slot}" in member for slot in (1, 2, 3)))
+                self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
+    def test_natural_retirement_upload_preserves_initial_instances_in_following_actions(self):
+        catalog = json.loads((self.root / "agent/chaldea/bbc_servant_ids.json").read_text("utf-8"))["servants"]
+        ids = [100100, 504500, 604200, 2300900]
+        config = {f"servant_{slot}_name": next(name for name, entry in catalog.items()
+                  if str(entry.get("SN")) == str(sid)) for slot, sid in enumerate(ids)}
+        config.update({"assistIdx": 2, "assistMode": "仅从者", "round1_turns": 2,
+                       "round1_turn0_np": [1], "round1_turn0_replace": {"1": 4, "4": None},
+                       "round1_turn1_skill": [1], "round1_turn1_np": [1]})
+        original = copy.deepcopy(config)
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        status, result = self.request({"config": config, "name": "自然退场 BBC.json"})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["validation"]["valid"], result["validation"])
+        actions = result["data"]["actions"]
+        self.assertEqual([action["type"] for action in actions], ["attack", "retire", "skill", "attack"])
+        self.assertEqual(actions[0]["attacks"][0]["actor"], {"initialSlot": 0, "svtId": ids[0]})
+        self.assertEqual(actions[1], {"type": "retire", "svt": 0,
+                                     "actor": {"initialSlot": 0, "svtId": ids[0]}})
+        self.assertEqual(actions[2], {"type": "skill", "svt": 0, "skill": 0,
+                                     "actor": {"initialSlot": 3, "svtId": ids[3]}})
+        self.assertEqual(actions[3]["attacks"][0]["actor"], {"initialSlot": 3, "svtId": ids[3]})
+        team = result["data"]["team"]
+        self.assertEqual([member["svtId"] for member in team["onFieldSvts"]], ids[:3])
+        self.assertEqual(team["backupSvts"][0]["svtId"], ids[3])
+        self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
+    def test_special_choice_upload_preserves_zero_values_and_independent_ordered_queues(self):
+        catalog = json.loads((self.root / "agent/chaldea/bbc_servant_ids.json").read_text("utf-8"))["servants"]
+        ids = [1100900, 505600, 405900]
+        config = {f"servant_{slot}_name": next(name for name, entry in catalog.items()
+                  if str(entry.get("SN")) == str(sid)) for slot, sid in enumerate(ids)}
+        config.update({"assistIdx": 2, "assistMode": "仅从者", "round1_turns": 1,
+                       "round1_turn0_skill": [2, [-2, 3], ["Prelati", 4, "不替换"],
+                                              9, ["Lilith", 9, "付与即死"]], "round1_turn0_np": [1]})
+        original = copy.deepcopy(config)
+        before = {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        status, result = self.request({"config": config, "name": "特殊技能选项 BBC.json"})
+        self.assertEqual(status, 200, result)
+        self.assertTrue(result["validation"]["valid"], result["validation"])
+        self.assertEqual(result["data"]["delegate"], {"replaceMemberIndexes": [],
+                         "tdTypeChanges": [1, 2], "skillActSelectSelections": [0, 0, 1]})
+        skills = [action for action in result["data"]["actions"] if action["type"] == "skill"]
+        self.assertEqual([(action["svt"], action["skill"]) for action in skills],
+                         [(0, 1), (0, 1), (1, 0), (2, 2), (2, 2)])
+        self.assertEqual(result["warnings"], result["data"]["_conversionWarnings"])
+        self.assertEqual(config, original)
+        self.assertEqual(before, {str(path.relative_to(self.root)): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+
     def test_invalid_documents_and_names_are_actionable_and_preserve_files(self):
         for value in (None, [], "BBC", True, {}):
             with self.subTest(config=value):

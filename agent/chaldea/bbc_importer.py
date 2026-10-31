@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+from itertools import permutations
 import json
 import re
 from pathlib import Path
@@ -163,12 +164,19 @@ def _equip_ids(value: object, equips: dict, *, grand: bool = False) -> tuple[lis
 
 
 def _support_levels(config: dict, support: dict, warnings: list[str]) -> None:
-    skills = config.get("skillsLevel")
+    # BBC Battle.__init__ uses 10/10/10 when absent, and accepts the old
+    # numeric switches 1 (10/10/10) and 0 (no skill thresholds).
+    skills = config.get("skillsLevel", 1)
+    if type(skills) is int and skills in (0, 1):
+        skills = [10 if skills else 0] * 3 + [0] * 5
     if skills is not None:
-        if (isinstance(skills, list) and 3 <= len(skills) <= 8
+        if (isinstance(skills, list) and len(skills) <= 8
                 and all(type(value) is int and 0 <= value <= 10 for value in skills)):
-            support["skillLvs"] = skills[:3]
-            support["appendLvs"] = (skills[3:] + [0] * 5)[:5]
+            padded = skills + [0] * (8 - len(skills))
+            # All zero means unrestricted, including the old numeric 0.
+            if any(padded):
+                support["skillLvs"] = padded[:3]
+                support["appendLvs"] = padded[3:]
         else:
             warnings.append("助战技能等级筛选值无效，未导入")
     for source_key, target_key, maximum in (
@@ -226,6 +234,57 @@ def _np_attacks(raw: object, location: str) -> list[dict]:
             or len(set(raw)) != len(raw)):
         raise BbcImportError(f"{location}: 宝具槽位必须是不重复的前排 1～3 号位列表")
     return [{"isTD": True, "svt": n - 1, "card": -1} for n in raw]
+
+
+def _retirement_mapping(raw: object, bbc_order: list[int | None],
+                        native_order: list[int], retired: set[int],
+                        slots: list[dict | None], location: str):
+    """Accept only one natural-replacement sequence equal to BBC's snapshot map.
+
+    BBC applies the map simultaneously after the attack. Native plans keep dead
+    instances at the tail; comparing their live projection prevents arbitrary
+    copy/delete/swap mappings from being mistaken for natural departures.
+    """
+    if not isinstance(raw, dict):
+        raise BbcImportError(f"{location}: replace 必须是攻击后的槽位映射对象")
+    target = list(bbc_order)
+    for key, value in raw.items():
+        if type(key) is not str or key not in {str(i) for i in range(1, 7)}:
+            raise BbcImportError(f"{location}: replace 目标必须是 1～6 号槽位")
+        if value is not None and (type(value) is not int or not 1 <= value <= 6):
+            raise BbcImportError(f"{location}: replace 来源必须是 1～6 号槽位或 null")
+        target[int(key) - 1] = bbc_order[value - 1] if value is not None else None
+    live = [token for token in target if token is not None]
+    if len(live) != len(set(live)):
+        raise BbcImportError(f"{location}: replace 复制了同一从者，不能等价转换为自然退场")
+
+    matches = []
+    for count in range(1, 4):
+        for fronts in permutations(range(3), count):
+            order, dead, actions = list(native_order), set(retired), []
+            for front in fronts:
+                outgoing = order[front]
+                back = next((i for i in range(3, 6) if order[i] not in dead and slots[order[i]] is not None), None)
+                actor = slots[outgoing]
+                if outgoing in dead or not isinstance(actor, dict) or not actor.get("svtId") or back is None:
+                    break
+                incoming = slots[order[back]]
+                if (not isinstance(incoming, dict) or not incoming.get("svtId")
+                        or actor["svtId"] == incoming["svtId"]):
+                    break
+                actions.append({"type": "retire", "svt": front,
+                                "actor": {"initialSlot": outgoing, "svtId": actor["svtId"]}})
+                order[front] = order.pop(back)
+                order.append(outgoing)
+                dead.add(outgoing)
+            else:
+                projection = [token if token not in dead and slots[token] is not None else None for token in order]
+                if projection == target:
+                    matches.append((order, dead, actions))
+    if len(matches) != 1:
+        raise BbcImportError(f"{location}: replace 不能唯一等价为已知从者的自然退场递补；不支持任意换位、删除候补、未知或同名递补")
+    order, dead, actions = matches[0]
+    return target, order, dead, actions
 
 
 def _strategy_attacks(strategy: object, nps: list[dict], roster: list[dict | None],
@@ -299,12 +358,15 @@ def _strategy_attacks(strategy: object, nps: list[dict], roster: list[dict | Non
     return result
 
 
-def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict, list[str]]:
+def convert_bbc_config(config: dict, catalog: dict, equips: dict, *, root: Path = ROOT) -> tuple[dict, list[str]]:
     """转换 BBC 配置；无法精确表达的动作直接失败。"""
     if not isinstance(config, dict):
         raise BbcImportError("BBC 配置顶层必须是对象")
     if any(not isinstance(key, str) for key in config):
         raise BbcImportError("BBC 配置字段名必须是字符串")
+    from .bbc_special_skills import BbcSpecialSkillChoices
+
+    special_choices = BbcSpecialSkillChoices(root=root)
     warnings: list[str] = ["BBC 按波次执行；已按每波有效回合数展开为原生固定回合。实战提前或延后清场时，后续动作不会自动等待对应波次，请检查回合安排。"]
     reverse_codes = {sn: code for code, sn in MYSTIC_CODE_ID_TO_BBC_SN.items()}
     sn = config.get("master_equip")
@@ -351,7 +413,7 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
                 warnings.append("BBC 冠位助战允许普通与报酬礼装互换；已按原配置保留固定槽位，当前原生助战不会自动交换，请核对礼装位置")
             for index, ids in enumerate(equip_ids, 1):
                 if ids:
-                    choices = [{"id": equip_id, **({"limitBreak": True} if config.get("fullEquip") == 1 else {})}
+                    choices = [{"id": equip_id, **({"limitBreak": True} if config.get("fullEquip", 1) else {})}
                                for equip_id in ids]
                     equipment = choices[0]
                     if len(choices) > 1:
@@ -371,13 +433,26 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
     if any(len(number) > 2 or not number.isascii() for number in round_numbers):
         raise BbcImportError(f"BBC 波次数必须为 1～{_MAX_WAVES}")
     rounds = sorted(int(number) for number in round_numbers)
-    if not rounds or len(rounds) > _MAX_WAVES or max(rounds) > _MAX_WAVES:
+    if len(rounds) > _MAX_WAVES or (rounds and max(rounds) > _MAX_WAVES):
         raise BbcImportError(f"BBC 波次数必须为 1～{_MAX_WAVES}")
-    if rounds != list(range(1, max(rounds) + 1)):
+    if rounds and rounds != list(range(1, max(rounds) + 1)):
         raise BbcImportError("BBC 波次 roundN_turns 缺失或不连续")
+    if not rounds:
+        warnings.append("BBC 没有固定波次配置，已保留为空 actions；原生战斗使用通用自动战斗及当前高级策略。")
     actions: list[dict] = []
     swaps: list[list[int]] = []
     roster = slots.copy()
+    bbc_order = [index if member is not None else None for index, member in enumerate(slots)]
+    native_order, retired = list(range(6)), set()
+    binds_actors = any(key.endswith("_replace") and value for key, value in config.items())
+
+    def bind_actor(action, slot, location):
+        if not binds_actors:
+            return
+        token = bbc_order[slot]
+        if token is None or native_order[slot] != token or token in retired:
+            raise BbcImportError(f"{location}: BBC 与原生当前从者实例不一致，不能安全转化后续动作")
+        action["actor"] = {"initialSlot": token, "svtId": slots[token]["svtId"]}
     decks = {int(item["SN"]): item["_cards"] for item in catalog.values()
              if isinstance(item, dict) and type(item.get("SN")) in (str, int)
              and str(item["SN"]).isascii() and str(item["SN"]).isdigit()
@@ -414,8 +489,6 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
             if condition:
                 raise BbcImportError(f"{prefix}: 条件分支无法映射到固定回合")
             strategy = config.get(f"{prefix}_strategy")
-            if config.get(f"{prefix}_replace"):
-                raise BbcImportError(f"{prefix}: 退场后自动补位映射 replace 无法等价保存为固定编队，不能当作御主换人导入")
             skills = config.get(f"{prefix}_skill", [])
             nps = config.get(f"{prefix}_np") or []
             if not isinstance(skills, list):
@@ -428,10 +501,20 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
                     enemy_target = 3 - raw[1]
                     continue
                 before = len(swaps)
-                action = _skill_action(raw, mystic_code_id, swaps, prefix)
+                try:
+                    action = special_choices.convert(raw, roster, prefix)
+                    if action is None:
+                        action = _skill_action(raw, mystic_code_id, swaps, prefix)
+                        special_choices.observe(action, roster, prefix)
+                except BbcImportError:
+                    raise
+                except ValueError as exc:
+                    raise BbcImportError(f"特殊技能转换失败: {exc}") from exc
                 actor = action["svt"]
                 if actor is not None and not (roster[actor] or {}).get("svtId"):
                     raise BbcImportError(f"{prefix}: 前排 {actor + 1} 没有确定的从者，不能配置技能 {raw!r}")
+                if actor is not None:
+                    bind_actor(action, actor, prefix)
                 target = action.get("options", {}).get("playerTarget")
                 if target is not None and roster[target] is None:
                     raise BbcImportError(f"{prefix}: 技能目标前排 {target + 1} 是空位")
@@ -443,6 +526,8 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
                     if roster[front] is None or roster[back] is None:
                         raise BbcImportError(f"{prefix}: 换人必须选择两个非空槽位")
                     roster[front], roster[back] = roster[back], roster[front]
+                    bbc_order[front], bbc_order[back] = bbc_order[back], bbc_order[front]
+                    native_order[front], native_order[back] = native_order[back], native_order[front]
                 if len(actions) >= _MAX_ACTIONS:
                     raise BbcImportError(f"BBC 转换后动作数不能超过 {_MAX_ACTIONS}")
             attacks = _strategy_attacks(strategy, [] if strategy else _np_attacks(nps, prefix),
@@ -450,13 +535,25 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
             for attack in attacks:
                 if attack.get("isTD") and not (roster[attack["svt"]] or {}).get("svtId"):
                     raise BbcImportError(f"{prefix}: 未知从者或空位不能配置宝具")
+                if "svt" in attack:
+                    bind_actor(attack, attack["svt"], prefix)
             action = {"type": "attack", "attacks": attacks}
             if enemy_target is not None:
                 action["options"] = {"enemyTarget": enemy_target}
             actions.append(action)
+            replacement = config.get(f"{prefix}_replace")
+            if replacement:
+                bbc_order, native_order, retired, retire_actions = _retirement_mapping(
+                    replacement, bbc_order, native_order, retired, slots, prefix)
+                roster = [slots[token] if token is not None else None for token in bbc_order]
+                actions.extend(retire_actions)
             if len(actions) > _MAX_ACTIONS:
                 raise BbcImportError(f"BBC 转换后动作数不能超过 {_MAX_ACTIONS}")
 
+    try:
+        special_delegate = special_choices.delegate()
+    except ValueError as exc:
+        raise BbcImportError(str(exc)) from exc
     share = {
         "_source": "bbc",
         "team": {
@@ -465,11 +562,13 @@ def convert_bbc_config(config: dict, catalog: dict, equips: dict) -> tuple[dict,
             "backupSvts": slots[3:],
         },
         "actions": actions,
-        "delegate": {"replaceMemberIndexes": swaps},
+        "delegate": {"replaceMemberIndexes": swaps, **special_delegate},
         "_bbcWaveTurns": wave_turns,
     }
     if any(count == 0 and any(wave_turns[i + 1:]) for i, count in enumerate(wave_turns)):
         raise BbcImportError("BBC 中间波次没有固定回合、后面仍有动作；当前固定回合计划无法等待该波清场，不能直接导入")
+    if actions and actions[-1].get("type") == "retire":
+        raise BbcImportError("BBC 最后一次攻击后的退场映射没有后续回合，无法安全安排原生退场确认；请移除末尾无后续动作的 replace")
     return share, warnings
 
 
@@ -482,7 +581,7 @@ def convert_bbc_document(config: dict, *, root: Path = ROOT) -> tuple[dict, list
         raise BbcImportError("BBC server 必须是字符串")
     root = Path(root)
     catalog, equips = load_bbc_catalogs(root, server or "CH")
-    share, warnings = convert_bbc_config(config, catalog, equips)
+    share, warnings = convert_bbc_config(config, catalog, equips, root=root)
     # IDs alone do not make a support CE recognizable. Keep the requested ID,
     # disclose missing project templates, and never download/expand resources.
     fullwidth_alnum = str.maketrans({n: n - 0xFEE0 for start, end in
@@ -496,13 +595,14 @@ def convert_bbc_document(config: dict, *, root: Path = ROOT) -> tuple[dict, list
             equipment = member.get(f"equip{slot}")
             if not isinstance(equipment, dict):
                 continue
-            name = equips.get(str(equipment["id"]))
-            if not isinstance(name, str):
-                continue
-            filename = name.translate(fullwidth_alnum).replace("/", "／").replace("\\", "＼") + ".png"
-            states = ("满破",) if equipment.get("limitBreak") is True else ("满破", "非满破")
-            if not any((base / state / filename).is_file() for base in bases for state in states):
-                warnings.append(f"助战礼装“{name}”已保留 ID {equipment['id']}，但工程缺少对应助战识别模板，实战可能无法选中，请更换为工程已有礼装")
+            for candidate in [equipment, *(equipment.get("candidates") or [])]:
+                name = equips.get(str(candidate["id"]))
+                if not isinstance(name, str):
+                    continue
+                filename = name.translate(fullwidth_alnum).replace("/", "／").replace("\\", "＼") + ".png"
+                states = ("满破",) if candidate.get("limitBreak") is True else ("满破", "非满破")
+                if not any((base / state / filename).is_file() for base in bases for state in states):
+                    warnings.append(f"助战礼装“{name}”已保留 ID {candidate['id']}，但工程缺少对应助战识别模板，实战可能无法选中，请更换为工程已有礼装")
     return share, warnings
 
 

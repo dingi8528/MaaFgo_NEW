@@ -124,6 +124,30 @@ class SettlementTests(unittest.TestCase):
         seen = self.run_scenario("结束战斗_不回主界面", [], succeeds=False, blind_limit=3)
         self.assertEqual(seen.count("结算推进_点击右上角"), 3)
 
+    def test_activity_close_exits_once_before_generic_close_or_blind_click(self):
+        for entry in ("结束战斗_不回主界面", "结束战斗_连续出击继续",
+                      "结算推进_点击右上角", "结算推进_点击右上角_继续"):
+            with self.subTest(entry=entry):
+                seen = self.run_scenario(entry, [
+                    {"结算-活动报酬返回地图", "战斗结束关闭_不回主界面"},
+                    {"可能已经结束战斗_不回主界面"},
+                ])
+                self.assertEqual(seen.count("结算-活动报酬返回地图"), 1)
+                self.assertIn("可能已经结束战斗_不回主界面", seen)
+                self.assertNotIn("战斗结束关闭_不回主界面", seen)
+                self.assertNotIn("连续出击_继续", seen)
+                # Direct entry into the existing blind node itself clicks once;
+                # its next poll must exit via the new branch without more clicks.
+                blind = [n for n in seen if n.startswith("结算推进_点击右上角")]
+                self.assertEqual(blind, [entry] if entry.startswith("结算推进_") else [])
+
+    def test_activity_escape_without_map_confirmation_fails_without_extra_input(self):
+        seen = self.run_scenario("结束战斗_不回主界面", [
+            {"结算-活动报酬返回地图"},
+        ], succeeds=False)
+        self.assertEqual(seen.count("结算-活动报酬返回地图"), 1)
+        self.assertNotIn("结算推进_点击右上角", seen)
+
 
 if __name__ == "__main__":
     unittest.main()
