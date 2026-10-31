@@ -6,6 +6,13 @@ export const BBC_FILE_ACCEPT='.json,application/json';
 export const MAX_BBC_BYTES=3*1024*1024;
 export interface BBCImportResult {data:Json;warnings:string[];validation:Json|null;sourceName:string}
 
+/** A Grand bond effect is a filter, not a named CE or an ordinary image slot. */
+export function grandRequirementPreview(member:Json|null) {
+ const grand=member?.grandSvt===true,effect=member?.classBoardData?.grandBondEquipSkillChange;
+ const bondEffect=grand?(effect===true?'羁绊礼装效果：NP50%替换':effect===false?'羁绊礼装效果：初始效果':effect==null?'羁绊礼装效果：未指定':'羁绊礼装效果：未知，请核对'):null;
+ return {grand,bondEffect,emptyEquipLabel:grand?'未指定礼装卡面':'不要求礼装'};
+}
+
 export async function readBBCFile(file:{size:number;text:()=>Promise<string>}):Promise<Json> {
  if(file.size<=0||file.size>MAX_BBC_BYTES)throw new Error('BBC 配置文件为空或超过3 MiB，请选择单个 BBC JSON 配置。');
  let value:unknown;
@@ -32,7 +39,7 @@ export function bbcPreview(data:Json,catalog:Catalog) {
     return {id:requirement.id,name:candidates.length>1?`${label} · ${candidateIndex?'或':'候选'} ${candidateIndex+1}/${candidates.length}：${baseName} · ${details}`:baseName,image:item?.image,sourceKey:key,candidateIndex,candidateCount:candidates.length};
    });
   });
-  return {slot:index,name:member?memberLabel(member,catalog):'不要求此位置',image:servant?.image,support:['friend','npc','fixed'].includes(member?.supportType),equips};
+  return {slot:index,name:member?memberLabel(member,catalog):'不要求此位置',image:servant?.image,support:['friend','npc','fixed'].includes(member?.supportType),equips,...grandRequirementPreview(member)};
  });
  const actions:Json[]=data.actions??[],mysticId=data.team?.mysticCode?.mysticCodeId;
  return {roster,title:typeof data.team?.name==='string'?data.team.name:'BBC 导入方案',turns:actions.filter(a=>a.type==='attack').length,skills:actions.filter(a=>a.type==='skill').length,cards:actions.filter(a=>a.type==='attack').reduce((count,a)=>count+(Array.isArray(a.attacks)?a.attacks.filter((card:Json)=>card.isAuto!==true).length:0),0),mystic:catalog.mysticCodes.find(m=>m.id===mysticId)?.name??(mysticId?`御主服 #${mysticId}`:'未指定御主服')};

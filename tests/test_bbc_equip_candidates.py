@@ -21,7 +21,7 @@ EQUIPS = {'1': 'CE A', '2': 'CE B', '3': 'CE C', '4': 'CE D', '5': 'Bond CE'}
 def config(**changes):
     return {'servant_0_name': 'A', 'servant_1_name': 'B', 'servant_2_name': 'C',
             'assistIdx': 2, 'assistMode': '从者礼装', 'assistEquip': 'CE A',
-            'master_equip': 17, 'round1_turns': 1, 'round1_turn0_np': [1], **changes}
+            'master_equip': 17, 'fullEquip': 0, 'round1_turns': 1, 'round1_turn0_np': [1], **changes}
 
 
 def battle(equip, *, grand=False, support_type='friend'):

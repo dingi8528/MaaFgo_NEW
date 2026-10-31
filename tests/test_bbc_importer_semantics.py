@@ -168,7 +168,7 @@ class BbcImportSemanticsTest(unittest.TestCase):
             self.convert()
 
     def test_unrestricted_levels_and_unselected_owned_attributes_stay_absent(self):
-        self.config.update({"NPlevel": 0, "servantLevel": 0, "fullEquip": 0})
+        self.config.update({"NPlevel": 0, "servantLevel": 0, "fullEquip": 0, "skillsLevel": 0})
         share, _ = self.convert()
         for member in share["team"]["onFieldSvts"]:
             self.assertNotIn("lv", member)
@@ -271,7 +271,7 @@ class BbcImportSemanticsTest(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(document), encoding="utf-8")
-            self.config.update({"assistMode": "从者礼装", "assistEquip": "Missing CE"})
+            self.config.update({"assistMode": "从者礼装", "assistEquip": "Missing CE", "fullEquip": 0})
             share, warnings = convert_bbc_document(self.config, root=root)
             self.assertEqual(share["team"]["onFieldSvts"][2]["equip1"], {"id": 1})
             self.assertTrue(any("识别模板" in warning for warning in warnings))

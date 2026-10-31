@@ -216,7 +216,7 @@ class SpecialSkillValidationTests(unittest.TestCase):
                 if path.name.startswith("迪拜BB"):
                     # BBC's custom BBDubai operation has no supported native
                     # equivalent; the existing importer must keep rejecting it.
-                    with self.assertRaisesRegex(EditorError, "不支持的 BBC 特殊技能"):
+                    with self.assertRaisesRegex(EditorError, "BB迪拜.*尚无对应原生菜单"):
                         import_bbc_document(ROOT, source, path.name)
                 else:
                     data = import_bbc_document(ROOT, source, path.name)["data"]
