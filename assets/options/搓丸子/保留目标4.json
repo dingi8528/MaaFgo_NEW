@@ -6644,7 +6644,9 @@
                 "target_4_id": "9400360"
               }
             }
-          }
+          },
+          "icon": "resource/base/image/EquipFaces/team/f_94003600.png",
+          "description": "旅途的开始 · ID 9400360\n\n<img src=\"resource/base/image/EquipFaces/team/f_94003600.png\" width=\"79\" alt=\"旅途的开始\" />"
         },
         {
           "name": "9400370",

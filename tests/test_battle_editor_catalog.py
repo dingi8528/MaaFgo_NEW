@@ -813,9 +813,9 @@ class BundledCatalogTests(unittest.TestCase):
         self.assertTrue(all(equip["image"] for equip in catalog["equips"]
                             if equip["common"] and equip["recognizable"]))
         self.assertEqual(sum(equip["common"] and equip["recognizable"]
-                             for equip in catalog["equips"]), 46)
+                             for equip in catalog["equips"]), 47)
         recognized = json.loads((ROOT / "agent/custom/equip_list.json").read_text(encoding="utf-8"))["equips"]
-        self.assertEqual(len(recognized), 1156)
+        self.assertEqual(len(recognized), 1157)
         expected_equip_ids = {int(row["id"]) for row in recognized
                               if any(resolve_media(ROOT, "equip", image) for image in row.get("images", []))}
         self.assertEqual({equip["id"] for equip in catalog["equips"] if equip["recognizable"]}, expected_equip_ids)
@@ -862,7 +862,15 @@ class BundledCatalogTests(unittest.TestCase):
                 record = next(row for row in local["equips"] if int(row["id"]) == item["id"])
                 self.assertEqual(record["important"], 0)
                 self.assertIsNotNone(resolve_media(ROOT, "equip", f"f_{item['id']}0.png"))
-        self.assertEqual(catalog["commonEquips"]["count"], 46)
+        self.assertEqual(catalog["commonEquips"]["count"], 47)
+        journey = next(item for item in catalog["equips"] if item["id"] == 9400360)
+        # 旅途的开始是四星特例，不能按普通四星礼装误计为9 COST。
+        self.assertEqual(journey["cost"], 3)
+        self.assertTrue(journey["recognizable"] and journey["common"])
+        self.assertEqual(journey["supportRecognition"], {"limitBreak": True, "nonLimitBreak": True})
+        record = next(row for row in local["equips"] if row["id"] == "9400360")
+        self.assertEqual(record["important"], 1)
+        self.assertEqual(record["bond"]["bonus_type"], "none")
 
     def test_bundled_servants_have_official_decks_and_media_hashes_match(self):
         directory = ROOT / "agent/battle_editor/data"

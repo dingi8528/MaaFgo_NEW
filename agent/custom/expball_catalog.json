@@ -10528,7 +10528,10 @@
       "name": "旅途的开始",
       "name_jp": "旅の始まり",
       "rarity": 4,
-      "images": []
+      "images": [
+        "EquipFaces/list/f_94003600.png",
+        "EquipFaces/team/f_94003600.png"
+      ]
     },
     {
       "id": "9400370",

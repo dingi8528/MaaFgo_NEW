@@ -238,6 +238,18 @@
                     }
                 },
                 {
+                    "name": "旅途的开始.png",
+                    "label": "旅途的开始",
+                    "icon": "resource/base/image/lizhuang/满破/旅途的开始.png",
+                    "pipeline_override": {
+                        "助战action": {
+                            "attach": {
+                                "普通助战-礼装-满破-候选:旅途的开始.png": true
+                            }
+                        }
+                    }
+                },
+                {
                     "name": "无雪之夜过后.png",
                     "label": "无雪之夜过后",
                     "icon": "resource/base/image/lizhuang/满破/无雪之夜过后.png",
@@ -844,6 +856,18 @@
                         "助战action": {
                             "attach": {
                                 "普通助战-礼装-非满破-候选:拂晓之前.png": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "旅途的开始.png",
+                    "label": "旅途的开始",
+                    "icon": "resource/base/image/lizhuang/非满破/旅途的开始.png",
+                    "pipeline_override": {
+                        "助战action": {
+                            "attach": {
+                                "普通助战-礼装-非满破-候选:旅途的开始.png": true
                             }
                         }
                     }

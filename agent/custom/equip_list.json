@@ -286,6 +286,25 @@
       }
     },
     {
+      "id": "9400360",
+      "collection_no": 36,
+      "name": "旅途的开始",
+      "rarity": 4,
+      "important": 1,
+      "images": [
+        "f_94003600.png"
+      ],
+      "name_jp": "旅の始まり",
+      "acquisition_category_jp": "キャンペーン・記念配布",
+      "filter_tag": "纪念配布",
+      "bond": {
+        "bonus_type": "none",
+        "bonus": 0,
+        "target": "",
+        "effect_desc": ""
+      }
+    },
+    {
       "id": "9400380",
       "collection_no": 38,
       "name": "封印指定　执行者",
