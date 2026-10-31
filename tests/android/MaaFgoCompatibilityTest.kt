@@ -54,13 +54,22 @@ class MaaFgoCompatibilityTest {
 
     @Test fun sixFileListsKeepIconsDefaultsAndAgentFilenames() {
         val definition = definition()
+        val assets = File(requireNotNull(System.getenv("MAAFGO_COMPAT_ASSETS")))
         for (prefix in listOf("普通助战-礼装", "冠位助战-1号礼装", "冠位助战-2号礼装")) {
             for (status in listOf("满破", "非满破")) {
                 val name = "$prefix-$status"
                 val option = definition.options[name] as OptionDefinition.Select
+                val folder = "resource/base/image/lizhuang/$status"
+                val expectedNames = File(assets, folder).listFiles().orEmpty()
+                    .filter { it.isFile && it.name.endsWith(".png") }.map { it.name }.toSet()
+                assertTrue("$name 缺少不限礼装图片", "0_空.png" in expectedNames)
                 assertEquals("0_空.png", option.defaultCase)
-                assertEquals(47, option.cases.size)
-                assertNotNull(option.cases.first().icon)
+                assertEquals("$name 文件清单不完整", expectedNames, option.cases.map { it.name }.toSet())
+                assertEquals("$name 不得有重复选项", expectedNames.size, option.cases.size)
+                assertEquals("$name 的不限选项必须排在首位", "0_空.png", option.cases.first().name)
+                for (case in option.cases) {
+                    assertEquals("$name/${case.name} 图标路径不正确", "$folder/${case.name}", case.icon)
+                }
                 val filename = option.cases.first { it.name != "0_空.png" }.name
                 val values = mapOf(
                     "battle_mode" to OptionValue.SingleCase("native"),
