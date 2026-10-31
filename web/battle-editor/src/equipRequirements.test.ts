@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type {Json} from './model';
+import type {Equip,Json} from './model';
+import {matchesSupportEquip,supportEquipRequirement} from './supportEquipSelection';
 import {clearEquipRequirement,equipForDisplay,hasStoredEquipRequirement,equipCandidatesForDisplay,supportsEquipCandidates,setEquipCandidate,updateEquipCandidate,removeEquipCandidate} from './equipRequirements';
 
 test('clearing slot one removes the complete object and all legacy fallback fields only',()=>{
@@ -126,4 +127,37 @@ test('incomplete and oversized imported candidate trees remain readable without 
  assert.deepEqual(equipCandidatesForDisplay(member,'equip1'),[{id:101},{id:202},{}]);
  assert.throws(()=>setEquipCandidate(member,'equip1',0,505));assert.deepEqual(member,before);
  const empty:Json={supportType:'friend'};assert.throws(()=>setEquipCandidate(empty,'equip1',1,202));assert.deepEqual(empty,{supportType:'friend'});
+});
+
+test('support-only selection respects member type and grand card-image slots without mutation',()=>{
+ const friend={supportType:'friend',grandSvt:true,equip1:{id:1,limitBreak:true,candidates:[{id:2,limitBreak:false},{id:3}]},equip2:{id:4},equip3:{id:5,limitBreak:false}};
+ const before=structuredClone(friend);
+ assert.equal(supportEquipRequirement(friend,'equip1'), 'limitBreak');
+ assert.equal(supportEquipRequirement(friend,'equip1',1), 'nonLimitBreak');
+ assert.equal(supportEquipRequirement(friend,'equip1',2), 'any');
+ assert.equal(supportEquipRequirement(friend,'equip3'), 'nonLimitBreak');
+ assert.equal(supportEquipRequirement(friend,'equip2'), null);
+ for(const supportType of ['npc','fixed'])assert.equal(supportEquipRequirement({...friend,supportType},'equip1'),'limitBreak');
+ for(const supportType of ['none',undefined])assert.equal(supportEquipRequirement({...friend,supportType},'equip1'),null);
+ assert.equal(supportEquipRequirement({...friend,grandSvt:false},'equip3'),null);
+ assert.equal(supportEquipRequirement(null,'equip1',0,true),'any');
+ assert.equal(supportEquipRequirement(null,'equip1'),null);
+ assert.equal(supportEquipRequirement({supportType:'friend',ceId:1,ceLimitBreak:false},'equip1'),'nonLimitBreak');
+ assert.deepEqual(friend,before);
+});
+
+test('support recognition is not inferred from common or team portraits and a toggle restores candidates',()=>{
+ const item=(extra:Partial<Equip>={}):Equip=>({id:1,name:'太空女主人',image:'/media/equip/a.png',recognizable:true,common:true,...extra});
+ assert.equal(matchesSupportEquip(item(),'any'),false);
+ assert.equal(matchesSupportEquip(item({supportRecognition:{limitBreak:false,nonLimitBreak:false}}),'any'),false);
+ const mlb=item({supportRecognition:{limitBreak:true,nonLimitBreak:false},common:false});
+ assert.equal(matchesSupportEquip(mlb,'limitBreak'),true);
+ assert.equal(matchesSupportEquip(mlb,'nonLimitBreak'),false);
+ assert.equal(matchesSupportEquip(mlb,'any'),true);
+ const non=item({supportRecognition:{limitBreak:false,nonLimitBreak:true}});
+ assert.equal(matchesSupportEquip(non,'nonLimitBreak'),true);
+ assert.equal(matchesSupportEquip(non,'limitBreak'),false);
+ assert.equal(matchesSupportEquip(non,'any'),true);
+ assert.equal(matchesSupportEquip(item(),'any',false),true);
+ assert.equal(matchesSupportEquip(item(),null),true);
 });

@@ -398,6 +398,37 @@ class EditorCatalogTests(unittest.TestCase):
         self.assertFalse(any(item["common"] for item in result["equips"]))
         self.assertEqual(result["commonEquips"]["ambiguous"][0]["ids"], [900, 901])
 
+    def test_support_recognition_is_independent_of_team_image_and_display_name(self):
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertTrue(equip["recognizable"])
+        self.assertEqual(equip["supportRecognition"], {"limitBreak": False, "nonLimitBreak": False})
+        # 运行时使用 Chaldea 名称“礼装”，不是本地条目的显示名“识别礼装”。
+        self.image("assets/resource/base/image/lizhuang/满破/识别礼装.png")
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertFalse(equip["supportRecognition"]["limitBreak"])
+        self.image("assets/resource/base/image/lizhuang/非满破/礼装.png")
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertEqual(equip["supportRecognition"], {"limitBreak": False, "nonLimitBreak": True})
+        self.image("assets/resource/base/image/lizhuang/满破/礼装.png")
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertEqual(equip["supportRecognition"], {"limitBreak": True, "nonLimitBreak": True})
+
+    def test_support_filenames_normalize_alnum_and_slashes_not_all_punctuation(self):
+        self.write("agent/utils/Chaldea/equip_names_CN.json", {"900": "来自ＮＦＦ的爱/测试\\A"})
+        self.image("assets/resource/base/image/lizhuang/满破/来自NFF的爱／测试＼A.png")
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertTrue(equip["supportRecognition"]["limitBreak"])
+        # 名称缓存缺失不能使用显示名猜测，即使模板恰好存在。
+        self.write("agent/utils/Chaldea/equip_names_CN.json", {})
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertFalse(any(equip["supportRecognition"].values()))
+
+    def test_packaged_support_template_directory_has_same_priority_as_executor(self):
+        self.image("assets/resource/base/image/lizhuang/满破/礼装.png")
+        self.image("resource/base/image/lizhuang/非满破/礼装.png")
+        equip = next(e for e in build_catalog(self.root)["equips"] if e["id"] == 900)
+        self.assertEqual(equip["supportRecognition"], {"limitBreak": False, "nonLimitBreak": True})
+
     def test_ui_manifest_provides_dimensions_append_and_exact_active_skill_ids(self):
         files = {name: {"width": width, "height": height}
                  for name, width, height in (("portrait.png", 150, 376), ("equip.png", 150, 68),

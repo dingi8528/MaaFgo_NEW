@@ -254,6 +254,30 @@ def _common_equips(root: Path, equips: list[dict], raw_records: list[dict]) -> t
     return mapped, {"count": len(mapped), "unmatched": unmatched, "ambiguous": ambiguous}
 
 
+def _support_equip_recognition(root: Path, name) -> dict[str, bool]:
+    """Mirror Chaldea's filename normalization, without importing its online clients.
+
+    Team portraits and common/NFKC-name matches cannot prove support recognition.
+    Directory priority mirrors SupportAction._image_dir('base', 'lizhuang').
+    """
+    result = {"limitBreak": False, "nonLimitBreak": False}
+    if not isinstance(name, str) or not name.strip():
+        return result
+    fullwidth_alnum = {code: code - 0xFEE0 for start, end in
+                       ((0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A))
+                       for code in range(start, end + 1)}
+    filename = name.translate(fullwidth_alnum).replace("/", "／").replace("\\", "＼") + ".png"
+    directories = [root / "resource/base/image/lizhuang", root / "assets/resource/base/image/lizhuang"]
+    directory = next((path for path in directories if path.is_dir()), None)
+    if directory is None or not directory.resolve().is_relative_to(root):
+        return result
+    for key, state in (("limitBreak", "满破"), ("nonLimitBreak", "非满破")):
+        path = directory / state / filename
+        if path.is_file() and path.resolve().is_relative_to(directory.resolve()):
+            result[key] = True
+    return result
+
+
 def _inventory(root: Path, kind: str, aliases: dict[int, int]) -> tuple[list[int], dict]:
     path = root / "config" / "Inventory" / f"player_{kind}.json"
     data = _read(path, {})
@@ -427,6 +451,7 @@ def build_catalog(project_root: Path | str) -> dict:
             "collectionNo": item.get("collection_no", extra.get("collectionNo")),
             "rarity": item.get("rarity", extra.get("rarity")), "cost": equip_costs.get(key),
             "recognizable": key in recognized and image is not None,
+            "supportRecognition": _support_equip_recognition(root, cn_names.get(key)),
             "image": image, "imageWidth": image_width, "imageHeight": image_height,
             "filters": equip_filter_facts(equip_filter_index, key) if key in recognized else None,
         })
