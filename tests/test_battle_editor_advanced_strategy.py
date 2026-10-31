@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from urllib.parse import quote
 
 from agent.battle.core.advanced_strategy import default_advanced_strategy
 from agent.battle_editor.server import create_server
@@ -99,6 +100,65 @@ class GlobalStrategyHTTPTests(unittest.TestCase):
         status, result = self.request('POST', '/api/battles', {'name': '无效策略.json', 'data': {'maaAdvancedStrategy': {'maxTurns': 0}}})
         self.assertEqual(status, 422)
         self.assertEqual(result['error']['code'], 'validation_failed')
+
+    def test_strategy_only_library_entry_can_be_reopened_and_copied_without_materializing_fields(self):
+        data = {'maaAdvancedStrategy': {'preset': 'brave', 'maxTurns': 52, 'future': [None, False]},
+                'future': {'keep': '原样保留'}}
+        name = '仅全局策略.json'
+        status, saved = self.request('POST', '/api/battles', {'name': name, 'data': data})
+        self.assertEqual(status, 201, saved)
+        path = self.server.storage.battle_dir / name
+        before = path.read_bytes()
+
+        status, listing = self.request('GET', '/api/battles')
+        self.assertEqual(status, 200)
+        row = next(row for row in listing['battles'] if row['name'] == name)
+        self.assertNotIn('error', row, row)
+        self.assertEqual((row['title'], row['turnCount'], row['servants']), ('仅全局策略', 0, []))
+        self.assertEqual(row['hash'], saved['hash'])
+        self.assertEqual(path.read_bytes(), before)
+
+        status, reopened = self.request('GET', '/api/battles/' + quote(name))
+        self.assertEqual(status, 200)
+        self.assertEqual(reopened['data'], data)
+        status, copied = self.request('POST', '/api/battles', {'name': '仅全局策略副本.json', 'data': reopened['data']})
+        self.assertEqual(status, 201, copied)
+        self.assertEqual(copied['data'], data)
+        self.assertNotIn('team', copied['data'])
+        self.assertNotIn('actions', copied['data'])
+        self.assertEqual(path.read_bytes(), before)
+        self.assertTrue(all('error' not in row for row in self.request('GET', '/api/battles')[1]['battles']))
+
+    def test_no_formation_actions_only_library_summary_counts_turns_without_rewriting(self):
+        data = {'actions': [{'type': 'attack', 'attacks': []}, {'type': 'attack', 'attacks': []}]}
+        status, saved = self.request('POST', '/api/battles', {'name': '仅回合.json', 'data': data})
+        self.assertEqual(status, 201, saved)
+        path = self.server.storage.battle_dir / '仅回合.json'
+        before = path.read_bytes()
+        status, listing = self.request('GET', '/api/battles')
+        self.assertEqual(status, 200)
+        row = listing['battles'][0]
+        self.assertNotIn('error', row, row)
+        self.assertEqual((row['title'], row['turnCount'], row['servants']), ('仅回合', 2, []))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertNotIn('team', self.request('GET', '/api/battles/' + quote('仅回合.json'))[1]['data'])
+
+    def test_library_still_reports_broken_json_and_invalid_no_formation_documents(self):
+        invalid = {'损坏.json': '{broken', '标量.json': '[]', '无结构.json': '{}',
+                   '无效策略.json': json.dumps({'maaAdvancedStrategy': {'maxTurns': 0}}),
+                   '非对象策略.json': json.dumps({'maaAdvancedStrategy': []}),
+                   '无效编队.json': json.dumps({'team': False, 'maaAdvancedStrategy': {}}),
+                   '无效回合.json': json.dumps({'actions': 'bad'})}
+        for name, raw in invalid.items():
+            (self.server.storage.battle_dir / name).write_text(raw, 'utf-8')
+        status, listing = self.request('GET', '/api/battles')
+        self.assertEqual(status, 200)
+        rows = {row['name']: row for row in listing['battles']}
+        self.assertEqual(set(rows), set(invalid))
+        for name, raw in invalid.items():
+            with self.subTest(name=name):
+                self.assertIn('error', rows[name])
+                self.assertEqual((self.server.storage.battle_dir / name).read_text('utf-8'), raw)
 
 
 if __name__ == '__main__':
