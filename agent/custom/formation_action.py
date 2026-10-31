@@ -3,8 +3,9 @@
 
 该 Action 仅从编队界面开始工作：读取 Chaldea BattleShareData 后，先拖拽调整
 已有本地从者与助战的位置，再打开从者选择页替换不匹配的本地从者。手动核对
-仅在从者身份相同的情况下复用拖拽换位，不进入从者或礼装仓库。文件末尾的
-原生初始编队入口只复用识别方法，不调用上述编成操作。
+仅在从者身份相同的情况下复用拖拽换位，不进入从者或礼装仓库。数据指定御主
+礼装时，自动编队保存后更换并复核，手动编队只读校验。文件末尾的原生初始
+编队入口只复用识别方法，不调用上述编成操作。
 """
 
 import copy
@@ -35,6 +36,7 @@ if _AGENT_DIR not in sys.path:
     sys.path.insert(0, _AGENT_DIR)
 
 from chaldea import fetch_share_data
+from mystic_code import extract_mystic_code_id, ensure_mystic_code
 from platform_waits import platform_timeout
 from chaldea.servant_aliases import build_servant_lookup, canonical_servants, servant_aliases
 import mfaalog
@@ -356,6 +358,7 @@ class AutoFormationFromChaldea(CustomAction):
             if expected is None:
                 return CustomAction.RunResult(success=False)
             self.expected = expected
+            self.expected_mystic_code_id = extract_mystic_code_id(share_data)
 
             expected_support_count = sum(item["kind"] == "SUPPORT" for item in expected)
             if expected_support_count > 1:
@@ -461,6 +464,10 @@ class AutoFormationFromChaldea(CustomAction):
                 self._fail("formation_confirm_failed: 未能点击编队决定")
                 return CustomAction.RunResult(success=False)
             self._confirm_formation_change_if_present()
+            # 御主礼装入口位于保存后的编队确认页。它独立于从者概念礼装的
+            # auto_equip 选项；自动编队只要指定了御主礼装，就必须更换并复核。
+            if not self._ensure_mystic_code(allow_change=True):
+                return CustomAction.RunResult(success=False)
             self._publish_verified_layout(current)
             mfaalog.info("[自动编队] 编队完成，已点击编队决定")
             return CustomAction.RunResult(success=True)
@@ -524,6 +531,13 @@ class AutoFormationFromChaldea(CustomAction):
             mfaalog.warning(f"[初始编队] 编队结果传递未完成，保留正常识别路径: {exc}")
 
     # ---------- Chaldea 队伍规格 ----------
+
+    def _ensure_mystic_code(self, *, allow_change):
+        if self.expected_mystic_code_id is None:
+            return True
+        return ensure_mystic_code(
+            self, self.expected_mystic_code_id, allow_change=allow_change,
+        )
 
     def _build_expected(self, share_data):
         if not isinstance(share_data, dict) or not isinstance(share_data.get("team"), dict):
@@ -2294,6 +2308,7 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
             if expected is None:
                 return CustomAction.RunResult(success=False)
             self.expected = expected
+            self.expected_mystic_code_id = extract_mystic_code_id(share_data)
 
             expected_support_count = sum(
                 item["kind"] == "SUPPORT" for item in self.expected
@@ -2315,6 +2330,9 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
             if not self._configure_support_target(current, expected_support_count):
                 return CustomAction.RunResult(success=False)
             if not self._manual_identities_match(current):
+                return CustomAction.RunResult(success=False)
+            # 手动编队只校验御主礼装；失败不能继续换位、保存或进入战斗。
+            if not self._ensure_mystic_code(allow_change=False):
                 return CustomAction.RunResult(success=False)
 
             mismatch = self._first_mismatch(current)
