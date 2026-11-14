@@ -817,8 +817,8 @@ class AutoBattleRuntime:
             self._mark_action("order_change")
             if not self.executor.order_change(oc.starting_member_idx, oc.sub_member_idx):
                 return False
-            # 主界面模板可能在换人动画尚未结束时已命中；先确认技能栏稳定，
-            # 再变更身份并发送新成员的技能，避免把点击发进动画。
+            # 先经过固定换人过渡并确认主界面返回，再更新身份、发送后续技能。
+            # 战斗画面持续有动画，不以画面冻结作为换人完成条件。
             if not self._wait_order_change_settled():
                 return False
             front = oc.starting_member_idx - 1
@@ -939,32 +939,23 @@ class AutoBattleRuntime:
         return False
 
     def _wait_order_change_settled(self, *, timeout=None) -> bool:
-        """只为换人等待主界面/技能栏稳定；失败或停止时不提交新阵容。"""
+        """换人或候补入场后等待主界面返回；失败或停止时不提交新阵容。"""
         if self.ctx.tasker.stopping:
             return False
         deadline = time.monotonic() + (_ORDER_CHANGE_RETURN_TIMEOUT_S if timeout is None else timeout)
+        if time.monotonic() >= deadline:
+            return False
         try:
-            mfaalog.diagnostic("[AutoBattle] order change waiting for stable skill bar")
-            detail = self.ctx.run_task("战斗_换人后等待技能栏稳定")
+            mfaalog.diagnostic("[AutoBattle] order change waiting for main battle")
+            detail = self.ctx.run_task("战斗_换人后等待主界面")
             if self.ctx.tasker.stopping or not detail or not detail.status.succeeded:
                 return False
-            node = self.ctx.get_node_object("战斗_换人后主界面与技能栏稳定")
-            param = node.post_wait_freezes
-            remaining_ms = int((deadline - time.monotonic()) * 1000)
-            if (self.ctx.tasker.stopping or param is None or param.time <= 0
-                    or param.timeout <= 0 or remaining_ms < param.time):
+            if time.monotonic() > deadline:
                 return False
-            # MFW 5.14.3 的节点 post_wait_freezes 超时不会使 run_task 失败。
-            # 用相同 Pipeline 参数再做有明确 bool 结果的严格确认，预算共用。
-            stable = self.ctx.wait_freezes(
-                wait_freezes_param=replace(param, timeout=min(param.timeout, remaining_ms)),
-            )
-            if not stable or self.ctx.tasker.stopping or time.monotonic() > deadline:
-                return False
-            mfaalog.diagnostic("[AutoBattle] order change skill bar stable")
+            mfaalog.diagnostic("[AutoBattle] order change main battle returned")
             return True
         except Exception as exc:
-            mfaalog.warning(f"[AutoBattle] order change stability check failed: {exc}")
+            mfaalog.warning(f"[AutoBattle] 换人后未能确认战斗主界面返回: {exc}")
             return False
 
     # 特殊技能子流水线入口与分支归类（自动战斗_特殊技能.json）
