@@ -117,7 +117,7 @@ class AutoBattleRepeatAction(CustomAction):
                     param["battle_count"] = attach["battle_count"]
                     mfaalog.info(f"[auto_battle_repeat] battle_count 来自节点 attach: {attach['battle_count']}")
             except Exception as e:
-                mfaalog.warn(f"[auto_battle_repeat] 读取节点 attach 失败: {e}")
+                mfaalog.warning(f"[auto_battle_repeat] 读取节点 attach 失败: {e}")
 
         battle_count = _parse_battle_count(param)
         reset_hit_nodes = _parse_reset_hit_nodes(param)
@@ -331,7 +331,7 @@ def _parse_reset_hit_nodes(param: dict) -> list[str]:
     
     # 提供了但不是 list：使用默认列表（容错）
     if not isinstance(nodes, list):
-        mfaalog.warn(f"[auto_battle_repeat] reset_hit_nodes 应为 list，实际类型 {type(nodes)}，使用默认值")
+        mfaalog.warning(f"[auto_battle_repeat] reset_hit_nodes 应为 list，实际类型 {type(nodes)}，使用默认值")
         return _DEFAULT_RESET_HIT_NODES.copy()
     
     # 提供了空列表：尊重用户意图，不重置任何节点
@@ -342,7 +342,7 @@ def _parse_reset_hit_nodes(param: dict) -> list[str]:
     # 过滤出字符串元素（容错）
     valid_nodes = [n for n in nodes if isinstance(n, str) and n.strip()]
     if len(valid_nodes) != len(nodes):
-        mfaalog.warn(
+        mfaalog.warning(
             f"[auto_battle_repeat] reset_hit_nodes 中有非字符串元素，"
             f"已过滤（{len(nodes)} -> {len(valid_nodes)}）"
         )
