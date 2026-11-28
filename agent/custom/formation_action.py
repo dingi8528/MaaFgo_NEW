@@ -410,6 +410,7 @@ class AutoFormationFromChaldea(CustomAction):
     """将 Chaldea 队伍编入当前游戏编队。"""
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
+        self._release_run_images()
         try:
             self.context = context
             self._begin_verified_formation_update()
@@ -574,6 +575,20 @@ class AutoFormationFromChaldea(CustomAction):
             return CustomAction.RunResult(success=False)
         finally:
             self._discard_unpublished_formation()
+            self._release_run_images()
+
+    def _release_run_images(self):
+        """注册动作会复用实例，结束本次编队后释放图像及其来源。
+
+        这些属性每次运行都会重新加载，入口处也调用一次，避免本次运行沿用上次的模板或控制器。"""
+        for name in (
+            "_roi_crop_cache", "_tpl_scale_cache", "local_templates", "support_templates",
+            "identity_templates", "equip_team_templates", "equip_list_templates", "equip_database",
+            "support_marker", "edit_marker", "config_marker", "select_page_markers",
+            "formation_confirm_marker", "equip_confirm_marker", "grand_equip_popup_marker",
+            "context", "controller",
+        ):
+            self.__dict__.pop(name, None)
 
     def _begin_verified_formation_update(self):
         """只复用原生任务会话；独立编队/BBC 不创建额外状态。"""
@@ -754,6 +769,8 @@ class AutoFormationFromChaldea(CustomAction):
             mfaalog.warning(f"[自动编队] 读取截图缓存失败: {exc}")
             cached = None
         if cached is not None:
+            # ROI 切片引用整帧，取得新截图后释放上一帧的切片。
+            self.__dict__.pop("_roi_crop_cache", None)
             return cached
         mfaalog.warning("[自动编队] 截图缓存不可用")
         return None
@@ -955,7 +972,7 @@ class AutoFormationFromChaldea(CustomAction):
         if roi is not None:
             # 同帧内同 ROI 的裁剪缓存：一个槽位要匹配几十张模板，
             # 每次重复 scale_roi + 切片是纯浪费；帧内容不变时安全。
-            # 缓存键含 image 的 id，换帧后自动失效。
+            # 切片引用整帧，_shot() 取得新截图时清空本缓存，旧帧才能释放。
             rcache = self.__dict__.setdefault("_roi_crop_cache", {})
             rkey = (id(image), roi)
             cropped = rcache.get(rkey)
@@ -2459,6 +2476,7 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
     """核对当前编队；仅在从者相同而位置不同时执行换位。"""
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
+        self._release_run_images()
         try:
             self.context = context
             self._begin_verified_formation_update()
@@ -2565,6 +2583,7 @@ class ValidateFormationFromChaldea(AutoFormationFromChaldea):
             return CustomAction.RunResult(success=False)
         finally:
             self._discard_unpublished_formation()
+            self._release_run_images()
 
     def _manual_identities_match(self, current):
         expected_counts = Counter(
@@ -2771,8 +2790,6 @@ class FormationIdentityReader(AutoFormationFromChaldea):
     下载 Chaldea 数据、移动或更换成员。实例可复用静态模板，但不保存截图。
     """
 
-    _instance_cache = {}
-
     @classmethod
     def acquire(cls, roots, calibration):
         """按 (roots, calibration) 复用实例。
@@ -2780,12 +2797,13 @@ class FormationIdentityReader(AutoFormationFromChaldea):
         模板索引带 mtime/size 失效检测，但目录扫描与实例重建在
         单次任务内是纯重复开销（几百次 stat + 重复读图）；任务级
         复用可显著降低采样延迟。sx/sy 每帧重置，无跨帧状态残留。"""
-        key = (tuple(roots), calibration)
-        reader = cls._instance_cache.get(key)
-        if reader is None:
-            reader = cls(roots, calibration)
-            cls._instance_cache[key] = reader
-        return reader
+        return cls._acquire(tuple(roots), calibration)
+
+    # 容量与 _cached_identity_index 一致；被淘汰的读图器连同其模板一起释放。
+    @classmethod
+    @lru_cache(maxsize=2)
+    def _acquire(cls, roots, calibration):
+        return cls(roots, calibration)
 
     def __init__(self, roots, calibration=None, catalog_path=None):
         self.image_roots = list(roots)
@@ -2911,7 +2929,11 @@ class FormationIdentityReader(AutoFormationFromChaldea):
         if image is None:
             raise ValueError("screenshot_unavailable")
         height, width = image.shape[:2]
-        self.sx, self.sy = width / BASE_W, height / BASE_H
+        scale = width / BASE_W, height / BASE_H
+        if scale != (self.sx, self.sy):
+            # 读图器跨帧复用，换分辨率后旧尺寸的缩放模板不会再命中。
+            self.__dict__.pop("_tpl_scale_cache", None)
+        self.sx, self.sy = scale
         if width < BASE_W // 2 or abs(self.sx / self.sy - 1) > 0.015:
             raise ValueError("unsupported_formation_layout")
         confirm = self._match_template(image, self.config_marker)
