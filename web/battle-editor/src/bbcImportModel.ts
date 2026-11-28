@@ -1,4 +1,4 @@
-import {assertEditable,members,memberLabel,servantFor} from './model';
+import {assertEditable,isSupportMember,members,memberLabel,servantFor} from './model';
 import type {Catalog,Json} from './model';
 import {equipCandidatesForDisplay} from './equipRequirements';
 import {grandBondEffectLabel} from './grandBondEffect';
@@ -41,7 +41,7 @@ export function bbcPreview(data:Json,catalog:Catalog) {
     return {id:requirement.id,name:candidates.length>1?`${label} · ${candidateIndex?'或':'候选'} ${candidateIndex+1}/${candidates.length}：${baseName} · ${details}`:baseName,image:item?.image,sourceKey:key,candidateIndex,candidateCount:candidates.length};
    });
   });
-  return {slot:index,name:member?memberLabel(member,catalog):'不要求此位置',image:servant?.image,support:['friend','npc','fixed'].includes(member?.supportType),equips,...grandRequirementPreview(member)};
+  return {slot:index,name:member?memberLabel(member,catalog):'不要求此位置',image:servant?.image,support:isSupportMember(member),equips,...grandRequirementPreview(member)};
  });
  const actions:Json[]=data.actions??[],mysticId=data.team?.mysticCode?.mysticCodeId;
  return {roster,title:typeof data.team?.name==='string'?data.team.name:'BBC 导入方案',turns:actions.filter(a=>a.type==='attack').length,skills:actions.filter(a=>a.type==='skill').length,cards:actions.filter(a=>a.type==='attack').reduce((count,a)=>count+(Array.isArray(a.attacks)?a.attacks.filter((card:Json)=>card.isAuto!==true).length:0),0),mystic:catalog.mysticCodes.find(m=>m.id===mysticId)?.name??(mysticId?`御主服 #${mysticId}`:'未指定御主服')};

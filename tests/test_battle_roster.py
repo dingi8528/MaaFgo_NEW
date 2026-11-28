@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from formation_test_support import battle_action as action
+from agent.battle_editor.validation import validate_battle
 
 
 def members(*servant_ids):
@@ -22,6 +23,75 @@ def snapshot(*servant_ids, statuses=None):
 
 
 class ChaldeaRosterTests(unittest.TestCase):
+    def test_laplace_replay_maps_actions_across_empty_front_slot(self):
+        share = {
+            "minBuild": 933, "appBuild": 992,
+            "team": {"onFieldSvts": members(None, 4000100, 101800),
+                     "backupSvts": members(None, None, None),
+                     "mysticCode": {"mysticCodeId": 210}},
+            "actions": [
+                {"type": "skill", "svt": 1, "skill": 1, "options": {"playerTarget": 0}},
+                {"type": "skill", "skill": 0, "options": {"playerTarget": 1}},
+                {"type": "attack", "attacks": [
+                    {"svt": 1, "isTD": True}, {"svt": 0, "card": 3, "cardType": 2}, {"isAuto": True},
+                ]},
+                {"type": "attack", "attacks": [{"svt": 0, "isTD": True}]},
+            ],
+        }
+        report = validate_battle(share)
+        self.assertTrue(report["valid"], report["issues"])
+        plan, roster = action._battle_setup_from_chaldea_share({"chaldea_share": share})
+        self.assertEqual(roster, (None, "4000100", "101800", None, None, None))
+        first, second = plan.turns
+        skill = first.servant_skills[0]
+        self.assertEqual((skill.servant_slot, skill.skill_index, skill.target_ally), (3, 2, 2))
+        self.assertEqual(first.master_skills[0].target_ally, 3)
+        self.assertEqual(first.np_order, (3,))
+        self.assertEqual([card.servant_slot for card in first.card_sequence], [3, 2, 0])
+        self.assertEqual(second.np_order, (2,))
+
+    def test_laplace_swap_accounts_for_front_hole_and_consumed_backup_positions(self):
+        share = {
+            "minBuild": 933, "appBuild": 992,
+            "team": {"onFieldSvts": members(100100, None, 200100),
+                     "backupSvts": members(300100, None, 400100),
+                     "mysticCode": {"mysticCodeId": 210}},
+            "actions": [{"type": "skill", "skill": 2},
+                        {"type": "skill", "svt": 1, "skill": 0}],
+            "delegate": {"replaceMemberIndexes": [[1, 1]]},
+        }
+        plan, roster = action._battle_setup_from_chaldea_share({"chaldea_share": share})
+        self.assertEqual(roster, ("100100", "200100", "300100", None, None, "400100"))
+        turn = plan.turns[0]
+        self.assertEqual((turn.order_change.starting_member_idx, turn.order_change.sub_member_idx), (2, 6))
+        self.assertEqual(turn.servant_skills[0].servant_slot, 2)
+
+    def test_local_actions_keep_fixed_slots(self):
+        share = {"team": {"onFieldSvts": members(None, 4000100, 101800)},
+                 "actions": [{"type": "skill", "svt": 1, "skill": 1, "options": {"playerTarget": 1}}]}
+        plan = action._build_plan_from_share(share)
+        self.assertEqual(plan.turns[0].servant_skills[0].servant_slot, 2)
+
+    def test_laplace_bound_retirement_and_replacement_keep_physical_actor_slots(self):
+        share = {
+            "minBuild": 933, "appBuild": 992,
+            "team": {"onFieldSvts": members(None, 100100, 200100),
+                     "backupSvts": members(300100, None, 400100)},
+            "actions": [
+                {"type": "retire", "svt": 1, "actor": {"initialSlot": 1, "svtId": 200100}},
+                {"type": "skill", "svt": 1, "skill": 0, "actor": {"initialSlot": 4, "svtId": 400100}},
+                {"type": "attack", "attacks": [{"svt": 1, "card": -1, "isTD": True,
+                                               "actor": {"initialSlot": 4, "svtId": 400100}}]},
+            ],
+        }
+        report = validate_battle(share)
+        self.assertTrue(report["valid"], report["issues"])
+        plan, _ = action._battle_setup_from_chaldea_share({"chaldea_share": share})
+        retirement, skill = plan.turns[0].skill_sequence
+        self.assertEqual((retirement.servant_slot, retirement.actor.initial_slot), (2, 1))
+        self.assertEqual((skill.servant_slot, skill.actor.initial_slot), (2, 5))
+        self.assertEqual(plan.turns[0].card_sequence[0].actor.initial_slot, 5)
+
     def test_three_front_and_three_backup_members_keep_six_slots(self):
         share = {"team": {
             "onFieldSvts": members(505300, 2500900, 402700),

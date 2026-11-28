@@ -7,9 +7,11 @@ import {bindSpecialSkillChoices,rebuildSpecialSkillChoices,markSpecialSkillChoic
 import type {SpecialSkillChoiceBinding,SpecialSkillChoiceCatalog} from './specialSkillChoices';
 import {matchEquipAdvanced} from './equipFilters';
 import type {EquipAdvancedFilters,EquipFilterCatalog,EquipFilterMetadata} from './equipFilters';
-import {actionRosterAt,actorBinding,availableActionActor,bindActionActors,isRetire,materializeActionActors,resolveActionActor,usesActorGuards,validActorBinding} from './actionRoster';
+import {actionRosterAt,actionSlotLayout,actorBinding,availableActionActor,battleSlotNumber,bindActionActors,initialActionRoster,isRetire,materializeActionActors,resolveActionActor,usesActorGuards,validActorBinding} from './actionRoster';
 import type {ActionActor,ActorCardBinding} from './actionRoster';
+import {hasServantIdentity,isUnspecifiedSupport,isSupportMember,partyMembers} from './partyMembers';
 export {isRetire} from './actionRoster';
+export {hasServantIdentity,isUnspecifiedSupport,isSupportMember} from './partyMembers';
 
 export type Json = Record<string, any>;
 export interface ServantBond {tags?:string[]|null;tags_by_ascension?:Record<string,string[]>|null;tags_by_costume?:string[]|Record<string,string[]>|null;alignment?:string|null;attribute?:string|null;gender?:string|null;sub_attribute?:string|null;[key:string]:unknown}
@@ -24,12 +26,6 @@ export interface Turn {entries:Entry[]}
 export const clone = <T,>(v:T):T => structuredClone(v);
 export const newBattle = ():Json => ({team:{name:'未命名方案',onFieldSvts:[null,null,null],backupSvts:[null,null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[],maaAdvancedStrategy:defaultAdvancedStrategy()});
 export const newServantDefaults=():Json=>({supportType:'none',skillLvs:[10,10,10],appendLvs:[0,0,0,0,0]});
-export function hasServantIdentity(member:Json|null|undefined):member is Json&{svtId:number} {
- return typeof member?.svtId==='number'&&Number.isSafeInteger(member.svtId)&&member.svtId>0;
-}
-export function isUnspecifiedSupport(member:Json|null|undefined):boolean {
- return member?.supportType==='friend'&&(member.svtId==null||member.svtId===0);
-}
 export function memberLabel(member:Json|null|undefined,catalog:Catalog):string {
  if(isUnspecifiedSupport(member))return '助战（仅要求礼装）';
  if(hasServantIdentity(member)){const servant=servantFor(catalog,member!.svtId,member);return servant?`${servant.name}${servant.formLabel?`【${servant.formLabel}】`:''}`:`从者 #${member!.svtId}`;}
@@ -40,11 +36,12 @@ export function clearSupportServantRequirement(member:Json):void {
  if(member?.supportType!=='friend')throw new Error('仅好友助战支持不要求从者。');
  for(const key of ['svtId','limitCount','transformVal','skillLvs','skillIds','appendLvs','tdId','tdLv','lv','atkFou','hpFou','fixedAtk','fixedHp','cardStrengthens','commandCodeIds','disabledExtraSkills','allowedExtraSkills','customPassives','customPassiveLvs'])delete member[key];
 }
-export function setMemberEquipRequirement(data:Json,slot:number,key:string,id:number,newTeamDefault=false):void {
+export function setMemberEquipRequirement(data:Json,slot:number,key:string,id:number,newTeamDefault=false,createSupport=false):void {
  if(!Number.isInteger(slot)||slot<0||slot>=6||!['equip1','equip2','equip3'].includes(key)||!Number.isSafeInteger(id)||id<=0)throw new Error('礼装或槽位无效，请重新选择。');
  let member=members(data)[slot];
+ if(createSupport&&(member||key!=='equip1'||members(data).some(isSupportMember)))throw new Error('无法在这个位置新增助战。请确认槽位为空，且队伍中没有其他助战，再选择礼装。');
  if(!member){
-  if(newTeamSupportSlot(data,newTeamDefault)!==slot)throw new Error('请先选择从者，或将这个位置设为仅要求礼装的助战。');
+  if(!createSupport&&newTeamSupportSlot(data,newTeamDefault)!==slot)throw new Error('请先选择从者，或将这个位置设为仅要求礼装的助战。');
   member={supportType:'friend'};
  }
  setEquipCandidate(member,key,0,id);setMember(data,slot,member);
@@ -59,11 +56,11 @@ export function assertEditable(value:any):asserts value is Json {
  if(value.delegate!=null&&!object(value.delegate))throw new Error('delegate 必须是对象或 null。');
  for(const a of value.actions??[]){if(a?.type==='attack'&&a.attacks!=null){if(!Array.isArray(a.attacks))throw new Error('attack.attacks 必须是数组。');if(a.attacks.some((c:any)=>!object(c)))throw new Error('attack.attacks 包含无效出卡项，请先修正。');}if(['skill','attack'].includes(a?.type)&&a.options!=null&&!object(a.options))throw new Error('动作 options 必须是对象或 null。');}
 }
-export const members = (data:Json):any[] => [...Array.from({length:3},(_,i)=>data.team?.onFieldSvts?.[i]??null),...Array.from({length:3},(_,i)=>data.team?.backupSvts?.[i]??null)];
+export const members = (data:Json):any[] => partyMembers(data);
 /** A new editor session may suggest support without recording a member in an empty slot. */
 export function newTeamSupportSlot(data:Json,enabled:boolean):0|null {
  const roster=members(data);
- return enabled===true&&roster[0]===null&&!roster.some(m=>m&&['friend','npc','fixed'].includes(m.supportType))?0:null;
+ return enabled===true&&roster[0]===null&&!roster.some(isSupportMember)?0:null;
 }
 export function restoreNewTeamFirstSupport(value:unknown,sourceName?:unknown):boolean {
  return value===true&&(sourceName==null||sourceName==='');
@@ -229,7 +226,7 @@ export function rosterAt(data:Json,index:number):any[] {
  return actionRosterAt(data,index).map(actor=>actor.member);
 }
 export function actionMemberAt(data:Json,index:number,raw:any=data.actions?.[index]):Json|null {
- if(validActorBinding(raw?.actor)){const member=members(data)[raw.actor.initialSlot]??null;return raw.actor.svtId!==undefined&&member?.svtId!==raw.actor.svtId?{svtId:raw.actor.svtId}:member;}
+ if(validActorBinding(raw?.actor)){const member=initialActionRoster(data)[raw.actor.initialSlot]?.member??null;return member?.svtId!==raw.actor.svtId?{svtId:raw.actor.svtId}:member;}
  return actionRosterAt(data,index)[raw?.svt]?.member??null;
 }
 export function bindEntryActor(entry:Entry,data:Json,svt:number|null):void {
@@ -249,7 +246,7 @@ export function bindCardActor(card:Json,data:Json,index:number):void {
 }
 export function retirementInfoAt(data:Json,index:number,_catalog?:Catalog):{slot:number;member:Json|null;replacement:Json|null;initialSlot:number|null;replacementInitialSlot:number|null;valid:boolean;error?:string}{
  const raw=data.actions?.[index],roster=actionRosterAt(data,index),resolved=resolveActionActor(roster,raw),replacement=roster.find((actor,slot)=>slot>=3&&availableActionActor(actor)),error=!isRetire(raw)?'不是退场动作':resolved.issue?.message??(!availableActionActor(resolved.actor)?'退场位置没有从者':!replacement?'没有可递补的未退场候补成员':undefined);
- return {slot:raw?.svt,member:actionMemberAt(data,index,raw),replacement:replacement?.retired?null:replacement?.member??null,initialSlot:resolved.actor?.initialSlot??null,replacementInitialSlot:replacement?.retired?null:replacement?.initialSlot??null,valid:!error,...(error?{error}:{})};
+ return {slot:battleSlotNumber(data,raw?.svt)-1,member:actionMemberAt(data,index,raw),replacement:replacement?.retired?null:replacement?.member??null,initialSlot:resolved.actor?.initialSlot??null,replacementInitialSlot:replacement?.retired?null:replacement?.initialSlot??null,valid:!error,...(error?{error}:{})};
 }
 export const titleOf=(data:Json)=>String(data.team?.name||'未命名方案');
 export const colorOf=(value:any):number => ({arts:1,buster:2,quick:3} as any)[String(value).toLowerCase()]??Number(value);
@@ -296,13 +293,29 @@ export function makeCard(svt:number,type:number|'np',roster:any[],catalog:Catalo
 export function move<T>(array:T[],from:number,to:number):T[] {const a=[...array];if(to<0||to>=a.length)return a;const [v]=a.splice(from,1);a.splice(to,0,v);return a;}
 export function actionTitle(entry:Entry,data:Json,catalog:Catalog):string {
  const a=entry.raw;if(a?.type==='attack')return '攻击 · 回合结束';if(isRetire(a))return `${memberLabel(actionMemberAt(data,entry.index,a),catalog)} · 从者退场`;if(isSwap(data,a))return '御主技能 3 · 换人';if(a?.type!=='skill')return `保留动作 · ${a?.type??'未知类型'}`;
- if(a.svt==null){const skills=catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId)?.skills;const skill=skills?.find(s=>s.num===a.skill+1)??skills?.find((s,i)=>s.num==null&&i===a.skill);return `御主 · ${skill?.name??`技能 ${Number(a.skill)+1}`}`;}const member=actionMemberAt(data,entry.index,a),servant=servantFor(catalog,member?.svtId);const name=memberLabel(member,catalog);if(!hasServantIdentity(member))return `前排 ${Number(a.svt)+1} · ${name} · 未指定从者，无法安排技能`;return `前排 ${Number(a.svt)+1} · ${name} · ${skillAt(member,servant,a.skill)?.name??`技能 ${Number(a.skill)+1}`}`;
+ if(a.svt==null){const skills=catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId)?.skills;const skill=skills?.find(s=>s.num===a.skill+1)??skills?.find((s,i)=>s.num==null&&i===a.skill);return `御主 · ${skill?.name??`技能 ${Number(a.skill)+1}`}`;}const member=actionMemberAt(data,entry.index,a),servant=servantFor(catalog,member?.svtId);const name=memberLabel(member,catalog),slot=battleSlotNumber(data,Number(a.svt));if(!hasServantIdentity(member))return `前排 ${slot} · ${name} · 未指定从者，无法安排技能`;return `前排 ${slot} · ${name} · ${skillAt(member,servant,a.skill)?.name??`技能 ${Number(a.skill)+1}`}`;
 }
 export function remapSlots(data:Json,first:number,second:number) { // Only safe while no order changes or unknown actions exist.
  if((data.actions??[]).some((a:any)=>!['attack','skill'].includes(a?.type)||isSwap(data,a)))throw new Error('存在换人或未知动作，不能可靠重映射角色。请使用保留槽位指向。');
  if(first>=3||second>=3) {if((data.actions??[]).length)throw new Error('前排与候补交换会改变执行资格，不能自动重映射。请逐项检查后保留槽位指向。');}
- const map=(n:any)=>n===first?second:n===second?first:n;
+ const {partySlots:before,laplaceFrontCount}=actionSlotLayout(data),roster=members(data);
+ setMember(data,first,roster[second]);setMember(data,second,roster[first]);
+ const after=actionSlotLayout(data).partySlots;
+ const map=(n:any)=>{
+  const partySlot=before[n];
+  if(partySlot==null)return n;
+  const next=after.indexOf(partySlot===first?second:partySlot===second?first:partySlot);
+  return next<0?n:next;
+ };
  const remapActor=(raw:any)=>{if(validActorBinding(raw?.actor))raw.actor.initialSlot=map(raw.actor.initialSlot);};
- for(const a of data.actions??[]){if(a.type==='skill'){if(a.svt!=null)a.svt=map(a.svt);remapActor(a);if(a.options?.playerTarget!=null)a.options.playerTarget=map(a.options.playerTarget);}else if(a.type==='attack')for(const card of a.attacks??[])if(!isAutoAttackCard(card)){card.svt=map(card.svt);remapActor(card);}}
- const roster=members(data);setMember(data,first,roster[second]);setMember(data,second,roster[first]);
+ for(const a of data.actions??[]){
+  if(a.type==='skill'){
+   if(a.svt!=null)a.svt=map(a.svt);
+   remapActor(a);
+   const target=a.options?.playerTarget;
+   if(target!=null)a.options.playerTarget=map(laplaceFrontCount!==null&&Number.isInteger(target)&&target>=laplaceFrontCount&&target<=5?0:target);
+  }else if(a.type==='attack'){
+   for(const card of a.attacks??[])if(!isAutoAttackCard(card)){card.svt=map(card.svt);remapActor(card);}
+  }
+ }
 }

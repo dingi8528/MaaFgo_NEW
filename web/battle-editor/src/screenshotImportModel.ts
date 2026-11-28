@@ -1,10 +1,11 @@
-import {assertEditable,members,memberLabel,servantFor,turnsOf} from './model';
+import {assertEditable,isSupportMember,members,memberLabel,servantFor,turnsOf} from './model';
 import type {Catalog,Json} from './model';
 import {equipCandidatesForDisplay} from './equipRequirements';
 
 export const IMAGE_ACCEPT='image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
 export const MAX_IMAGE_BYTES=16*1024*1024;
 export interface ScreenshotSlot {slot:number;servantId:number|null;status:'empty'|'identified'|'unknown';support:boolean;equipId?:number|null;equipStatus?:'empty'|'identified'|'unknown';score?:number;equipScore?:number}
+export const canBeScreenshotSupport=(slot:ScreenshotSlot):boolean=>slot.servantId!=null||slot.equipId!=null;
 export interface ScreenshotMysticCode {id:number|null;status:'identified'|'unknown';score?:number}
 export interface ScreenshotResult {kind?:'screenshot';slots:ScreenshotSlot[];mysticCode?:ScreenshotMysticCode;warnings:string[];elapsedMs?:number;sourceSize?:number[]}
 export interface ShareImageResult {kind:'share';schema:1;data:Json;warnings:string[];validation:Json|null;title?:string;elapsedMs?:number}
@@ -34,7 +35,7 @@ export function readScreenshotResult(value:any):ScreenshotResult {
  const id=(v:any)=>v==null||(typeof v==='number'&&Number.isSafeInteger(v)&&v>0);
  if(!value||!Array.isArray(value.slots)||value.slots.length!==6||value.slots.some((s:any,i:number)=>!s||s.slot!==i||!id(s.servantId)||!id(s.equipId)||!['empty','identified','unknown'].includes(s.status)||typeof s.support!=='boolean'))throw new Error('识别结果不完整，请重新识别。');
  const {mysticCode:rawMystic,...rest}=value,mysticCode=readScreenshotMysticCode(rawMystic);
- return {...rest,...(mysticCode?{mysticCode}:{}),slots:value.slots.map((s:ScreenshotSlot)=>({...s})),warnings:Array.isArray(value.warnings)?value.warnings.filter((s:any)=>typeof s==='string'):[]};
+ return {...rest,...(mysticCode?{mysticCode}:{}),slots:value.slots.map((s:ScreenshotSlot)=>({...s,support:s.support&&canBeScreenshotSupport(s)})),warnings:Array.isArray(value.warnings)?value.warnings.filter((s:any)=>typeof s==='string'):[]};
 }
 /** Full plans from share markers or Chaldea IDs must never pass through screenshotTeam. */
 export function readImageImportResult(value:any):ImageImportResult {
@@ -55,7 +56,7 @@ export function readImageImportResult(value:any):ImageImportResult {
 export function shareImagePreview(data:Json,catalog:Catalog) {
  const roster=members(data).map((member,slot)=>{
   const servant=member?.svtId?servantFor(catalog,member.svtId,member):undefined;
-  const supportType=member?.supportType;
+  const supportType=isSupportMember(member)?member?.supportType:undefined;
   const supportLabel=supportType==='friend'?'好友助战':supportType==='npc'?'NPC 助战':supportType==='fixed'?'固定助战':'';
   const equips=['equip1','equip2','equip3'].flatMap((key,equipIndex)=>{
    if(member?.grandSvt===true&&key==='equip2')return [];

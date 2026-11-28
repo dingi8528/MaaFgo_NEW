@@ -111,21 +111,30 @@ class CeOnlySupportValidationTests(unittest.TestCase):
             self.assertNotIn('missing_support', {issue['code'] for issue in report['issues']})
             self.assertEqual(data, before)
 
-    def test_unidentified_owned_npc_fixed_or_boolean_identity_is_rejected(self):
-        for kind in ('none', 'npc', 'fixed'):
-            for identity in ({}, {'svtId': None}, {'svtId': 0}):
-                self.assertTrue(errors(validate_battle(team({'supportType': kind, **identity}))))
+    def test_empty_roles_are_ignored_but_malformed_ids_are_rejected(self):
+        data = team()
+        data['team']['onFieldSvts'][2] = {'supportType': 'friend'}
+        data['team']['backupSvts'] = [
+            {'supportType': 'npc', 'svtId': None}, {'supportType': 'fixed', 'svtId': 0},
+            {},
+        ]
+        before = copy.deepcopy(data)
+        self.assertTrue(validate_battle(data)['valid'])
+        self.assertEqual(data, before)
         for value in (False, True, -1, '0'):
             self.assertTrue(errors(validate_battle(team({'supportType': 'friend', 'svtId': value}))))
 
-    def test_missing_filters_and_ignored_identity_requirements_are_explicit_warnings(self):
+    def test_stale_identity_requirements_do_not_fill_a_slot(self):
         data = team({'supportType': 'friend', 'lv': 90, 'tdLv': 5, 'skillLvs': [10] * 3,
                      'appendLvs': [0] * 5, 'future': {'keep': [None]}})
         report = validate_battle(data)
         self.assertTrue(report['valid'], report)
         codes = {issue['code'] for issue in report['issues'] if issue['severity'] == 'warning'}
-        self.assertIn('unrestricted_support', codes)
-        self.assertIn('unspecified_support_attributes', codes)
+        self.assertIn('missing_support', codes)
+        self.assertEqual(report['summary']['servants'], 1)
+        data['team']['onFieldSvts'][0]['equip1'] = {'id': 1}
+        self.assertIn('unspecified_support_attributes',
+                      {issue['code'] for issue in validate_battle(data)['issues']})
         zero = validate_battle(team({'supportType': 'friend', 'skillLvs': [0] * 3,
                                     'appendLvs': [0] * 5, 'equip1': {'id': 1}}))
         self.assertNotIn('unspecified_support_attributes', {issue['code'] for issue in zero['issues']})
@@ -181,6 +190,13 @@ class CeOnlySupportFormationTests(unittest.TestCase):
         self.assertTrue(action._matches(expected[0], actual[0]))
         action._get_servant_info.assert_called_once_with(100100)
         self.assertEqual(data, before)
+
+    def test_role_markers_on_empty_slots_do_not_affect_formation(self):
+        data = team({'supportType': 'friend', 'svtId': 100100})
+        data['team']['onFieldSvts'][2] = {'supportType': 'friend'}
+        data['team']['backupSvts'] = [{'supportType': 'friend', 'svtId': 0}] * 3
+        self.assertEqual([slot['kind'] for slot in self.action()._build_expected(data)],
+                         ['SUPPORT', 'LOCAL', 'EMPTY', 'EMPTY', 'EMPTY', 'EMPTY'])
 
     def test_specific_support_and_substitution_still_require_actual_identity(self):
         action = self.action();action.expected = action._build_expected(team({'supportType': 'friend', 'svtId': 100100}))

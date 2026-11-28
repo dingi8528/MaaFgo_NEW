@@ -10,6 +10,7 @@ import {cardPreviewRegion,artworkColor} from './npCardRequest';
 import type {CardPreviewConfig} from './npCardRequest';
 import './battleSummary.css';
 import {specialSkillChoiceLabel} from './specialSkillChoices';
+import {battleSlotNumber,resolveAllyTarget} from './actionRoster';
 import './specialSkillChoices.css';
 
 function SummaryPortrait({src,label}:{src?:string|null;label:string}) {
@@ -21,10 +22,10 @@ function SummaryPortrait({src,label}:{src?:string|null;label:string}) {
 }
 
 const validFront=(slot:unknown):slot is number=>Number.isInteger(slot)&&Number(slot)>=0&&Number(slot)<3;
-function SummaryMember({roster,slot,catalog,backup=false,memberOverride}:{roster:any[];slot:unknown;catalog:Catalog;backup?:boolean;memberOverride?:Json|null}) {
+function SummaryMember({data,roster,slot,catalog,backup=false,memberOverride}:{data:Json;roster:any[];slot:unknown;catalog:Catalog;backup?:boolean;memberOverride?:Json|null}) {
  const valid=backup?Number.isInteger(slot)&&Number(slot)>=3&&Number(slot)<6:validFront(slot);
  const member=memberOverride===undefined?(valid?roster[Number(slot)]:undefined):memberOverride,servant=hasServantIdentity(member)?servantFor(catalog,member.svtId,member):undefined;
- const position=valid?`${backup?'候补':'前排'} ${Number(slot)-(backup?3:0)+1}`:`无效${backup?'候补':'前排'} ${String(slot??'未指定')}`;
+ const position=valid?`${backup?'候补':'前排'} ${battleSlotNumber(data,Number(slot))-(backup?3:0)}`:`无效${backup?'候补':'前排'} ${String(slot??'未指定')}`;
  const name=memberLabel(member,catalog);
  return <span className={`summary-person ${!hasServantIdentity(member)?'summary-unresolved':''}`} title={`${position} · ${name}`}>
   <SummaryPortrait src={servant?.image} label={hasServantIdentity(member)?name:'?'}/>
@@ -55,7 +56,7 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
     return <span className="summary-card-step" key={i}>
      {i>0&&<ArrowRight size={14} className="summary-arrow" aria-label="然后"/>}
      <span className="summary-card-item" title={card?.isTD?np?.name:label}>
-      <SummaryMember roster={roster} slot={card?.svt} catalog={catalog} memberOverride={member}/>
+      <SummaryMember data={data} roster={roster} slot={card?.svt} catalog={catalog} memberOverride={member}/>
       {actorPresent?<CardArtwork member={member} np={np} color={color} kind={card?.isTD?'np':'face'} region={region} config={config} className="summary-card-artwork"/>:<FileQuestion size={20} className="summary-unresolved" aria-hidden="true"/>}
       <span className="summary-card-label">{label}</span>
      </span>
@@ -65,7 +66,7 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
  }
  if(isRetire(raw)){
   const retirement=retirementInfoAt(data,entry.index,catalog);
-  return <div className="summary-action summary-retirement"><SummaryMember roster={roster} slot={raw.svt} catalog={catalog} memberOverride={retirement.member}/><span className="summary-action-label"><UserRoundMinus size={17}/>退场 · 移至队伍末尾</span><ArrowRight size={16} className="summary-arrow" aria-label="递补"/><SummaryMember roster={roster} slot={raw.svt} catalog={catalog} memberOverride={retirement.replacement}/><span className="summary-muted">递补进场</span>{!retirement.valid&&<span className="summary-retirement-error">{retirement.error}</span>}</div>;
+  return <div className="summary-action summary-retirement"><SummaryMember data={data} roster={roster} slot={raw.svt} catalog={catalog} memberOverride={retirement.member}/><span className="summary-action-label"><UserRoundMinus size={17}/>退场 · 移至队伍末尾</span><ArrowRight size={16} className="summary-arrow" aria-label="递补"/><SummaryMember data={data} roster={roster} slot={raw.svt} catalog={catalog} memberOverride={retirement.replacement}/><span className="summary-muted">递补进场</span>{!retirement.valid&&<span className="summary-retirement-error">{retirement.error}</span>}</div>;
  }
  if(raw?.type!=='skill')return <div className="summary-action summary-unresolved"><FileQuestion size={16} aria-hidden="true"/>{actionTitle(entry,data,catalog)}</div>;
  const mystic=catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId),master=raw.svt==null;
@@ -75,15 +76,16 @@ function SummaryEntry({entry,data,catalog,region,config}:{entry:Entry;data:Json;
  const swap=isSwap(data,raw),name=swap?'换人':!actorPresent?'未指定从者，无法安排技能':meta?.name??(validSkill?`技能 ${raw.skill+1}`:`未支持技能 ${String(raw.skill)}`);
  const pair=entry.replacement,front=Array.isArray(pair)?pair[0]:undefined,back=Array.isArray(pair)?pair[1]:undefined;
  const backup=Number.isInteger(back)?back<3?back+3:back:undefined;
+ const target=resolveAllyTarget(data,raw.options?.playerTarget);
  return <div className={`summary-action ${swap?'summary-swap':''}`}>
-  {master?<span className="summary-person" title={mystic?.name??'御主礼装未指定'}><SummaryPortrait src={mystic?.image} label="御主"/><span>御主</span></span>:<SummaryMember roster={roster} slot={raw.svt} catalog={catalog} memberOverride={member}/>}
+  {master?<span className="summary-person" title={mystic?.name??'御主礼装未指定'}><SummaryPortrait src={mystic?.image} label="御主"/><span>御主</span></span>:<SummaryMember data={data} roster={roster} slot={raw.svt} catalog={catalog} memberOverride={member}/>}
   <span className="summary-muted">{swap?'使用':'使用技能'}</span>
   <span className="summary-skill" title={name}>{validSkill&&actorPresent?<SkillIcon skill={meta?{...meta,name}:undefined} index={raw.skill}/>:<Shield size={24} aria-hidden="true"/>}<span>{name}</span></span>
   {specialSkillChoiceLabel(entry,catalog)&&<span className="special-choice-badge">{specialSkillChoiceLabel(entry,catalog)}</span>}
   {swap?<span className="summary-swap-pair">
-   {validFront(front)&&backup!=null&&backup>=3&&backup<6?<><SummaryMember roster={roster} slot={front} catalog={catalog}/><ArrowLeftRight size={16} className="summary-arrow" aria-label="交换"/><SummaryMember roster={roster} slot={backup} backup catalog={catalog}/></>:<span className="summary-unresolved">换人位置未配对或无效</span>}
+   {validFront(front)&&backup!=null&&backup>=3&&backup<6?<><SummaryMember data={data} roster={roster} slot={front} catalog={catalog}/><ArrowLeftRight size={16} className="summary-arrow" aria-label="交换"/><SummaryMember data={data} roster={roster} slot={backup} backup catalog={catalog}/></>:<span className="summary-unresolved">换人位置未配对或无效</span>}
   </span>:<>
-   {raw.options?.playerTarget!=null&&<span className="summary-recipient"><ArrowRight size={16} className="summary-arrow" aria-label="目标"/><SummaryMember roster={roster} slot={raw.options.playerTarget} catalog={catalog}/></span>}
+   {raw.options?.playerTarget!=null&&<span className="summary-recipient"><ArrowRight size={16} className="summary-arrow" aria-label="目标"/><SummaryMember data={data} roster={roster} slot={target??raw.options.playerTarget} catalog={catalog}/></span>}
    {raw.options?.enemyTarget!=null&&<SummaryEnemy value={raw.options.enemyTarget}/>}
   </>}
  </div>;

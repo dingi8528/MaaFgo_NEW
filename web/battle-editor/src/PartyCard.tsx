@@ -1,7 +1,7 @@
 import {useEffect,useState} from 'react';
 import type {PointerEvent as ReactPointerEvent} from 'react';
 import {GripVertical,Plus,UserRound,ShieldCheck,X} from 'lucide-react';
-import {skillAt,hasServantIdentity,isUnspecifiedSupport,memberLabel} from './model';
+import {skillAt,hasServantIdentity,isUnspecifiedSupport,isSupportMember,memberLabel} from './model';
 import type {Catalog,Json,Servant} from './model';
 import {equipCandidatesForDisplay,equipForDisplay,hasStoredEquipRequirement,supportsEquipCandidates} from './equipRequirements';
 import type {EquipDragPosition} from './equipDrag';
@@ -60,7 +60,7 @@ export function PartyCard({member,servant,catalog,index,defaultSupport=false,sel
  onBondEffectChange:(value:GrandBondEffect)=>void;
  equipDrag:{dragged:EquipDragPosition|null;target:EquipDragPosition|null;bindEquip:(position:EquipDragPosition)=>PartyCardDragBindings};
 }&PartyCardDragBindings) {
- const support=member?.supportType&&member.supportType!=='none',identified=hasServantIdentity(member),unspecified=isUnspecifiedSupport(member);
+ const support=isSupportMember(member),identified=hasServantIdentity(member),unspecified=isUnspecifiedSupport(member);
  const ceKeys:EquipDragPosition['key'][]=member?.grandSvt?['equip1','equip2','equip3']:['equip1'];
  return <article className={`fgo-member-card ${selected?'selected':''} ${!member?'empty':''} ${dragging?'dragging party-drag-placeholder':''} ${dropTarget?'drop-target':''}`} draggable data-slot={index} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver} onDrop={onDrop} onPointerDownCapture={onPointerDownCapture} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerCancel} onLostPointerCapture={onLostPointerCapture} onClickCapture={onClickCapture} aria-label={`编队槽位 ${index+1}`}>
   <div className="fgo-card-order"><button className="slot-select" onPointerDown={onPointerStart} onClick={onSelect} aria-label={`编辑槽位 ${index+1} 属性`}><span>{['1st','2nd','3rd','4th','5th','6th'][index]}</span><small>{index<3?'前排':'候补'}</small></button><span className="member-drag-handle" onPointerDown={onPointerStart} title="拖动交换整位从者与礼装"><GripVertical size={15}/></span>{member&&<button type="button" className="fgo-member-clear" data-no-drag="" draggable={false} aria-label={`清除槽位 ${index+1} 从者要求`} title="清除此位置的从者与礼装要求（不要求此位置）" onPointerDown={event=>event.stopPropagation()} onDragStart={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();onClearMember();}}><X size={14} aria-hidden="true"/></button>}</div>

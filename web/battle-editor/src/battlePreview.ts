@@ -1,7 +1,7 @@
 import {projectServantForm} from './servantForms';
-import {members,servantFor,skillAt,turnsOf,isSwap,hasServantIdentity,isUnspecifiedSupport} from './model';
+import {servantFor,skillAt,turnsOf,isSwap,hasServantIdentity,isUnspecifiedSupport} from './model';
 import type {Catalog,Entry,Json,Mystic,Servant} from './model';
-import {advanceActionRoster,isRetire,resolveActionActor} from './actionRoster';
+import {advanceActionRoster,initialActionRoster,isRetire,resolveActionActor} from './actionRoster';
 import {isAutoAttackCard} from './attackCards';
 import {specialSkillChoiceFor,specialSkillChoiceNP} from './specialSkillChoices';
 
@@ -172,7 +172,7 @@ function decrease(skills:PreviewSkill[]) {
 export function previewTurn(data:Json,catalog:Catalog,turnIndex:number):BattlePreview {
   const turns=turnsOf(data,catalog);
   const selected=Math.max(0,Math.min(Math.max(0,turns.length-1),Number.isInteger(turnIndex)?turnIndex:0));
-  const roster:PreviewMember[]=members(data).map((member,initialSlot)=>{
+  const roster:PreviewMember[]=initialActionRoster(data).map(({member,initialSlot})=>{
     const actorPresent=hasServantIdentity(member),servant=actorPresent?servantFor(catalog,member?.svtId,member):undefined;
     return {key:`initial:${initialSlot}`,initialSlot,slot:initialSlot,member,servant,np:npAt(member,servant),retired:false,
       skills:[0,1,2].map(index=>initialSkill(actorPresent?skillAt(member??undefined,servant,index):undefined,index,member?.skillLvs?.[index],actorPresent))};

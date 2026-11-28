@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {clone} from './model';
+import {actionMemberAt,actionTitle,appendSkillEntry,clone,remapSlots,rosterAt,turnsOf} from './model';
+import {actionSlotLayout,resolveAllyTarget} from './actionRoster';
 import type {Catalog,Json} from './model';
 import {previewTurn,cooldownBounds,npAt,skillTargetMode,allowedAllyTargets,hasEnemyTarget} from './battlePreview';
 
@@ -16,6 +17,44 @@ const catalog:Catalog={equips:[],servants:[
 const fixture=():Json=>({team:{onFieldSvts:[{svtId:1,skillLvs:[10,10,10]}, {svtId:1,supportType:'friend',skillLvs:[10,10,10]},null],backupSvts:[{svtId:2,skillLvs:[10,10,10]},null,null],mysticCode:{mysticCodeId:20,level:10}},actions:[]});
 const cast=(svt:number|null=0,index=0)=>({type:'skill',svt,skill:index});
 const attack=()=>({type:'attack',attacks:[]});
+
+test('Laplace actions skip a blank party slot and show the real battle slot',()=>{
+  const data=fixture();
+  Object.assign(data,{minBuild:933,appBuild:992});
+  data.team.onFieldSvts=[null,{svtId:1,supportType:'friend',skillLvs:[10,10,10]},{svtId:2,skillLvs:[10,10,10]}];
+  data.team.backupSvts=[null,null,null];
+  data.actions=[{...cast(1,1),options:{playerTarget:0}}, {type:'attack',attacks:[{svt:1,isTD:true,card:-1}]}];
+  const before=clone(data),view=previewTurn(data,catalog,0),entry=turnsOf(data,catalog)[0].entries[0];
+  assert.deepEqual(actionSlotLayout(data).battleSlots,[1,2,0,3,4,5]);
+  assert.deepEqual(view.front.map(actor=>actor.member?.svtId??null),[1,2,null]);
+  assert.equal(view.front[1].skills[1].used,true);
+  assert.match(actionTitle(entry,data,catalog),/前排 3 · 乙/);
+  assert.equal(actionMemberAt(data,1,data.actions[1].attacks[0])?.svtId,2);
+  assert.equal(resolveAllyTarget(data,0),0);
+  assert.equal(resolveAllyTarget(data,2),0);
+  assert.deepEqual(data,before);
+
+  appendSkillEntry(data,0,{raw:cast(0,2),index:0},catalog);
+  assert.equal(data.actions[1].svt,0);
+  assert.equal(actionMemberAt(data,1)?.svtId,1);
+  remapSlots(data,1,2);
+  assert.equal(actionMemberAt(data,0)?.svtId,2);
+  assert.equal(rosterAt(data,0)[data.actions[0].options.playerTarget].svtId,1);
+  assert.equal(actionMemberAt(data,2,data.actions[2].attacks[0])?.svtId,2);
+});
+
+test('Laplace promotion and swap use relative reserve positions through later actions',()=>{
+  const data=fixture();
+  Object.assign(data,{minBuild:933,appBuild:992});
+  data.team.onFieldSvts=[{svtId:1},null,{svtId:2}];
+  data.team.backupSvts=[{svtId:1001},null,{svtId:3}];
+  data.actions=[cast(null,2),cast(1),attack()];
+  data.delegate={replaceMemberIndexes:[[1,1]]};
+  assert.deepEqual(actionSlotLayout(data).partySlots,[0,2,3,4,5,null]);
+  assert.deepEqual(actionSlotLayout(data).battleSlots,[0,1,2,4,5,3]);
+  assert.equal(actionMemberAt(data,1)?.svtId,3);
+  assert.equal(previewTurn(data,catalog,0).front[1].member?.svtId,3);
+});
 
 test('preview is pure and its instance keys keep identical self/support copies independent',()=>{
   const data=fixture();data.actions=[cast(),attack()];data.unknown={nested:[null,{v:true}]};
@@ -190,6 +229,16 @@ test('empty plans clamp invalid turn indices and zero-CD actions still require e
   assert.equal(previewTurn(data,zero,1).front[0].skills[0].ready,true);
 });
 
+test('empty support flags cannot create ally targets or take a reserve position',()=>{
+  const data=fixture();
+  data.team.onFieldSvts[0]={supportType:'friend',svtId:0};
+  data.team.onFieldSvts[2]={supportType:'npc'};
+  data.team.backupSvts[1]={supportType:'fixed',svtId:null};
+  const before=clone(data),view=previewTurn(data,catalog,0);
+  assert.deepEqual(allowedAllyTargets(undefined,1,view.roster),[1]);
+  assert.equal(view.roster[4].member,null);
+  assert.deepEqual(data,before);
+});
 test('essence-only support keeps an occupied target but never invents skills cooldowns or NP metadata',()=>{
   for(const svtId of [undefined,null,0]){
     const data=fixture();data.team.onFieldSvts[0]={supportType:'friend',svtId,equip1:{id:99},skillIds:[11,12,13],tdId:101,skillLvs:[10,10,10],future:{keep:null}};

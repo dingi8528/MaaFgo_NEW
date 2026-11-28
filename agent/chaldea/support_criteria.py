@@ -2,8 +2,11 @@
 
 from .game_data import get_equip_name
 
+try:  # The action and editor can import from different package roots.
+    from ..battle.data.chaldea_roster import SUPPORT_TYPES, is_empty_member
+except ImportError:
+    from battle.data.chaldea_roster import SUPPORT_TYPES, is_empty_member
 
-_SUPPORT_TYPES = {"friend", "fixed", "npc"}
 _FULLWIDTH_ALNUM = str.maketrans({
     codepoint: codepoint - 0xFEE0
     for start, end in ((0xFF10, 0xFF19), (0xFF21, 0xFF3A), (0xFF41, 0xFF5A))
@@ -132,12 +135,13 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
     front, backup = team.get("onFieldSvts"), team.get("backupSvts")
     if not isinstance(front, list) or not isinstance(backup, list):
         raise ValueError("Chaldea 数据缺少有效的六槽队伍")
-    members = (front[:3] + backup[:3])
-    supports = [item for item in members if isinstance(item, dict)
-                and str(item.get("supportType") or "").lower() in _SUPPORT_TYPES]
+    members = [item for item in front[:3] + backup[:3]
+               if isinstance(item, dict) and not is_empty_member(item)]
+    supports = [item for item in members
+                if str(item.get("supportType") or "").lower() in SUPPORT_TYPES]
     if not supports:
         raise ValueError(
-            "导入的队伍没有标记助战，无法确定要借用哪位从者。"
+            "导入的队伍没有标记助战的从者，无法确定要借用哪位从者。"
             "请在 Chaldea 或编队编辑器中，将准备借用的一位从者标记为助战，重新导出并导入；"
             "也可将助战方式改为“自定义助战”，在 MAA 中设置要借用的从者。"
         )
@@ -147,8 +151,6 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
             "请在 Chaldea 或编队编辑器中，只保留一位从者的助战标记，重新导出并导入。"
         )
     for member in members:
-        if not isinstance(member, dict):
-            continue
         for slot in range(1, 4):
             stored = member.get(f"equip{slot}")
             extra = stored.get("candidates") if isinstance(stored, dict) else None
@@ -158,7 +160,7 @@ def build_support_criteria(share_data, servant_map, resolve_name=get_equip_name)
                 raise ValueError(f"第{slot}格礼装 candidates 必须是最多两项的数组")
             if not extra:
                 continue
-            if str(member.get("supportType") or "").lower() not in _SUPPORT_TYPES:
+            if str(member.get("supportType") or "").lower() not in SUPPORT_TYPES:
                 raise ValueError("多候选礼装仅支持助战位置，自有从者不能忽略候选执行")
             allowed = (1, 3) if member.get("grandSvt") is True else (1,)
             if slot not in allowed:

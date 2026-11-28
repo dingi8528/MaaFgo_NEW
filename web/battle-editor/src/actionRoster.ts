@@ -1,4 +1,5 @@
 import type {Entry,Json} from './model';
+import {hasServantIdentity,isUnspecifiedSupport,partyMembers} from './partyMembers';
 
 export interface ActionActor {initialSlot:number;svtId:number}
 export interface RosterActor {initialSlot:number;member:Json|null;retired:boolean}
@@ -6,15 +7,46 @@ export interface ActorCardBinding {card:unknown;actor:ActionActor}
 export interface LifecycleIssue {code:'invalid-actor'|'retired-actor'|'actor-mismatch'|'invalid-retire'|'missing-replacement'|'invalid-swap';message:string}
 export const isRetire=(raw:any):boolean=>raw?.type==='retire';
 const slot=(value:unknown,max:number):value is number=>typeof value==='number'&&Number.isInteger(value)&&value>=0&&value<max;
-const identified=(member:any)=>typeof member?.svtId==='number'&&Number.isSafeInteger(member.svtId)&&member.svtId>0;
-export const availableActionActor=(actor:RosterActor|undefined)=>!!actor?.member&&!actor.retired&&(identified(actor.member)||actor.member.supportType==='friend'&&(actor.member.svtId==null||actor.member.svtId===0));
+export const availableActionActor=(actor:RosterActor|undefined)=>!!actor?.member&&!actor.retired&&(hasServantIdentity(actor.member)||isUnspecifiedSupport(actor.member));
 const copy=<T,>(value:T):T=>structuredClone(value);
 const owns=(value:any,key:string)=>value!=null&&Object.prototype.hasOwnProperty.call(value,key);
-export function initialActionRoster(data:Json):RosterActor[]{
- const front=Array.isArray(data.team?.onFieldSvts)?data.team.onFieldSvts:[],back=Array.isArray(data.team?.backupSvts)?data.team.backupSvts:[];
- return Array.from({length:6},(_,initialSlot)=>({initialSlot,member:(initialSlot<3?front[initialSlot]:back[initialSlot-3])??null,retired:false}));
+
+const partySlots=[0,1,2,3,4,5];
+
+export function actionSlotLayout(data:Json):{partySlots:(number|null)[];battleSlots:number[];laplaceFrontCount:number|null} {
+ const fixed={partySlots,battleSlots:partySlots,laplaceFrontCount:null};
+ if(data._source==='bbc'||!Number.isInteger(data.minBuild)||!Number.isInteger(data.appBuild))return fixed;
+ const starting=partyMembers(data).flatMap((member,index)=>hasServantIdentity(member)?[index]:[]).slice(0,3);
+ if(!starting.length||(starting.length===3&&starting[2]===2))return fixed;
+
+ // Laplace names only the actual starting members and retains the order of the unconsumed reserves.
+ const backup=starting.length===3?partySlots.slice(starting[2]+1):[];
+ const pad=(order:number[])=>[...order,...Array<null>(3-order.length).fill(null)];
+ const completeSlots=(slots:number[],first:number)=>[
+  ...slots,...partySlots.slice(first,first+3).filter(index=>!slots.includes(index)),
+ ];
+ const battleFront=starting.some(index=>index>=3)?starting.map((_,index)=>index):starting;
+ return {partySlots:[...pad(starting),...pad(backup)],
+  battleSlots:[...completeSlots(battleFront,0),...completeSlots(backup,3)],laplaceFrontCount:starting.length};
 }
-export function actorBinding(actor:RosterActor|undefined):ActionActor|undefined {return identified(actor?.member)?{initialSlot:actor!.initialSlot,svtId:actor!.member!.svtId}:undefined;}
+
+export function battleSlotNumber(data:Json,index:number):number {
+ return (actionSlotLayout(data).battleSlots[index]??index)+1;
+}
+
+export function resolveAllyTarget(data:Json,target:unknown):number|undefined {
+ if(!slot(target,6))return undefined;
+ const count=actionSlotLayout(data).laplaceFrontCount;
+ return count!==null&&target>=count?0:target;
+}
+
+export function initialActionRoster(data:Json):RosterActor[]{
+ const roster=partyMembers(data);
+ return actionSlotLayout(data).partySlots.map((partySlot,initialSlot)=>({
+  initialSlot,member:partySlot===null?null:roster[partySlot],retired:false,
+ }));
+}
+export function actorBinding(actor:RosterActor|undefined):ActionActor|undefined {return hasServantIdentity(actor?.member)?{initialSlot:actor!.initialSlot,svtId:actor!.member!.svtId}:undefined;}
 export function validActorBinding(value:any):value is ActionActor {return !!value&&typeof value==='object'&&!Array.isArray(value)&&slot(value.initialSlot,6)&&typeof value.svtId==='number'&&Number.isSafeInteger(value.svtId)&&value.svtId>0;}
 export function usesActorGuards(data:Json):boolean {return (Array.isArray(data.actions)?data.actions:[]).some((raw:any)=>isRetire(raw)||owns(raw,'actor')||raw?.type==='attack'&&Array.isArray(raw.attacks)&&raw.attacks.some((card:any)=>owns(card,'actor')));}
 export function resolveActionActor(roster:RosterActor[],raw:any,binding?:ActionActor):{actor?:RosterActor;current?:RosterActor;issue?:LifecycleIssue}{

@@ -214,6 +214,12 @@ class CommonTeamSearchTests(unittest.TestCase):
 
 
 class CommonTeamGrandEquipTests(unittest.TestCase):
+    def test_empty_role_flags_do_not_create_support_previews(self):
+        for role in ("friend", "fixed", "npc"):
+            with self.subTest(role=role):
+                self.assertIsNone(common._slot({"supportType": role, "svtId": 0,
+                                                 "equip1": {"id": None, "limitBreak": False}}))
+
     def test_full_grand_equips_and_effect_preserve_imported_data(self):
         # Shape observed in public Chaldea team 108073: three independent CEs,
         # with NP50 stored on the class board rather than on equip2 itself.

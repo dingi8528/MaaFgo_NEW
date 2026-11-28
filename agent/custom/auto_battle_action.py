@@ -39,6 +39,7 @@ from battle.core.plan_parser import (_load_action_param, _parse_battle_policy,
                                     _parse_strategy_profile)
 from battle.core.policy import StrategyProfile
 from battle.data.chaldea_converter import convert_chaldea_actions_to_battle_plan
+from battle.data.chaldea_roster import laplace_replay_slots
 from battle.data.servant_identity import canonical_servant_id
 from battle.runtime.runtime import AutoBattleRuntime, BattleResult
 from battle.runtime.preset_fallback import recover_for_default_battle
@@ -183,8 +184,9 @@ class AutoBattleAction(CustomAction):
             trial_config = trial_config_from_source(battle_node, share) if trial_requested else None
             if share is not None:
                 if plan is None:
-                    plan = _build_plan_from_share(share)
-                chaldea_roster = _roster_from_share(share)
+                    plan, chaldea_roster = _build_plan_and_roster_from_share(share)
+                else:
+                    chaldea_roster = _roster_from_share(share)
             param = _battle_param_with_attached_config(context, node_name, param, share)
             # Direct Custom invocations without an MXU pointer use the same
             # defaults as all native tasks. Old explicit strategy nodes remain
@@ -598,7 +600,7 @@ def _battle_setup_from_chaldea_share(
     """
     share = _share_data_from_param(param)
     if share is not None:
-        return _build_plan_from_share(share), _roster_from_share(share)
+        return _build_plan_and_roster_from_share(share)
     return None, None
 
 
@@ -631,22 +633,30 @@ class TeamFetchError(RuntimeError):
 
 
 def _build_plan_from_share(share: dict) -> BattlePlan | None:
-    """把 BattleShareData actions 转成 BattlePlan。"""
+    return _build_plan_and_roster_from_share(share)[0]
+
+
+def _build_plan_and_roster_from_share(
+    share: dict,
+) -> tuple[BattlePlan | None, tuple[str | None, ...] | None]:
+    """在同一套战斗槽位中解析 Laplace 的动作与从者身份。"""
     actions = share.get("actions")
     team = share.get("team") or {}
     mystic_code_id = (team.get("mysticCode") or {}).get("mysticCodeId")
     if mystic_code_id is None:
         mystic_code_id = (share.get("mysticCode") or {}).get("id")
     delegate = share.get("delegate")
+    laplace_slots, roster = laplace_replay_slots(share, _roster_from_share(share))
     mfaalog.info(f"[auto_battle] 构建 BattlePlan: actions={len(actions) if actions else 0}条 mysticCode={mystic_code_id} delegate={'有' if delegate else '无'}")
     plan = convert_chaldea_actions_to_battle_plan(
         actions,
         delegate=delegate,
         mystic_code_id=mystic_code_id,
-        initial_servant_ids=_roster_from_share(share),
+        initial_servant_ids=roster,
+        laplace_slots=laplace_slots,
     )
     mfaalog.info(f"[auto_battle] chaldea_share -> plan turns={len(plan.turns) if plan is not None else 0}")
-    return plan
+    return plan, roster
 
 
 def _roster_from_share(share: dict) -> tuple[str | None, ...] | None:

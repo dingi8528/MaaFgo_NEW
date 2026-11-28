@@ -25,6 +25,10 @@ import urllib.request
 import zlib
 
 from .storage import EditorError
+try:
+    from ..battle.data.chaldea_roster import is_empty_member
+except ImportError:
+    from battle.data.chaldea_roster import is_empty_member
 
 
 API_URL = "https://api.chaldea.center/api/v1/teams/"
@@ -186,7 +190,7 @@ def _equip_preview(value: Any, *, legacy: dict | None = None) -> dict | None:
 
 
 def _slot(slot: Any) -> dict | None:
-    if not isinstance(slot, dict):
+    if not isinstance(slot, dict) or is_empty_member(slot):
         return None
     svt_id = _positive_int(slot.get("svtId")) or 0
     grand = slot.get("grandSvt") is True

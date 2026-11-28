@@ -97,7 +97,7 @@ class RetirementContractTests(unittest.TestCase):
     def test_no_backup_unknown_backup_and_identical_replacement_are_blocked(self):
         self.assertIn("no_retirement_replacement", codes(battle([retire()], (*IDS[:3], None, None, None))))
         data = battle([retire()])
-        data["team"]["backupSvts"][0] = {"supportType": "friend"}
+        data["team"]["backupSvts"][0] = {"supportType": "friend", "equip1": {"id": 9400340}}
         self.assertIn("unknown_retirement_replacement", codes(data))
         self.assertIn("ambiguous_retirement_replacement", codes(battle([retire()], (*IDS[:3], IDS[0], *IDS[4:]))))
 

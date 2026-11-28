@@ -1,9 +1,9 @@
-import {members} from './model';
+import {isSupportMember,members} from './model';
 import type {Json} from './model';
 
 export function reservedBondSupport(data:Json,preferredSlot?:number|null):number|null {
  const roster=members(data);
- const existing=roster.findIndex(m=>m&&['friend','npc','fixed'].includes(m.supportType));
+ const existing=roster.findIndex(isSupportMember);
  if(existing>=0)return existing;
  if(typeof preferredSlot==='number'&&Number.isInteger(preferredSlot)&&preferredSlot>=0&&preferredSlot<6&&!roster[preferredSlot]?.svtId)return preferredSlot;
  for(let i=5;i>=0;i--)if(!roster[i]?.svtId)return i;

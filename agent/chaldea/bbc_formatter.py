@@ -421,6 +421,25 @@ def chaldea_to_bbc(share_data: dict) -> dict:
         logger.error("[Chaldea] team 字段类型错误")
         return {}
 
+    # The editor's isolated share-fetcher can load Chaldea without battle code.
+    try:
+        from ..battle.data.chaldea_roster import is_empty_member
+    except ImportError:
+        from battle.data.chaldea_roster import is_empty_member
+
+    team_data = dict(team_data)
+    for key in ("onFieldSvts", "backupSvts"):
+        if isinstance(team_data.get(key), list):
+            # Keep explicit Grand support requests so the exporter can explain
+            # when they need an additional constraint to be representable in BBC.
+            team_data[key] = [
+                None if is_empty_member(member) and not (
+                    isinstance(member, dict) and member.get("grandSvt") is True
+                    and member.get("supportType") == "friend"
+                ) else member
+                for member in team_data[key]
+            ]
+
     formation = _convert_formation(team_data)
     mystic_code_id = formation.mystic_code.mystic_code_id
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {assertEditable,clone,newBattle,newServantDefaults,newTeamSupportSlot,restoreNewTeamFirstSupport,newTeamMemberDefaults,fillMissingTaskSkillDefaults,members,setMember,turnsOf,writeTurns,rosterAt,makeCard,remapSlots,servantFor,skillAt,replaceServant,swapMembers,filterCatalog,appendSkillAt,appendSkillEntry,appendNPEntry} from './model';
 import type {Json,Catalog} from './model';
-import {hasServantIdentity,isUnspecifiedSupport,memberLabel,clearSupportServantRequirement,setMemberEquipRequirement,actionTitle} from './model';
+import {hasServantIdentity,isUnspecifiedSupport,isSupportMember,memberLabel,clearSupportServantRequirement,setMemberEquipRequirement,actionTitle} from './model';
 import {startPartyDrag,updatePartyDrag,finishPartyDrag} from './partyDrag';
 const catalog:Catalog={servants:[{id:1,name:'甲',cards:[2,1,1,3,2]},{id:4,name:'丁',cards:[]}],equips:[],mysticCodes:[]};
 test('CE-only friend support is a real requirement with unknown identity, never an invented servant',()=>{
@@ -17,6 +17,23 @@ test('CE-only friend support is a real requirement with unknown identity, never 
  assert.equal(hasServantIdentity({svtId:1}),true);assert.equal(memberLabel({svtId:1},catalog),'甲');
  assert.equal(memberLabel({svtId:999},catalog),'从者 #999');assert.equal(memberLabel(null,catalog),'未配置从者');
  for(const supportType of ['none','npc','fixed'])assert.equal(isUnspecifiedSupport({supportType}),false);
+});
+test('empty support flags never reserve a position or override an explicitly chosen support',()=>{
+ const data=newBattle();
+ data.team.onFieldSvts=[{supportType:'friend',svtId:0,lv:100},{svtId:1},null];
+ data.team.backupSvts=[{supportType:'npc'}, {supportType:'fixed',svtId:null}, {supportType:'friend'}];
+ const before=clone(data);
+ assert.deepEqual(members(data),[null,{svtId:1},null,null,null,null]);
+ assert.equal(newTeamSupportSlot(data,true),0);assert.equal(members(data).some(isSupportMember),false);
+ assert.equal(memberLabel(data.team.onFieldSvts[0],catalog),'未配置从者');
+ assert.deepEqual(data,before);
+ setMemberEquipRequirement(data,4,'equip1',10,false,true);
+ assert.deepEqual(members(data)[4],{supportType:'friend',equip1:{id:10}});
+ assert.equal(members(data).filter(isSupportMember).length,1);
+ assert.deepEqual(data.team.onFieldSvts,before.team.onFieldSvts);
+ assert.throws(()=>setMemberEquipRequirement(data,5,'equip1',10,false,true),/新增助战/);
+ const grand={supportType:'friend',grandSvt:true,classBoardData:{grandBondEquipSkillChange:false}};
+ assert.equal(isUnspecifiedSupport(grand),true);
 });
 test('only the default new support can receive its first CE before a servant is chosen',()=>{
  const data=newBattle();setMemberEquipRequirement(data,0,'equip1',10,true);

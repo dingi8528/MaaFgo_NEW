@@ -56,6 +56,25 @@ test('share rows resolve aliases and use the roster at the exact action point af
  assert.deepEqual(data,before);
 });
 
+test('sparse Chaldea actions display the executing servant and game position without rewriting the share',()=>{
+ const data:Json={minBuild:933,appBuild:992,team:{
+  onFieldSvts:[null,{svtId:100},{svtId:200}],backupSvts:[null,null,null],
+ },actions:[
+  {type:'skill',svt:1,skill:1,options:{playerTarget:0}},
+  {type:'skill',svt:0,skill:0,options:{playerTarget:2}},
+  {type:'attack',attacks:[{isTD:true,svt:1,card:-1},{svt:0,card:0,cardType:2}]},
+ ]};
+ const before=structuredClone(data),view=shareImageModel(data,catalog,{cardPreviewConfig:config});
+ const [skill,fallback,attack]=view.turns[0].actions;
+ if(skill.kind!=='skill'||fallback.kind!=='skill'||attack.kind!=='attack')throw new Error('expected two skills and an attack');
+ assert.equal(view.members[0].name,'不要求此位置');
+ assert.deepEqual([skill.actor.position,skill.actor.name,skill.name],['前排 3','候补乙','乙技能二']);
+ assert.deepEqual([skill.target?.position,skill.target?.name],['前排 2','前排甲']);
+ assert.deepEqual([fallback.target?.position,fallback.target?.name],['前排 2','前排甲']);
+ assert.deepEqual(attack.cards.slice(0,2).map(card=>[card.person?.position,card.name]),[['前排 3','乙宝具'],['前排 2','前排甲']]);
+ assert.deepEqual(data,before);
+});
+
 test('share attack sequence retains an automatic hole before NP and precise color/card intent',()=>{
  const data=team();data.actions=[{type:'attack',attacks:[{isAuto:true},{isTD:true,svt:0},{isTD:false,svt:0,card:1,cardType:2}],options:{enemyTarget:0}}];
  const row=shareImageModel(data,catalog,{cardPreviewConfig:config}).turns[0].actions[0];
@@ -131,13 +150,13 @@ test('share formation presents same-slot alternatives as OR while keeping grand 
  assert.deepEqual(data,before);
 });
 
-test('grand bond effects render without choosing a CE and never expose imported bond CE artwork',()=>{
+test('explicit grand bond effects render without choosing a CE and empty markers stay out of the share',()=>{
  for(const [effect,label] of [[true,'NP 50% 替换效果'],[false,'原始效果'],[undefined,'不限制']] as const){
   for(const legacyEquip of [undefined,{id:1,lv:100,limitBreak:true,future:{keep:['原卡面']}}]){
    const data=team();data.team.onFieldSvts[0]={supportType:'friend',grandSvt:true,classBoardData:{future:null,...(effect===undefined?{}:{grandBondEquipSkillChange:effect})},...(legacyEquip?{equip2:legacyEquip}:{})};
    const before=structuredClone(data),equips=shareImageModel(data,catalog).members[0].equips;
-   assert.deepEqual(equips,[{kind:'bond-effect',label:'羁绊礼装',name:'羁绊礼装',details:label}]);
-   assert.equal(Object.hasOwn(equips[0],'image'),false);assert.equal(Object.hasOwn(equips[0],'id'),false);
+   assert.deepEqual(equips,effect===undefined?[]:[{kind:'bond-effect',label:'羁绊礼装',name:'羁绊礼装',details:label}]);
+   assert.ok(equips.every(equip=>!Object.hasOwn(equip,'image')&&!Object.hasOwn(equip,'id')));
    assert.deepEqual(data,before);
   }
  }

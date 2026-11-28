@@ -34,6 +34,7 @@ class MxuPackagingTests(unittest.TestCase):
             "agent/battle_editor/validation.py", "agent/battle_editor/bond_optimizer.py",
             "agent/battle_editor/special_choices.py", "agent/battle/core/special_skills.py",
             "agent/battle/core/advanced_strategy.py",
+            "agent/battle/data/chaldea_roster.py",
             "agent/battle_editor/equip_filters.py",
             "agent/battle_editor/np_cards.py", "agent/battle_editor/np_card_metadata.py",
             "agent/battle_editor/screenshot_import.py", "agent/battle/perception/formation_candidates.py",
@@ -120,6 +121,7 @@ class MxuPackagingTests(unittest.TestCase):
         self.assertTrue((self.output / "tasks/编队与战斗编辑器.json").is_file())
         self.assertTrue((self.output / "options/编队与战斗编辑器.json").is_file())
         self.assertTrue((self.output / "agent/battle_editor/common_teams.py").is_file())
+        self.assertTrue((self.output / "agent/battle/data/chaldea_roster.py").is_file())
         self.assertTrue((self.output / "agent/battle_editor/data/grand_quests.json").is_file())
         for relative in ("agent/custom/mystic_code.py", "agent/custom/mfaalog.py",
                          "agent/custom/mystic_code_data.json",

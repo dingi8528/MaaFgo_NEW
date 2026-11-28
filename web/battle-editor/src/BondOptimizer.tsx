@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {AlertTriangle,CheckCircle2,Heart,LoaderCircle,Play,Search,Shield,X} from 'lucide-react';
 import {api} from './api';
 import {Modal} from './EditorModal';
-import {filterCatalog,members} from './model';
+import {filterCatalog,members,isSupportMember} from './model';
 import type {Catalog,Json,Servant} from './model';
 import {reservedBondSupport} from './bondOptimizerModel';
 import {loadBondOptimizerPreferences,saveBondOptimizerPreferences} from './bondOptimizerPreferences';
@@ -38,7 +38,7 @@ export function BondOptimizer({data,catalog,onApply,onClose,initialCostLimit,onC
  const [excluded,setExcluded]=useState<number[]>(preferences.excludeServantIds),[query,setQuery]=useState(''),[rememberFailed,setRememberFailed]=useState(false);
  const resultRef=useRef<HTMLDivElement>(null);
  useEffect(()=>{if(result)resultRef.current?.scrollIntoView({block:'nearest'});},[result]);
- const roster=members(data),support=roster.findIndex(m=>m&&['friend','npc','fixed'].includes(m.supportType));
+ const roster=members(data),support=roster.findIndex(isSupportMember);
  const effectiveReserved=reservedBondSupport(data,reserved);
  const grand=roster.some((m,i)=>i!==support&&m?.grandSvt);
  const costSummary=useMemo(()=>partyCost(data,catalog),[data,catalog]);

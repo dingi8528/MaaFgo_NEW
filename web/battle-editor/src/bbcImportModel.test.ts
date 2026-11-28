@@ -36,7 +36,7 @@ test('BBC preview has six fixed positions, resolves alias names and retains CE-o
 });
 
 test('BBC preview exposes OR candidates within their real grand slots and keeps all fetched data untouched',()=>{
- const source=structuredClone(data);source.team.onFieldSvts[2]={supportType:'npc',grandSvt:true,equip1:{id:20,limitBreak:true,candidates:[{id:999,limitBreak:false}]},equip2:{id:999},equip3:{id:20,candidates:[{id:998}]},unknown:{keep:null}};
+ const source=structuredClone(data);source.team.onFieldSvts[2]={svtId:1,supportType:'npc',grandSvt:true,equip1:{id:20,limitBreak:true,candidates:[{id:999,limitBreak:false}]},equip2:{id:999},equip3:{id:20,candidates:[{id:998}]},unknown:{keep:null}};
  const before=structuredClone(source),member=bbcPreview(source,catalog).roster[2];
  assert.equal(member.support,true);
  assert.deepEqual(member.equips.map(e=>e.sourceKey),['equip1','equip1','equip3','equip3']);
@@ -49,7 +49,7 @@ test('BBC preview exposes OR candidates within their real grand slots and keeps 
 
 test('Grand bond effects remain visible without inventing a CE, including the explicit original effect',()=>{
  for(const [effect,label] of [[true,'羁绊礼装效果：NP 50% 替换效果'],[false,'羁绊礼装效果：原始效果'],[undefined,'羁绊礼装效果：不限制']] as const){
-  const source=structuredClone(data);source.team.onFieldSvts[2]={supportType:'friend',grandSvt:true,classBoardData:{future:null,...(effect===undefined?{}:{grandBondEquipSkillChange:effect})}};
+  const source=structuredClone(data);source.team.onFieldSvts[2]={supportType:'friend',grandSvt:true,...(effect===undefined?{svtId:1}:{}),classBoardData:{future:null,...(effect===undefined?{}:{grandBondEquipSkillChange:effect})}};
   const before=structuredClone(source),member=bbcPreview(source,catalog).roster[2];
   assert.equal(member.grand,true);assert.equal(member.bondEffect,label);assert.equal(member.emptyEquipLabel,'未指定礼装卡面');assert.deepEqual(member.equips,[]);
   assert.deepEqual(source,before);

@@ -36,6 +36,7 @@ if _AGENT_DIR not in sys.path:
     sys.path.insert(0, _AGENT_DIR)
 
 from chaldea import fetch_share_data
+from battle.data.chaldea_roster import SUPPORT_TYPES, is_empty_member
 from mystic_code import extract_mystic_code_id, ensure_mystic_code
 from platform_waits import platform_timeout
 from resource_package import resolve_resource_package
@@ -228,7 +229,6 @@ EQUIP_SLOT_CLICK_Y = 477
 GRAND_EQUIP_POPUP_CONTENT_ROI = (267, 218, 776, 171)
 GRAND_EQUIP_POPUP_THRESHOLD = 0.80
 
-SUPPORT_TYPES = {"friend", "fixed", "npc"}
 CLASS_TEMPLATE = {
     "saber": "剑士",
     "archer": "弓兵",
@@ -642,11 +642,13 @@ class AutoFormationFromChaldea(CustomAction):
             self._fail("invalid_chaldea_team: 导入数据缺少 team")
             return None
         team = share_data["team"]
-        raw_slots = list(team.get("onFieldSvts") or [])[:3] + list(team.get("backupSvts") or [])[:3]
-        raw_slots += [None] * (6 - len(raw_slots))
+        raw_slots = []
+        for key in ("onFieldSvts", "backupSvts"):
+            slots = list(team.get(key) or [])[:3]
+            raw_slots.extend(slots + [None] * (3 - len(slots)))
         expected = []
-        for index, item in enumerate(raw_slots[:6]):
-            if item is None:
+        for index, item in enumerate(raw_slots):
+            if is_empty_member(item):
                 expected.append({
                     "kind": "EMPTY", "svt_id": None, "equip_id": None,
                     "equip_limit_break": False, "grand_svt": False, "slot": index,

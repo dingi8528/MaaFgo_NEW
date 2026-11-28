@@ -52,8 +52,15 @@ test('manual corrections support CE-only friend but reject owned CE without serv
 test('manual correction rejects unsupported CE, unknown servant, repeated support and blank result',()=>{
  for(const key of ['servantId','equipId'] as const){const rows=slots();rows[0][key]=999;assert.throws(()=>screenshotTeam(rows,catalog));}
  const unsupported=slots();unsupported[0].equipId=3;assert.throws(()=>screenshotTeam(unsupported,catalog));
- const duplicate=slots();duplicate[1].support=true;assert.throws(()=>screenshotTeam(duplicate,catalog));
+ const duplicate=slots();duplicate[1].support=true;duplicate[1].equipId=2;assert.throws(()=>screenshotTeam(duplicate,catalog));
  const blank=slots().map(s=>({...s,servantId:null,support:false}));assert.throws(()=>screenshotTeam(blank,catalog));
+});
+test('screenshot support flags on all empty positions are ignored',()=>{
+ const rows=slots().map(row=>({...row,support:true}));
+ const before=structuredClone(rows),result=readScreenshotResult({slots:rows});
+ assert.deepEqual(result.slots.map(row=>row.support),[true,false,false,false,false,false]);
+ assert.deepEqual(screenshotTeam(rows,catalog).team.backupSvts,[null,null,null]);
+ assert.deepEqual(rows,before);
 });
 
 const shareData=()=>({team:{name:'双回合分享',onFieldSvts:[{svtId:1,skillLvs:[10,9,8]},null,{supportType:'friend',equip1:{id:2,limitBreak:false}}],backupSvts:[{svtId:999},null,null],mysticCode:{mysticCodeId:210,level:10}},actions:[{type:'skill',svt:null,skill:2},{type:'attack',attacks:[{isAuto:true},{isTD:true,svt:0,card:-1}],options:{enemyTarget:2}},{type:'skill',svt:0,skill:1,options:{playerTarget:2}}],delegate:{replaceMemberIndexes:[[0,0]],future:[null]},unknown:{keep:['完整保留',0,false,null]}});

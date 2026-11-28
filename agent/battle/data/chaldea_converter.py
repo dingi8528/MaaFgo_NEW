@@ -6,7 +6,7 @@
 
 Chaldea actions 数据结构（与 bbc_formatter.convert_actions_to_bbc_rounds 同源）：
 - {"type":"skill","svt":0..5|None,"skill":0..2,"options":{"playerTarget":N,"enemyTarget":N}}
-    svt=None 表示御主技能；svt=0..2 对应前排从者槽位 1..3。
+    svt=None 表示御主技能；其余索引在需要时从 Laplace 映射到战斗槽位。
     enemyTarget 为 Chaldea 从右向左 0..2；仅作用于此技能，施放前单独切敌并确认。
 - {"type":"attack","attacks":[{"isTD":bool,"svt":0..5}, ...]}
     一次攻击组：把此前的技能累积成"一个回合"；attacks 里的 isTD 条目是宝具。
@@ -108,6 +108,7 @@ def convert_chaldea_actions_to_battle_plan(
     delegate: Optional[dict] = None,
     mystic_code_id: Optional[int] = None,
     *, initial_servant_ids: Optional[tuple[str | None, ...]] = None,
+    laplace_slots: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
 ) -> Optional[BattlePlan]:
     """把 Chaldea actions 转成 BattlePlan。
 
@@ -159,6 +160,20 @@ def convert_chaldea_actions_to_battle_plan(
     occupied = (tuple(sid is not None for sid in initial_servant_ids)
                 if initial_servant_ids is not None and len(initial_servant_ids) == 6 else (True,) * 6)
 
+    def map_slot(slot, *, target=False):
+        if laplace_slots is None:
+            return slot
+        front = laplace_slots[0]
+        if slot < len(front):
+            return front[slot]
+        if target:
+            # Laplace redirects a target on an empty slot to the first ally.
+            return front[0]
+        raise ValueError(
+            f"Chaldea 方案的动作指向第 {slot + 1} 位出场从者，但该位置没有从者。"
+            "请在 Chaldea 中核对编队和回合动作，重新导出并导入。"
+        )
+
     def actor_binding(raw, slot, *, required=False):
         if raw is None and not required:
             return None
@@ -167,6 +182,15 @@ def convert_chaldea_actions_to_battle_plan(
                 or raw["svtId"] <= 0):
             raise ValueError("从者动作的 actor 必须指定初始槽位 initialSlot 0–5 和正整数 svtId")
         initial, sid = raw["initialSlot"], str(raw["svtId"])
+        if laplace_slots is not None:
+            group, index = divmod(initial, 3)
+            initial_slots = laplace_slots[group]
+            if index >= len(initial_slots):
+                raise ValueError(
+                    "Chaldea 方案的动作绑定到空位置，无法确认要操作的从者。"
+                    "请在编队编辑器中重新选择该动作的从者并保存。"
+                )
+            initial = initial_slots[index]
         if initial in retired:
             raise ValueError("从者已退场，不能继续使用其技能或出卡")
         if member_order[slot] != initial:
@@ -211,6 +235,8 @@ def convert_chaldea_actions_to_battle_plan(
             if not isinstance(skill_idx, int) or not (0 <= skill_idx <= 2):
                 continue
             target = _parse_target(action.get("options"))
+            if target is not None:
+                target = map_slot(target - 1, target=True) + 1
             enemy_target = _parse_enemy_target(action.get("options"))
 
             svt_idx = action.get("svt")
@@ -220,6 +246,15 @@ def convert_chaldea_actions_to_battle_plan(
                     # 换人服第 3 技能 = 换人（Chaldea 0-based: skill=2）
                     front_slot, sub_slot = replace_members[replace_ptr]
                     replace_ptr += 1
+                    if laplace_slots is not None:
+                        backup = laplace_slots[1]
+                        if sub_slot - 4 >= len(backup) or not occupied[backup[sub_slot - 4]]:
+                            raise ValueError(
+                                "Chaldea 方案的换人动作指向空候补位，无法执行换人。"
+                                "请在 Chaldea 中核对换人双方，重新导出并导入。"
+                            )
+                        front_slot = map_slot(front_slot - 1) + 1
+                        sub_slot = backup[sub_slot - 4] + 1
                     cur_order_change = OrderChangeAction(
                         starting_member_idx=front_slot,
                         sub_member_idx=sub_slot,
@@ -237,6 +272,7 @@ def convert_chaldea_actions_to_battle_plan(
                     cur_masters.append(master)
                     cur_sequence.append(master)
             elif isinstance(svt_idx, int) and 0 <= svt_idx <= 2:
+                svt_idx = map_slot(svt_idx)
                 servant = ServantSkillAction(
                     servant_slot=svt_idx + 1,
                     skill_index=skill_idx + 1,
@@ -251,6 +287,7 @@ def convert_chaldea_actions_to_battle_plan(
             slot = action.get("svt")
             if type(slot) is not int or not 0 <= slot <= 2:
                 raise ValueError("从者退场必须指定当前前排 svt 0–2")
+            slot = map_slot(slot)
             binding = actor_binding(action.get("actor"), slot, required=True)
             incoming = next((i for i in range(3, 6)
                              if member_order[i] not in retired and occupied[member_order[i]]), None)
@@ -284,6 +321,7 @@ def convert_chaldea_actions_to_battle_plan(
                     svt_pos = atk.get("svt")
                     if type(svt_pos) is not int or not 0 <= svt_pos <= 2:
                         continue
+                    svt_pos = map_slot(svt_pos)
                     binding = actor_binding(atk.get("actor"), svt_pos)
                     if atk.get("isTD", False):
                         np_slot = svt_pos + 1

@@ -13,6 +13,10 @@ import sys
 
 from .storage import EditorError, within
 try:
+    from ..battle.data.chaldea_roster import is_empty_member
+except ImportError:
+    from battle.data.chaldea_roster import is_empty_member
+try:
     from support_ce import resolve_external_image
 except ModuleNotFoundError:
     from ..support_ce import resolve_external_image
@@ -203,6 +207,7 @@ class BondPlanner:
             if rows is None: rows = []
             if not isinstance(rows, list) or len(rows) > 3 or any(x is not None and not isinstance(x, dict) for x in rows):
                 raise EditorError('bond_team_invalid', '编队必须是六个有效槽位')
+            rows = [None if is_empty_member(member) else member for member in rows]
             if any(m is not None and (
                 (_id(m.get('svtId')) is None and not (
                     m.get('supportType') == 'friend' and (m.get('svtId') is None
@@ -385,7 +390,8 @@ class BondPlanner:
             for slot,member in enumerate(roster):
                 if slot == reserved: continue
                 original = (before['team'].get('onFieldSvts' if slot < 3 else 'backupSvts') or [])[slot%3:slot%3+1]
-                if member != (original[0] if original else None):
+                original_member = original[0] if original else None
+                if member != (None if is_empty_member(original_member) else original_member):
                     key = 'onFieldSvts' if slot < 3 else 'backupSvts'
                     result['team'].setdefault(key,[])
                     if result['team'][key] is None: result['team'][key] = []

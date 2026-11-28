@@ -7,6 +7,7 @@ import {SkillIcon} from './PartyCard';
 import {AttackCardGroup} from './AttackCardGroup';
 import type {CardPreviewConfig} from './npCardRequest';
 import {specialSkillChoiceLabel} from './specialSkillChoices';
+import {battleSlotNumber,resolveAllyTarget} from './actionRoster';
 
 export function ActionQueue({data,catalog,entries,selected,onSelect,onMove,onDelete,onCopy,npCardPreview,cardPreviewRegion,onSwapCards,onRemoveCard}:{data:Json;catalog:Catalog;entries:Entry[];selected:number;onSelect:(index:number)=>void;onMove:(from:number,to:number)=>void;onDelete:(index:number)=>void;onCopy:(index:number)=>void;npCardPreview?:CardPreviewConfig;cardPreviewRegion?:string;onSwapCards?:(entryIndex:number,from:number,to:number)=>void;onRemoveCard?:(entryIndex:number,cardIndex:number)=>void}) {
  const [dragging,setDragging]=useState<number|null>(null),[target,setTarget]=useState<number|null>(null);
@@ -27,7 +28,8 @@ export function ActionQueue({data,catalog,entries,selected,onSelect,onMove,onDel
   {movable.length===0&&<div className="queue-empty"><Swords size={22}/><span>点击上方技能安排步骤，再配置下方宝具与色卡。</span></div>}
   {entries.map((entry,i)=>{
    const raw=entry.raw,attack=raw?.type==='attack',retire=isRetire(raw),retirement=retire?retirementInfoAt(data,entry.index,catalog):undefined,swap=isSwap(data,raw),roster=rosterAt(data,entry.index),actor=actionMemberAt(data,entry.index,raw),caster=raw?.svt==null?undefined:servantFor(catalog,actor?.svtId),meta=raw?.svt==null?catalog.mysticCodes.find(m=>m.id===data.team?.mysticCode?.mysticCodeId)?.skills?.[raw?.skill]:hasServantIdentity(actor)?skillAt(actor,caster,raw?.skill):undefined;
-   const ally=raw?.options?.playerTarget,enemy=raw?.options?.enemyTarget,allyName=ally!=null?roster[ally]?memberLabel(roster[ally],catalog):`前排 ${Number(ally)+1}`:undefined;
+   const ally=resolveAllyTarget(data,raw?.options?.playerTarget),enemy=raw?.options?.enemyTarget;
+   const allyName=ally!=null?roster[ally]?memberLabel(roster[ally],catalog):`前排 ${battleSlotNumber(data,ally)}`:undefined;
    const replacement=entry.replacement,swapFront=Array.isArray(replacement)?memberLabel(roster[replacement[0]],catalog):undefined,swapBackup=Array.isArray(replacement)?memberLabel(roster[(replacement[1]<3?replacement[1]+3:replacement[1])],catalog):undefined;
    const specialLabel=specialSkillChoiceLabel(entry,catalog);
    if(attack)return null;

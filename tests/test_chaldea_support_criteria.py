@@ -104,6 +104,20 @@ class ChaldeaSupportCriteriaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "标记了 2 位助战.*只保留一位"):
             build_support_criteria(data, self.servant_map)
 
+    def test_empty_support_markers_do_not_count_in_either_row(self):
+        data = self._sample("雨暗阿_21086_94061640.json")
+        expected = build_support_criteria(data, self.servant_map)
+        data["team"]["onFieldSvts"][2] = {"supportType": "friend", "skillLvs": [10] * 3}
+        data["team"]["backupSvts"] = [
+            {"supportType": "fixed", "svtId": 0},
+            {"supportType": "npc", "svtId": None},
+            {"supportType": "friend"},
+        ]
+        self.assertEqual(build_support_criteria(data, self.servant_map), expected)
+        data["team"]["onFieldSvts"][0]["supportType"] = "none"
+        with self.assertRaisesRegex(ValueError, "没有标记助战"):
+            build_support_criteria(data, self.servant_map)
+
     def test_missing_optional_fields_do_not_add_conditions(self):
         data = self._sample("雨暗阿_21086_94061640.json")
         support = data["team"]["onFieldSvts"][0]

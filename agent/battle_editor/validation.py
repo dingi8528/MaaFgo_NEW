@@ -11,8 +11,10 @@ from typing import Any
 from .special_choices import match_special_skill
 try:  # Both packaged ``battle_editor`` and repository ``agent.battle_editor``.
     from ..battle.core.advanced_strategy import default_advanced_strategy, validate_advanced_strategy
+    from ..battle.data.chaldea_roster import is_empty_member, laplace_team_order
 except ImportError:
     from battle.core.advanced_strategy import default_advanced_strategy, validate_advanced_strategy
+    from battle.data.chaldea_roster import is_empty_member, laplace_team_order
 
 ORDER_CHANGE_IDS = {20, 210, 440}
 MAX_VALIDATION_ISSUES = 200
@@ -182,6 +184,8 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         for index in range(3):
             slot = index + (0 if group == "onFieldSvts" else 3)
             member = slots[index] if index < len(slots) else None
+            if is_empty_member(member):
+                member = None
             members.append(member if isinstance(member, dict) else None)
             path = f"team.{group}[{index}]"
             loc = {"slot": slot}
@@ -400,6 +404,13 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
         error("actions", "too_many_actions", "动作超过 5000 条，请拆分方案")
         return result()
     summary["actions"] = len(actions)
+    laplace_order = laplace_team_order(
+        data, [member if _identified_member(member) else None for member in members],
+    )
+    if laplace_order is not None:
+        starting, backup = laplace_order
+        members = ([members[index] for index in starting] + [None] * (3 - len(starting))
+                   + [members[index] for index in backup] + [None] * (3 - len(backup)))
     swap_pointer = 0
     initial_members = tuple(members)
     member_order = list(range(6))
@@ -527,7 +538,7 @@ def validate_battle(data: Any, catalog: dict | None = None) -> dict:
                             member_order[front], member_order[back] = member_order[back], member_order[front]
                             summary["orderChanges"] += 1
             target = options.get("playerTarget")
-            if type(target) is int and 0 <= target <= 2 and not members[target]:
+            if laplace_order is None and type(target) is int and 0 <= target <= 2 and not members[target]:
                 error(path + ".options.playerTarget", "empty_target", "该动作时点的我方目标槽位为空", **loc)
         elif kind == "retire":
             svt = action.get("svt")

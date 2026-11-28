@@ -93,6 +93,17 @@ class BondEditorTests(unittest.TestCase):
         self.assertEqual(result['summary']['beforeBond'],1440)
         self.assertEqual(result['summary']['reservedSupportSlot'],1)
 
+    def test_support_flags_on_empty_slots_do_not_reserve_or_conflict(self):
+        data = self.data()
+        data['team']['onFieldSvts'][1] = {'svtId': 500, 'supportType': 'friend'}
+        data['team']['onFieldSvts'][2] = {'supportType': 'friend', 'svtId': 0}
+        data['team']['backupSvts'] = [{'supportType': 'npc'}, {'supportType': 'fixed'}, None]
+        before = copy.deepcopy(data)
+        result = self.planner().optimize(data, {})
+        self.assertEqual(result['summary']['reservedSupportSlot'], 1)
+        self.assertEqual(result['summary']['addedServants'], 4)
+        self.assertEqual(data, before)
+
     def test_cost_shortage_falls_back_to_zero_star(self):
         result=self.planner().optimize(self.data(),{'costLimit':28})
         ids=[m['svtId'] for m in self.members(result['data']) if m]
@@ -203,7 +214,7 @@ class BondEditorTests(unittest.TestCase):
             data=self.data();before=copy.deepcopy(data)
             with self.subTest(patch=patch), self.assertRaises(EditorError): self.planner().optimize(data,patch)
             self.assertEqual(data,before)
-        for rows in ({},False,[{},None,None],[{'svtId':100,'supportType':'other'},None,None]):
+        for rows in ({},False,[{'svtId':''},None,None],[{'svtId':100,'supportType':'other'},None,None]):
             data=self.data();data['team']['onFieldSvts']=rows
             with self.assertRaises(EditorError): self.planner().optimize(data,{})
 
