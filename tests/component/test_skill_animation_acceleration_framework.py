@@ -23,6 +23,7 @@ sys.path[:0] = [str(ROOT / "agent"), str(ROOT / "agent/custom"), str(Path(__file
 from battle.core.special_skills import SPECIAL_SKILL_GROUPS, TD, SpecialSkillChoices
 from battle.core.enums import Scene
 from battle.core.policy import StrategyProfile
+from battle.execution.coords import TOP_RIGHT_CLOSE
 from battle.execution.executor import Executor
 from battle.runtime.runtime import AutoBattleRuntime
 from battle.runtime.special_skills import SpecialSkillDispatcher
@@ -96,7 +97,6 @@ class AnimationAccelerationFrameworkTests(unittest.TestCase):
             node.update(pre_delay=0, timeout=100, rate_limit=1, on_error=[])
             if not keep_delays:
                 node["post_delay"] = 0
-                node["repeat_delay"] = 1
             if node.get("recognition", {}).get("type", "DirectHit") != "DirectHit":
                 node["recognition"] = {"type": "Custom", "param": {"custom_recognition": "animation_screen"}}
         nodes["dispatch"] = {"action": {"type": "Custom", "param": {"custom_action": "animation_dispatch"}},
@@ -148,14 +148,14 @@ class AnimationAccelerationFrameworkTests(unittest.TestCase):
                         self.assertEqual([event[1] for event in events],
                                          ["option", "target", "animation"] if follow_target
                                          else ["option", "animation"])
-                        self.assertEqual(events[-1][0], events[-2][0])
+                        self.assertEqual(events[-1][0], TOP_RIGHT_CLOSE)
                         self.assertEqual(state["positions"][group.field], 1)
 
-    def test_final_ally_target_double_clicks_then_waits_one_second(self):
+    def test_final_ally_target_clicks_top_right_then_waits_one_second(self):
         state, elapsed = self.run_case(entry=TARGET, keep_delays=True)
         events = state["events"]
         self.assertEqual([(event[0], event[1]) for event in events],
-                         [((633, 386), "target"), ((633, 386), "animation")])
+                         [((633, 386), "target"), (TOP_RIGHT_CLOSE, "animation")])
         self.assertGreaterEqual(events[1][2] - events[0][2], .09)
         self.assertGreaterEqual(elapsed - (events[-1][2] - events[0][2]), .95)
 
@@ -165,13 +165,13 @@ class AnimationAccelerationFrameworkTests(unittest.TestCase):
         events = state["events"]
         self.assertEqual([event[1] for event in events], ["option", "target", "animation"])
         self.assertGreaterEqual(events[1][2] - events[0][2], .59)
-        self.assertEqual(events[1][0], events[2][0])
+        self.assertEqual([event[0] for event in events[1:]], [(633, 386), TOP_RIGHT_CLOSE])
         self.assertNotEqual(events[0][0], events[1][0])
 
     def test_no_overlay_taps_top_right_once_then_waits(self):
         state, elapsed = self.run_case(entry=NO_OVERLAY, keep_delays=True)
         self.assertEqual([(event[0], event[1]) for event in state["events"]],
-                         [((1240, 20), "animation")])
+                         [(TOP_RIGHT_CLOSE, "animation")])
         self.assertGreaterEqual(elapsed, .95)
 
     def test_servant_skill_icon_remains_a_single_click(self):
