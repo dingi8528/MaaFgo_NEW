@@ -128,13 +128,11 @@ class FastReaderTests(unittest.TestCase):
             second = self.reader.read_frame(self.fixture.image)
         self.assertTrue(all(slot.servant_id == "1000" for slot in first))
         self.assertTrue(all(slot.servant_id == "2000" for slot in second))
-        self.assertEqual(self.reader._roi_crop_cache, {})
         self.assertIsNone(self.reader._frame_match_cache)
 
     def test_cache_is_cleared_after_page_rejection(self):
         with self.assertRaisesRegex(ValueError, "not_on_formation"):
             self.reader.read_frame(np.zeros_like(self.fixture.image))
-        self.assertEqual(self.reader._roi_crop_cache, {})
         self.assertIsNone(self.reader._frame_match_cache)
 
     def test_full_fallback_reuses_class_scores_only_within_current_frame(self):

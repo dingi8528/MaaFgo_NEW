@@ -582,7 +582,7 @@ class AutoFormationFromChaldea(CustomAction):
 
         这些属性每次运行都会重新加载，入口处也调用一次，避免本次运行沿用上次的模板或控制器。"""
         for name in (
-            "_roi_crop_cache", "_tpl_scale_cache", "local_templates", "support_templates",
+            "_tpl_scale_cache", "local_templates", "support_templates",
             "identity_templates", "equip_team_templates", "equip_list_templates", "equip_database",
             "support_marker", "edit_marker", "config_marker", "select_page_markers",
             "formation_confirm_marker", "equip_confirm_marker", "grand_equip_popup_marker",
@@ -771,8 +771,6 @@ class AutoFormationFromChaldea(CustomAction):
             mfaalog.warning(f"[自动编队] 读取截图缓存失败: {exc}")
             cached = None
         if cached is not None:
-            # ROI 切片引用整帧，取得新截图后释放上一帧的切片。
-            self.__dict__.pop("_roi_crop_cache", None)
             return cached
         mfaalog.warning("[自动编队] 截图缓存不可用")
         return None
@@ -972,25 +970,14 @@ class AutoFormationFromChaldea(CustomAction):
             cache[cache_key] = scaled
         region, offset_x, offset_y = image, 0, 0
         if roi is not None:
-            # 同帧内同 ROI 的裁剪缓存：一个槽位要匹配几十张模板，
-            # 每次重复 scale_roi + 切片是纯浪费；帧内容不变时安全。
-            # 切片引用整帧，_shot() 取得新截图时清空本缓存，旧帧才能释放。
-            rcache = self.__dict__.setdefault("_roi_crop_cache", {})
-            rkey = (id(image), roi)
-            cropped = rcache.get(rkey)
-            if cropped is None:
-                x, y, roi_width, roi_height = self._scale_roi(roi)
-                x, y = max(0, x), max(0, y)
-                roi_width = min(roi_width, image.shape[1] - x)
-                roi_height = min(roi_height, image.shape[0] - y)
-                if roi_width <= 0 or roi_height <= 0:
-                    rcache[rkey] = False
-                else:
-                    cropped = (image[y:y + roi_height, x:x + roi_width], x, y)
-                    rcache[rkey] = cropped
-            if cropped is False:
+            x, y, roi_width, roi_height = self._scale_roi(roi)
+            offset_x, offset_y = max(0, x), max(0, y)
+            roi_width = min(roi_width, image.shape[1] - offset_x)
+            roi_height = min(roi_height, image.shape[0] - offset_y)
+            if roi_width <= 0 or roi_height <= 0:
                 return None
-            region, offset_x, offset_y = cropped
+            # NumPy 切片引用整帧，只在本次匹配内使用。
+            region = image[offset_y:offset_y + roi_height, offset_x:offset_x + roi_width]
         if region.shape[0] < scaled.shape[0] or region.shape[1] < scaled.shape[1]:
             return None
         _min_value, score, _min_loc, max_loc = cv2.minMaxLoc(
@@ -2905,16 +2892,12 @@ class FormationIdentityReader(AutoFormationFromChaldea):
         return "restricted_slot_locked" if match and match[0] >= LOCKED_SLOT_THRESHOLD else ""
 
     def read_frame(self, image, *, full_audit=False, diagnostics=False, known_slots=()):
-        # 继承的 ROI 裁剪缓存只能在当前图像内使用。不能用 id(image) 在跨帧
-        # 缓存中判定图像相同：Python 会复用 id，且旧裁片会持续占用内存。
-        self._roi_crop_cache = {}
         self._frame_match_cache = {}
         self.last_match_stats = {"coarse_ms": 0.0, "slots": []}
         started = time.perf_counter()
         try:
             return self._read_frame(image, full_audit=full_audit, diagnostics=diagnostics, known_slots=known_slots)
         finally:
-            self._roi_crop_cache.clear()
             self._frame_match_cache = None
             self.last_match_stats["total_ms"] = (time.perf_counter() - started) * 1000
             summary = ", ".join(

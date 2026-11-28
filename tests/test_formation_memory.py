@@ -1,4 +1,4 @@
-"""编队动作复用时，只保留当前帧和近期校准所需的图像。"""
+"""编队截图在匹配后可释放，模板缓存按任务与校准清理。"""
 import gc
 from types import SimpleNamespace
 import unittest
@@ -9,10 +9,11 @@ import cv2
 import numpy as np
 
 from formation_test_support import formation
+from current_bond_completion_action import CompleteCurrentBondFormation
 
 
 IMAGE_FIELDS = (
-    "_roi_crop_cache", "_tpl_scale_cache", "local_templates", "support_templates",
+    "_tpl_scale_cache", "local_templates", "support_templates",
     "identity_templates", "equip_team_templates", "equip_list_templates", "equip_database",
     "support_marker", "edit_marker", "config_marker", "select_page_markers",
     "formation_confirm_marker", "equip_confirm_marker", "grand_equip_popup_marker",
@@ -20,21 +21,38 @@ IMAGE_FIELDS = (
 
 
 class FormationMemoryTests(unittest.TestCase):
-    @patch.object(formation.time, "sleep")
-    def test_shot_keeps_only_current_frame_crops(self, sleep):
+    def assert_match_releases_frames(self, action, screenshot):
+        action.sx = action.sy = 1.0
+        template = np.random.default_rng(42).integers(0, 256, (4, 4, 3), np.uint8)
+        frames = []
+        for _ in range(32):
+            frame = screenshot()
+            frame[7:11, 9:13] = template
+            frames.append(weakref.ref(frame))
+            score, center = action._match_template(frame, template, (6, 4, 16, 16))
+            self.assertGreater(score, 0.99)
+            self.assertEqual(center, (11, 9))
+        del frame
+        gc.collect()
+        self.assertTrue(all(ref() is None for ref in frames))
+
+    def test_match_releases_frames_passed_directly(self):
+        self.assert_match_releases_frames(
+            formation.AutoFormationFromChaldea(), lambda: np.zeros((32, 32, 3), np.uint8),
+        )
+
+    def test_current_bond_match_releases_synchronous_screenshots(self):
+        action = CompleteCurrentBondFormation()
+        frame_job = SimpleNamespace(get=lambda: np.zeros((32, 32, 3), np.uint8))
+        action.controller = SimpleNamespace(post_screencap=lambda: SimpleNamespace(wait=lambda: frame_job))
+        self.assert_match_releases_frames(action, action._shot)
+
+    def test_match_returns_no_result_for_roi_outside_screen(self):
         action = formation.AutoFormationFromChaldea()
         action.sx = action.sy = 1.0
-        action.controller = SimpleNamespace(post_screencap=lambda: None)
-        template = np.ones((4, 4, 3), np.uint8)
-        frames = []
-        for i in range(50):
-            action.controller.cached_image = np.full((32, 32, 3), i, np.uint8)
-            frame = action._shot()
-            frames.append(weakref.ref(frame))
-            action._match_template(frame, template, (0, 0, 16, 16))
-        gc.collect()
-        self.assertEqual(len(action._roi_crop_cache), 1)
-        self.assertTrue(all(ref() is None for ref in frames[:-1]))
+        frame = np.zeros((32, 32, 3), np.uint8)
+        template = np.zeros((4, 4, 3), np.uint8)
+        self.assertIsNone(action._match_template(frame, template, (32, 0, 16, 16)))
 
     @patch.object(formation, "fetch_share_data", return_value=({}, None, None))
     def test_run_releases_images(self, fetch):
